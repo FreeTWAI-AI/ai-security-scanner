@@ -2300,9 +2300,15 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                         RedactionProfile::None,
                     ),
                     (
-                        "report-standard-redacted.html",
+                        "report-standard-redacted-en.html",
                         CaseExportFormat::Html,
                         ReportLocale::En,
+                        RedactionProfile::Standard,
+                    ),
+                    (
+                        "report-standard-redacted-zh.html",
+                        CaseExportFormat::Html,
+                        ReportLocale::ZhHant,
                         RedactionProfile::Standard,
                     ),
                     (

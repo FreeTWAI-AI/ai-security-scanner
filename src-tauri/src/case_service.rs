@@ -65,8 +65,8 @@ use crate::export_identity::{
     rotate_local_signing_identity_after_confirmed_loss,
 };
 use crate::exporters::{
-    export_master_framework_report_bytes, export_ocsf_finding_events_bytes,
-    export_oscal_assessment_results_bytes,
+    export_master_framework_report, export_master_framework_report_bytes,
+    export_ocsf_finding_events_bytes, export_oscal_assessment_results_bytes,
 };
 use crate::external_scope::{
     CanonicalTarget, ExternalActivity, ExternalScopeGrant, ExternalScopeRequest,
@@ -14142,6 +14142,224 @@ fn html_severity_profile(report: &BeginnerMasterReport, catalog: HtmlReportCatal
     )
 }
 
+/// The run's headline counts as tiles rather than one run-on sentence.
+///
+/// These were a single line of bolded labels separated by interpuncts. Seven
+/// numbers in a row of prose is a paragraph a reader skips; the same seven as
+/// tiles is the first thing they read. A zero is kept and dimmed rather than
+/// dropped: "Failed: 0" is a result, and a missing tile would leave the reader
+/// to wonder whether it was zero or unmeasured.
+fn html_kpi_tiles(tiles: &[(&str, usize, &str)], catalog: HtmlReportCatalog) -> String {
+    tiles
+        .iter()
+        .map(|(label, value, tone)| {
+            let tone = if *value == 0 { "quiet" } else { *tone };
+            format!(
+                concat!(
+                    "<div class=\"kpi kpi--{}\"><span class=\"kpi__value\">{}</span>",
+                    "<span class=\"kpi__label\">{}</span></div>"
+                ),
+                tone,
+                catalog.format_number(*value),
+                html_escape(label),
+            )
+        })
+        .collect()
+}
+
+/// The plain-language name of a framework summary's state.
+///
+/// The wire value is a stable identifier for a machine to branch on. A reader
+/// gets a sentence instead, and the two must not drift: an unrecognized state
+/// prints its own identifier rather than a guess.
+fn framework_state_text(state: &str, catalog: HtmlReportCatalog) -> String {
+    match state {
+        "related_coordinates_observed" => catalog
+            .text("Related coordinates observed", "已觀察到相關座標")
+            .to_owned(),
+        "not_applicable_to_declared_context" => catalog
+            .text(
+                "Not applicable to the declared context",
+                "不適用於已載明的情境",
+            )
+            .to_owned(),
+        "unknown_due_to_incomplete_coverage" => catalog
+            .text("Unknown — coverage is incomplete", "未知——覆蓋並不完整")
+            .to_owned(),
+        "no_relationship_observed" => catalog
+            .text("No relationship observed", "未觀察到關聯")
+            .to_owned(),
+        "unknown_due_to_unanswered_context" => catalog
+            .text(
+                "Unknown — the context answers are incomplete",
+                "未知——情境問題尚未答完",
+            )
+            .to_owned(),
+        "no_related_coordinate_observed" => catalog
+            .text("No related coordinate observed", "未觀察到相關座標")
+            .to_owned(),
+        other => readable_identifier(other),
+    }
+}
+
+/// Where the report's framework coordinates come from and what they cover.
+///
+/// The consolidated mapping already existed, but only as a separate JSON
+/// export: in the report itself a coordinate appeared solely inside one
+/// finding's collapsed detail, so a reader could not see that this run touched
+/// ten NIST CSF controls without opening fifty cards. The overview names every
+/// framework the product carries, including the ones this case's answers put
+/// out of scope, because a framework that reports nothing here should say why
+/// rather than be missing.
+///
+/// These are navigation coordinates. The report claims no audit, certification,
+/// or compliance determination anywhere, and this section states that in its
+/// own words rather than relying on the footer to carry it.
+fn html_framework_section(
+    case: &AssessmentCase,
+    run_id: &str,
+    catalog: HtmlReportCatalog,
+) -> String {
+    let Ok(framework_report) = export_master_framework_report(case, run_id) else {
+        // The framework overlay never gates the report. A case whose mapping
+        // cannot be consolidated still reports its findings; it just does not
+        // get this section.
+        return String::new();
+    };
+    if framework_report.frameworks.is_empty() {
+        return String::new();
+    }
+
+    let mut overview = String::new();
+    let mut blocks = String::new();
+    for framework in &framework_report.frameworks {
+        let state = framework_state_text(&framework.state, catalog);
+        let populated = framework.control_count > 0;
+        overview.push_str(&format!(
+            concat!(
+                "<tr><th scope=\"row\">{}<br><small>{} {}</small></th>",
+                "<td><span class=\"framework-state framework-state--{}\">{}</span></td>",
+                "<td class=\"numeric\">{}</td><td class=\"numeric\">{}</td></tr>"
+            ),
+            html_escape(&framework.framework),
+            catalog.text("version", "版本"),
+            html_escape(&framework.expected_version),
+            if populated { "observed" } else { "quiet" },
+            html_escape(&state),
+            catalog.format_number(framework.control_count),
+            catalog.format_number(framework.finding_count),
+        ));
+
+        let mut rows = String::new();
+        for control in &framework.controls {
+            let findings = control
+                .relationships
+                .iter()
+                .map(|relationship| relationship.finding.finding_id.as_str())
+                .collect::<BTreeSet<_>>();
+            // The severity mix of what landed here, so a control carrying one
+            // critical is not read the same as a control carrying nine lows.
+            let mut severities = BTreeMap::new();
+            let mut counted = BTreeSet::new();
+            for relationship in &control.relationships {
+                if !counted.insert(relationship.finding.finding_id.as_str()) {
+                    continue;
+                }
+                *severities
+                    .entry(relationship.finding.severity.clone())
+                    .or_insert(0usize) += 1;
+            }
+            let mut mix = severities
+                .into_iter()
+                .filter_map(|(severity, count)| {
+                    crate::domain::Severity::deserialize(serde_json::Value::String(severity))
+                        .ok()
+                        .map(|severity| (severity, count))
+                })
+                .collect::<Vec<_>>();
+            mix.sort_by(|left, right| right.0.cmp(&left.0));
+            rows.push_str(&format!(
+                concat!(
+                    "<tr><td><code>{}</code></td><td>{}</td>",
+                    "<td class=\"numeric\">{}</td><td class=\"framework-mix\">{}</td></tr>"
+                ),
+                html_escape(&control.control_id),
+                // Control titles are the framework owner's official names and
+                // stay verbatim in every report locale.
+                html_escape(&control.title),
+                catalog.format_number(findings.len()),
+                html_asset_severity_strip(&mix, catalog),
+            ));
+        }
+
+        let source = &framework.source;
+        let attribution = [
+            source.attribution_notice.as_str(),
+            source.license_notice.as_str(),
+            source.modifications_notice.as_str(),
+            source.non_endorsement_notice.as_str(),
+        ]
+        .into_iter()
+        .filter(|notice| !notice.is_empty())
+        .map(html_escape)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+        let body = if rows.is_empty() {
+            format!("<p>{}</p>", html_escape(&framework.explanation))
+        } else {
+            format!(
+                concat!(
+                    "<table class=\"framework-controls\"><thead><tr>",
+                    "<th>{}</th><th>{}</th><th class=\"numeric\">{}</th><th>{}</th>",
+                    "</tr></thead><tbody>{}</tbody></table>"
+                ),
+                catalog.text("Control", "控制項"),
+                catalog.text("Title", "名稱"),
+                catalog.text("Findings", "問題數"),
+                catalog.text("Severity mix", "嚴重程度組成"),
+                rows,
+            )
+        };
+        blocks.push_str(&format!(
+            concat!(
+                "<article class=\"framework-block\">",
+                "<h3>{} <small>{} {}</small></h3>",
+                "<p class=\"framework-block__state\">{}</p>{}",
+                "<p class=\"framework-source\">{} <span class=\"framework-source__url\">{}</span></p>",
+                "</article>"
+            ),
+            html_escape(&framework.framework),
+            catalog.text("version", "版本"),
+            html_escape(&framework.expected_version),
+            html_escape(&state),
+            body,
+            attribution,
+            html_escape(&source.source_url),
+        ));
+    }
+
+    format!(
+        concat!(
+            "<section class=\"framework-coverage\"><h2>{}</h2><p>{}</p>",
+            "<table class=\"framework-overview\"><thead><tr>",
+            "<th>{}</th><th>{}</th><th class=\"numeric\">{}</th><th class=\"numeric\">{}</th>",
+            "</tr></thead><tbody>{}</tbody></table>{}</section>"
+        ),
+        catalog.text("Where this lands in each framework", "對應到各框架的位置"),
+        catalog.text(
+            "Each coordinate below was reached from a finding's own rule or CWE through the packaged mapping catalog. They are navigation aids for finding the relevant control text, not a compliance result: nothing here is an audit, a certification, or a pass.",
+            "以下每個座標都是從問題本身的規則或 CWE，透過內建的對照目錄推導出來的。它們是用來找到相關控制項條文的導覽，不是合規結果：這裡沒有任何內容構成稽核、認證或通過與否的判定。",
+        ),
+        catalog.text("Framework", "框架"),
+        catalog.text("What this run shows", "本輪的情形"),
+        catalog.text("Controls", "控制項"),
+        catalog.text("Findings", "問題"),
+        overview,
+        blocks,
+    )
+}
+
 /// One next step's action sentence, composed for the report's language.
 ///
 /// A finding-derived step's action is that finding's own recommendation and
@@ -14689,7 +14907,8 @@ fn html_asset_result_section(
                 concat!(
                     "<li class=\"asset-result asset-result--{}\">",
                     "<div class=\"asset-result__identity\"><strong>{}</strong>{}</div>",
-                    "<strong class=\"pill asset-result__status\">{}</strong>{}",
+                    "<div class=\"asset-result__signal\">",
+                    "<strong class=\"pill asset-result__status\">{}</strong>{}</div>",
                     "<p><strong>{}</strong><br>{}</p></li>"
                 ),
                 class_name,
@@ -16637,29 +16856,62 @@ fn html_report_bytes(
         html_escape(&report.project_title),
     );
     document.push_str(concat!(
-        "<style>body{font:16px/1.5 system-ui,sans-serif;max-width:1080px;margin:auto;padding:2rem;color:#17202a}",
-        "h1,h2,h3{line-height:1.2}table{width:100%;border-collapse:collapse}",
-        "th,td{border:1px solid #ccd1d1;padding:.55rem;text-align:left;vertical-align:top}",
-        "article{border:1px solid #ccd1d1;border-radius:.5rem;padding:1rem;margin:1rem 0}",
+        "<style>:root{--ink:#101828;--body:#344054;--muted:#667085;--line:#e4e7ec;",
+        "--tint:#f9fafb;--accent:#123a63}",
+        "*{box-sizing:border-box}",
+        "body{font:16px/1.6 -apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,\"Noto Sans TC\",",
+        "\"PingFang TC\",\"Microsoft JhengHei\",sans-serif;max-width:1120px;margin:auto;padding:2.5rem 2rem 4rem;color:var(--body)}",
+        "h1,h2,h3,h4{line-height:1.25;color:var(--ink);font-weight:650}",
+        "h1{font-size:2rem;letter-spacing:-.02em;margin:.2rem 0 1rem}",
+        "h2{font-size:1.3rem;margin:2.5rem 0 .5rem;padding-bottom:.4rem;border-bottom:2px solid var(--line)}",
+        "h3{font-size:1.05rem;margin:1.5rem 0 .5rem}",
+        "code{font-size:.9em;background:var(--tint);padding:.05rem .3rem;border-radius:.2rem}",
+        "table{width:100%;border-collapse:collapse;margin:.75rem 0}",
+        "th,td{border-bottom:1px solid var(--line);padding:.55rem .65rem;text-align:left;vertical-align:top}",
+        "thead th{background:var(--tint);border-bottom:2px solid #d0d5dd;color:var(--ink);font-size:.85rem;",
+        "text-transform:uppercase;letter-spacing:.04em}",
+        "tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}",
+        ".numeric{text-align:right;font-variant-numeric:tabular-nums}",
+        "article{border:1px solid var(--line);border-radius:.6rem;padding:1.15rem 1.25rem;margin:1rem 0;background:#fff}",
+        ".cover{border-bottom:3px solid var(--accent);padding-bottom:1.25rem;margin-bottom:1.5rem}",
+        ".cover__product{margin:0;font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}",
+        ".cover__meta{display:flex;flex-wrap:wrap;gap:.4rem 2.5rem;margin:0}",
+        ".cover__meta dt{font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}",
+        ".cover__meta dd{margin:.1rem 0 0;color:var(--ink)}",
+        ".kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr));gap:.6rem;margin:0 0 1.5rem}",
+        ".kpi{border:1px solid var(--line);border-top:3px solid var(--muted);border-radius:.45rem;",
+        "padding:.7rem .8rem;background:#fff;display:flex;flex-direction:column;gap:.15rem}",
+        ".kpi__value{font-size:1.7rem;font-weight:680;line-height:1.1;color:var(--ink);font-variant-numeric:tabular-nums}",
+        ".kpi__label{font-size:.78rem;color:var(--muted);line-height:1.3}",
+        ".kpi--problems{border-top-color:#b42318}.kpi--problems .kpi__value{color:#b42318}",
+        ".kpi--complete{border-top-color:#1a7f4b}.kpi--partial{border-top-color:#b54708}",
+        ".kpi--failed{border-top-color:#b42318}",
+        ".kpi--quiet{border-top-color:var(--line)}.kpi--quiet .kpi__value{color:var(--muted);font-weight:600}",
         ".report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}",
-        ".report-card{border:1px solid #ccd1d1;border-radius:.5rem;padding:1rem;background:#f8faf8}",
-        ".report-state{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;padding:1rem;border:1px solid #ccd1d1;border-radius:.5rem}",
-        ".asset-result-list{list-style:none;padding:0;display:grid;gap:.75rem}",
-        ".asset-result{display:grid;grid-template-columns:minmax(12rem,1fr) auto minmax(16rem,2fr);gap:1rem;align-items:start;border:1px solid #ccd1d1;border-left-width:5px;border-radius:.5rem;padding:1rem}",
-        ".asset-result__identity{display:grid;gap:.25rem}.asset-result__identity small{color:#475467}",
+        ".report-card{border:1px solid var(--line);border-radius:.6rem;padding:1.15rem;background:#fff}",
+        ".report-card h2{margin-top:0;font-size:1.05rem;border:0;padding:0}",
+        ".asset-result-list{list-style:none;padding:0;display:grid;gap:.6rem;margin:.75rem 0 0}",
+        ".asset-result{display:grid;grid-template-columns:minmax(11rem,1.1fr) minmax(9rem,1fr) minmax(15rem,2fr);gap:1.25rem;align-items:start;border:1px solid var(--line);border-left-width:4px;border-radius:.6rem;padding:1rem 1.15rem;background:#fff}",
+        ".asset-result__identity{display:grid;gap:.1rem}",
+        ".asset-result__identity strong{color:var(--ink);overflow-wrap:anywhere}",
+        ".asset-result__identity small{color:var(--muted);font-size:.82rem}",
+        ".asset-result__signal{display:grid;gap:.35rem}",
+        ".asset-result__signal .pill{justify-self:start}",
         ".asset-result__status{white-space:nowrap}.asset-result p{margin:0}",
         ".asset-result--problems-found{border-left-color:#b42318}.asset-result--no-problems-completed{border-left-color:#027a48}",
-        ".asset-result--incomplete-failed{border-left-color:#b54708}.asset-result--not-tested{border-left-color:#475467}",
-        "details.technical{margin-top:2rem;border-top:1px solid #ccd1d1;padding-top:1rem}",
-        ".finding-asset{font-weight:400;color:#4b5563}",
+        ".asset-result--incomplete-failed{border-left-color:#b54708}.asset-result--not-tested{border-left-color:#667085}",
+        "details.technical{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}",
+        ".finding-asset{font-weight:400;color:var(--muted)}",
         "details.finding-technical{margin-top:1rem;padding-top:0.5rem}",
-        "details.finding-technical>summary{cursor:pointer;color:#4b5563}",
-        "@media(max-width:760px){body{padding:1rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
-        ".pill{border:1px solid currentColor;border-radius:1rem;padding:.1rem .5rem}",
-        ".executive-summary{border:1px solid #ccd1d1;border-left-width:5px;border-left-color:#17202a;border-radius:.5rem;padding:1rem 1.25rem;margin:1.5rem 0;background:#f8faf8}",
-        ".executive-summary h2{margin-top:0}.executive-summary p{margin:.4rem 0}",
+        "details.finding-technical>summary{cursor:pointer;color:var(--muted)}",
+        "@media(max-width:760px){body{padding:1.25rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
+        ".pill{display:inline-block;border:1px solid currentColor;border-radius:1rem;padding:.08rem .6rem;font-size:.82rem;white-space:nowrap}",
+        ".executive-summary{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:.6rem;padding:1.1rem 1.35rem;margin:1.5rem 0 2rem;background:var(--tint)}",
+        ".executive-summary h2{margin:0 0 .5rem;border:0;padding:0;font-size:1.15rem}",
+        ".executive-summary p{margin:.35rem 0;color:var(--ink)}",
         ".severity-profile{margin:1.5rem 0}",
-        ".severity-row{display:grid;grid-template-columns:7rem 1fr 3.5rem;gap:.75rem;align-items:center;margin:.3rem 0}",
+        ".severity-row{display:grid;grid-template-columns:7.5rem 1fr 3.5rem;gap:.75rem;align-items:center;margin:.3rem 0}",
+        ".severity-row__label{font-size:.9rem}",
         ".severity-row__count{text-align:right;font-variant-numeric:tabular-nums}",
         ".severity-bar{display:block;background:#eceff1;border-radius:.2rem;height:1.1rem;overflow:hidden}",
         ".severity-bar__fill{display:block;height:100%;border-radius:.2rem}",
@@ -16667,10 +16919,19 @@ fn html_report_bytes(
         ".severity-bar__fill--medium{background:#b54708}.severity-bar__fill--low{background:#7f8c8d}",
         ".severity-bar__fill--informational{background:#98a2b3}.severity-bar__fill--unknown{background:#475467}",
         ".matrix-scroll{overflow-x:auto}",
-        ".coverage-matrix{font-size:.85rem}.coverage-matrix th,.coverage-matrix td{padding:.35rem .4rem}",
-        ".coverage-matrix thead th{vertical-align:bottom}",
-        ".matrix-engine{display:inline-block;white-space:nowrap}",
-        ".matrix-cell{text-align:center;white-space:nowrap;font-size:1rem;line-height:1}",
+        ".coverage-matrix{font-size:.85rem;table-layout:fixed;width:auto}",
+        ".coverage-matrix th,.coverage-matrix td{padding:.3rem .15rem;border:1px solid var(--line)}",
+        ".coverage-matrix thead th{vertical-align:bottom;background:var(--tint);text-transform:none;",
+        "letter-spacing:0;padding:.4rem .15rem}",
+        ".coverage-matrix tbody th{width:auto;max-width:18rem;font-weight:600;color:var(--ink);",
+        "font-size:.85rem;overflow-wrap:anywhere;padding:.3rem .6rem}",
+        // Twenty-one engines will not fit across a page as horizontal labels.
+        // Turning the header on its side keeps every column narrow enough that
+        // the whole grid is one glance instead of a horizontal scroll.
+        ".matrix-engine{display:inline-block;white-space:nowrap;writing-mode:vertical-rl;",
+        "transform:rotate(180deg);font-size:.8rem;font-weight:600;color:var(--ink)}",
+        ".coverage-matrix td{width:1.75rem}",
+        ".matrix-cell{text-align:center;white-space:nowrap;font-size:.95rem;line-height:1}",
         ".matrix-cell--complete{background:#e7f4ec;color:#1a7f4b}.matrix-cell--partial{background:#fdf1dc;color:#b54708}",
         ".matrix-cell--failed{background:#fbe9e7;color:#b42318}.matrix-cell--timed-out{background:#fdf1dc;color:#b54708}",
         ".matrix-cell--cancelled{background:#eceff1;color:#475467}.matrix-cell--in-progress{background:#eceff1;color:#475467}",
@@ -16682,6 +16943,21 @@ fn html_report_bytes(
         ".asset-severity__part{display:block;height:100%}",
         ".asset-severity__legend{margin:0 0 .4rem;font-size:.8rem;color:#475467}",
         ".visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}",
+        ".framework-overview th[scope=row]{font-weight:600;color:var(--ink)}",
+        ".framework-overview small{color:var(--muted);font-weight:400}",
+        ".framework-state{display:inline-block;font-size:.85rem;padding:.1rem .55rem;border-radius:1rem;border:1px solid var(--line)}",
+        ".framework-state--observed{background:#eaf3ee;border-color:#bfdcca;color:#12603c}",
+        ".framework-state--quiet{background:var(--tint);color:var(--muted)}",
+        ".framework-block{padding:1.15rem 1.25rem}",
+        ".framework-block h3{margin-top:0}.framework-block h3 small{color:var(--muted);font-weight:400;font-size:.85rem}",
+        ".framework-block__state{margin:0;color:var(--muted);font-size:.88rem}",
+        ".framework-controls{font-size:.92rem}",
+        ".framework-controls td:first-child{white-space:nowrap}",
+        ".framework-mix{width:13.5rem}",
+        ".framework-mix .asset-severity{margin:.1rem 0 .1rem}",
+        ".framework-mix .asset-severity__legend{margin:0;font-size:.75rem}",
+        ".framework-source{margin:.75rem 0 0;font-size:.78rem;color:var(--muted);line-height:1.45}",
+        ".framework-source__url{overflow-wrap:anywhere}",
         "@media print{body{max-width:none;padding:0;font-size:11pt;color:#000}",
         "details{display:block}details>summary{display:none}",
         "section,article,.asset-result,tr{break-inside:avoid}",
@@ -16693,14 +16969,13 @@ fn html_report_bytes(
     ));
     document.push_str(&format!(
         concat!(
-            "<header><p>{}</p><h1>{}</h1>",
-            "<p>{} <code>{}</code></p></header>",
-            "<section class=\"report-state\"><strong class=\"pill\">{}</strong>",
-            "<span>{} {}</span></section>",
-            "<p><strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
-            "<strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
-            "<strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
-            "<strong>{}:</strong> {}</p>"
+            "<header class=\"cover\"><p class=\"cover__product\">{}</p><h1>{}</h1>",
+            "<dl class=\"cover__meta\">",
+            "<div><dt>{}</dt><dd><code>{}</code></dd></div>",
+            "<div><dt>{}</dt><dd>{}</dd></div>",
+            "<div><dt>{}</dt><dd><strong class=\"pill\">{}</strong></dd></div>",
+            "</dl></header>",
+            "<section class=\"kpi-row\">{}</section>"
         ),
         catalog.text(
             "ai-security-scanner / local case export",
@@ -16709,23 +16984,46 @@ fn html_report_bytes(
         html_escape(&report.project_title),
         catalog.text("Selected run", "選定的掃描輪次"),
         html_escape(&report.run_id),
-        report_summary,
         catalog.text("Last saved", "最後保存"),
         html_escape(&catalog.format_time(&report.state.last_durable_update)),
-        catalog.text("Checks completed", "已完成檢查"),
-        catalog.format_number(report_counts.tested_complete),
-        catalog.text("Partly completed", "部分完成"),
-        catalog.format_number(report_counts.tested_partial),
-        catalog.text("Failed", "失敗"),
-        catalog.format_number(report_counts.failed),
-        catalog.text("Timed out", "逾時"),
-        catalog.format_number(report_counts.timed_out),
-        catalog.text("Not tested", "未測試"),
-        catalog.format_number(report_counts.not_tested),
-        coverage_items_label,
-        catalog.format_number(report.coverage_gaps.len()),
-        catalog.text("Problems found", "發現的問題"),
-        catalog.format_number(problem_count),
+        catalog.text("Run state", "本輪狀態"),
+        report_summary,
+        html_kpi_tiles(
+            &[
+                (
+                    catalog.text("Problems found", "發現的問題"),
+                    problem_count,
+                    "problems",
+                ),
+                (
+                    catalog.text("Checks completed", "已完成檢查"),
+                    report_counts.tested_complete,
+                    "complete",
+                ),
+                (
+                    catalog.text("Partly completed", "部分完成"),
+                    report_counts.tested_partial,
+                    "partial",
+                ),
+                (
+                    catalog.text("Failed", "失敗"),
+                    report_counts.failed,
+                    "failed"
+                ),
+                (
+                    catalog.text("Timed out", "逾時"),
+                    report_counts.timed_out,
+                    "partial",
+                ),
+                (
+                    catalog.text("Not tested", "未測試"),
+                    report_counts.not_tested,
+                    "quiet",
+                ),
+                (coverage_items_label, report.coverage_gaps.len(), "quiet"),
+            ],
+            catalog,
+        ),
     ));
     // Before the asset list: a reader who stops after one screen should still
     // have the run's outcome, its shape, and what was left uncovered.
@@ -16738,6 +17036,7 @@ fn html_report_bytes(
     document.push_str(&html_severity_profile(&report, catalog));
     document.push_str(&html_coverage_matrix(&report, &target_labels, catalog));
     document.push_str(&html_asset_result_section(&report, &target_labels, catalog));
+    document.push_str(&html_framework_section(&exported, run_id, catalog));
     document.push_str(&typed_inventory_section);
     document.push_str(&format!(
         concat!(
@@ -31097,7 +31396,9 @@ mod tests {
         assert!(!html.contains("Observed services (not vulnerabilities)"));
         assert!(!html.contains("reachable-service-html"));
         assert!(!html.contains("port:443 · protocol:tcp"));
-        assert!(html.contains("Problems found:</strong> 2"));
+        assert!(html.contains(
+            "<span class=\"kpi__value\">2</span><span class=\"kpi__label\">Problems found</span>"
+        ));
         for asset_result_text in [
             "Which assets need attention",
             "Every selected asset appears once",
@@ -31591,6 +31892,24 @@ mod tests {
                 "beginner-visible HTML omitted friendly text {expected}"
             );
         }
+        // A framework's own published URL is a verbatim external identifier,
+        // not this report's wording, and one of them
+        // (cisecurity.org/benchmark/amazon_web_services) contains an asset
+        // kind's key as a substring. Checking the wording means checking the
+        // wording.
+        let reader_wording = {
+            let mut kept = String::with_capacity(beginner_visible.len());
+            let mut rest = beginner_visible;
+            while let Some(at) = rest.find("<span class=\"framework-source__url\">") {
+                kept.push_str(&rest[..at]);
+                rest = rest[at..]
+                    .split_once("</span>")
+                    .map(|(_, tail)| tail)
+                    .unwrap_or("");
+            }
+            kept.push_str(rest);
+            kept
+        };
         for machine_facing in [
             "quick_discovery",
             "web_service",
@@ -31601,7 +31920,7 @@ mod tests {
             "T12:34:56",
         ] {
             assert!(
-                !beginner_visible.contains(machine_facing),
+                !reader_wording.contains(machine_facing),
                 "beginner-visible HTML leaked machine-facing value {machine_facing}"
             );
         }
