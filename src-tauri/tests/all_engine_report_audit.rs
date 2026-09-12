@@ -2545,6 +2545,28 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 );
             }
 
+            // Every evidence summary this build's adapters write ends with the
+            // same sentence about how raw target text is kept. That is one
+            // statement about the report, and it was stapled to fifty-one
+            // records. Progress already drops it; the terms now carry it.
+            for (html, lifted) in [
+                (
+                    &ordered_html,
+                    "Target text quoted in an evidence summary is retained as untrusted input",
+                ),
+                (&zh_html, "證據摘要引用的目標文字"),
+            ] {
+                assert_eq!(
+                    html.matches("Raw target text is retained only as untrusted evidence")
+                        .count(),
+                    0,
+                    "the standing evidence caveat is repeated per record"
+                );
+                assert_eq!(html.matches(lifted).count(), 1);
+                let terms = &html[html.rfind("<footer>").expect("report terms")..];
+                assert!(terms.contains(lifted), "the caveat left the report terms");
+            }
+
             // Whether this run's scanner log can be read back is one fact
             // about the run's export. Written into each task record it was
             // four identical lines twenty-four times over, and the records

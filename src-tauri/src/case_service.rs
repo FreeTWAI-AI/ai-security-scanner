@@ -15473,6 +15473,16 @@ fn replace_target_ids(value: &str, labels: &BTreeMap<Id, String>) -> String {
     display
 }
 
+/// The standing sentence this build's adapters append to every evidence
+/// summary they write.
+///
+/// It says how raw target text is kept, which is one statement about the whole
+/// report rather than a fact about the record it is stapled to. Progress
+/// already drops it the same way (`engineWarningPresentation.ts`); the report
+/// terms carry it once instead. A summary written by another build, or by an
+/// adapter that does not append it, is left exactly as stored.
+const UNTRUSTED_EVIDENCE_CAVEAT: &str = " Raw target text is retained only as untrusted evidence.";
+
 fn html_evidence_reference(
     reference: &crate::beginner_report::FindingEvidenceReference,
     catalog: HtmlReportCatalog,
@@ -15500,6 +15510,9 @@ fn html_evidence_reference(
     let unavailable = catalog.text("not provided", "未提供");
     let source_rule = reference.source_rule.as_deref().unwrap_or(unavailable);
     let summary = reference.summary.as_deref().unwrap_or(unavailable);
+    let summary = summary
+        .strip_suffix(UNTRUSTED_EVIDENCE_CAVEAT)
+        .unwrap_or(summary);
     let kind = reference
         .kind
         .as_ref()
@@ -16632,6 +16645,14 @@ fn html_report_bytes(
         1 => mapping_identities.pop(),
         _ => None,
     };
+    let evidence_is_untrusted_text = report.findings.iter().any(|finding| {
+        finding.evidence_references.iter().any(|reference| {
+            reference
+                .summary
+                .as_deref()
+                .is_some_and(|summary| summary.ends_with(UNTRUSTED_EVIDENCE_CAVEAT))
+        })
+    });
 
     let mut findings = String::new();
     let mut index_rows = String::new();
@@ -18004,9 +18025,23 @@ fn html_report_bytes(
             )
         })
         .unwrap_or_default();
+    // Said once, and only where it is true. Every evidence summary this build
+    // writes ended with it, so fifty-one records carried the same statement
+    // about how the product keeps target text.
+    let untrusted_evidence_terms = match evidence_is_untrusted_text {
+        true => format!(
+            "{}{}",
+            catalog.text(
+                "Target text quoted in an evidence summary is retained as untrusted input and is not interpreted by this report.",
+                "證據摘要引用的目標文字，是以不受信任的輸入形式保留，本報告不會加以解讀。",
+            ),
+            catalog.text(" ", ""),
+        ),
+        false => String::new(),
+    };
     document.push_str(&format!(
         concat!(
-            "<footer><h2>{}</h2><p>{}</p><p>{}{}{}{}{}{}{}{}{}</p></footer>",
+            "<footer><h2>{}</h2><p>{}</p><p>{}{}{}{}{}{}{}{}{}{}</p></footer>",
             "</body></html>"
         ),
         catalog.text("Report terms", "報告條款"),
@@ -18041,6 +18076,7 @@ fn html_report_bytes(
             "不包含原始證據，也不包含指令碼、表單、遠端資源、掃描器訊息或可執行的修復動作。",
         ),
         catalog.text(" ", ""),
+        untrusted_evidence_terms,
         // Said because it is now true of the printed copy. A closed detail
         // prints nothing, so a reader holding paper should be told what the
         // file they printed from still has.
