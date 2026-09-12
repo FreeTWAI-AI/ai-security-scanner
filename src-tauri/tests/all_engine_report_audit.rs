@@ -2807,6 +2807,43 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert_eq!(html.matches(footnote).count(), 1);
             }
 
+            // The cover's last tile and the sentence under it count the same
+            // list. The tile said when part of that list is a check that
+            // returned no verdict; the sentence called all of it coverage
+            // gaps, and then said those areas were not tested.
+            for html in [&ordered_html, &zh_html] {
+                let row = &html[html.find("kpi-row").expect("the cover tiles")..];
+                let row = &row[..row.find("</section>").expect("the tiles close")];
+                let tile = row
+                    .rfind("class=\"kpi__label\">")
+                    .map(|at| &row[at + "class=\"kpi__label\">".len()..])
+                    .expect("a coverage tile");
+                let tile = &tile[..tile.find("</span>").expect("a tile label closes")];
+                assert!(
+                    tile.contains("verdict") || tile.contains("判定"),
+                    "the audit lost the no-verdict tile: {tile}"
+                );
+                let summary = &html[html
+                    .find("executive-summary\">")
+                    .expect("the executive summary")..];
+                let summary = &summary[..summary.find("</section>").expect("the summary closes")];
+                let named = match tile.chars().next().expect("a tile is labelled") {
+                    first if first.is_ascii_uppercase() => {
+                        format!("{}{}", first.to_ascii_lowercase(), &tile[1..])
+                    }
+                    _ => tile.to_owned(),
+                };
+                assert!(
+                    summary.contains(&named),
+                    "the summary calls the tile's list something else: {named}"
+                );
+                assert!(
+                    !summary.contains("Those areas were not tested")
+                        && !summary.contains("這些範圍未經測試"),
+                    "the summary calls a check that returned no verdict untested"
+                );
+            }
+
             // Cloudsplaining keys a policy finding on the action it found, so
             // sixteen of the eighteen policy records printed that one string
             // under two labels. Both rows stay where the list says more, or

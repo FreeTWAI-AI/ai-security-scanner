@@ -14095,6 +14095,29 @@ fn html_mapping_identity(
                 .to_owned()),
     )
 }
+/// Names the list the cover's last tile counts, the way that tile labels it.
+///
+/// A no-verdict check ran; it just did not return a pass or a fail. Called a
+/// coverage gap it reads as untested, which is the one thing it is not.
+fn named_coverage_items(gaps: usize, no_verdict: usize, catalog: HtmlReportCatalog) -> String {
+    let counted = catalog.format_number(gaps);
+    let only_no_verdict = no_verdict > 0 && no_verdict == gaps;
+    match catalog.locale {
+        crate::export::ReportLocale::ZhHant if only_no_verdict => {
+            format!("{counted} 項未回傳判定的檢查")
+        }
+        crate::export::ReportLocale::ZhHant if no_verdict > 0 => {
+            format!("{counted} 項涵蓋缺口與未回傳判定的檢查")
+        }
+        crate::export::ReportLocale::ZhHant => format!("{counted} 項覆蓋缺口"),
+        _ if only_no_verdict && gaps == 1 => "1 check without a verdict".to_owned(),
+        _ if only_no_verdict => format!("{counted} checks without verdicts"),
+        _ if no_verdict > 0 => format!("{counted} coverage gaps and checks without verdicts"),
+        _ if gaps == 1 => "1 coverage gap".to_owned(),
+        _ => format!("{counted} coverage gaps"),
+    }
+}
+
 /// The four sentences a reader who reads nothing else should get.
 ///
 /// Deliberately composed from counts this report already establishes rather
@@ -14164,24 +14187,38 @@ fn html_executive_summary(
     });
 
     let untested = counts.failed + counts.timed_out + counts.not_tested;
-    let not_covered = match (catalog.locale, untested, report.coverage_gaps.len()) {
+    // The cover tile over this sentence counts the same list and, where any
+    // of it is a check that ran and returned no verdict, says so in its label.
+    // The sentence called all of them coverage gaps and then said the areas
+    // were not tested -- which is the one thing a no-verdict check is not.
+    let gaps = report.coverage_gaps.len();
+    let named_gaps = named_coverage_items(gaps, counts.manual_review, catalog);
+    let not_covered = match (catalog.locale, untested, gaps) {
         (_, 0, 0) => None,
-        (crate::export::ReportLocale::ZhHant, checks, gaps) => Some(format!(
-            "有 {} 項檢查沒有完成，另有 {} 項覆蓋缺口——這些範圍未經測試，不能視為安全。",
+        (crate::export::ReportLocale::ZhHant, checks, _) if counts.manual_review > 0 => {
+            Some(format!(
+                "有 {} 項檢查沒有完成，另有 {named_gaps}——這些都沒有得到測試結果，不能視為安全。",
+                catalog.format_number(checks),
+            ))
+        }
+        (crate::export::ReportLocale::ZhHant, checks, _) => Some(format!(
+            "有 {} 項檢查沒有完成，另有 {named_gaps}——這些範圍未經測試，不能視為安全。",
             catalog.format_number(checks),
-            catalog.format_number(gaps),
         )),
-        (_, checks, gaps) => Some(format!(
-            "{} did not complete and {} remain. Those areas were not tested and cannot be read as clear.",
+        (_, checks, _) if counts.manual_review > 0 => Some(format!(
+            "{} did not complete and {named_gaps} remain. None of that reached a tested result, so none of it can be read as clear.",
             if checks == 1 {
                 "1 check".to_owned()
             } else {
                 format!("{} checks", catalog.format_number(checks))
             },
-            if gaps == 1 {
-                "1 coverage gap".to_owned()
+        )),
+        (_, checks, _) => Some(format!(
+            "{} did not complete and {named_gaps} remain. Those areas were not tested and cannot be read as clear.",
+            if checks == 1 {
+                "1 check".to_owned()
             } else {
-                format!("{} coverage gaps", catalog.format_number(gaps))
+                format!("{} checks", catalog.format_number(checks))
             },
         )),
     };
@@ -32914,6 +32951,43 @@ mod tests {
             HtmlReportCatalog::new(crate::export::ReportLocale::En),
         );
         assert!(unknown.contains("<dt>Redacted</dt><dd>not provided</dd>"));
+    }
+
+    /// The cover's last tile and the sentence under it count the same list.
+    /// The tile already said when part of that list is a check that returned
+    /// no verdict; the sentence called the whole of it coverage gaps, and then
+    /// said those areas were not tested -- which a no-verdict check was.
+    #[test]
+    fn the_summary_names_the_coverage_list_the_way_the_tile_over_it_does() {
+        let en = HtmlReportCatalog::new(crate::export::ReportLocale::En);
+        let zh = HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant);
+
+        // Nothing ran without a verdict: unchanged.
+        assert_eq!(named_coverage_items(10, 0, en), "10 coverage gaps");
+        assert_eq!(named_coverage_items(1, 0, en), "1 coverage gap");
+        assert_eq!(named_coverage_items(10, 0, zh), "10 項覆蓋缺口");
+
+        // Part of the list did: named the way the tile labels it.
+        assert_eq!(
+            named_coverage_items(10, 1, en),
+            "10 coverage gaps and checks without verdicts"
+        );
+        assert_eq!(
+            named_coverage_items(10, 1, zh),
+            "10 項涵蓋缺口與未回傳判定的檢查"
+        );
+
+        // All of it did: nothing here is a coverage gap, so it is not called one.
+        assert_eq!(named_coverage_items(1, 1, en), "1 check without a verdict");
+        assert_eq!(named_coverage_items(3, 3, en), "3 checks without verdicts");
+        assert_eq!(named_coverage_items(3, 3, zh), "3 項未回傳判定的檢查");
+        for named in [
+            named_coverage_items(3, 3, en),
+            named_coverage_items(3, 3, zh),
+        ] {
+            assert!(!named.contains("coverage gap"));
+            assert!(!named.contains("覆蓋缺口"));
+        }
     }
 
     /// Cloudsplaining keys a policy finding on the action it found, so the
