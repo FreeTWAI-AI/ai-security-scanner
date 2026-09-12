@@ -286,6 +286,8 @@ pub fn validate_adapter_output(
                     && details.installed_version.is_none()
                     && details.fixed_version.is_none()
                     && details.aws_iam_policy.is_none()
+                    && details.cwe_ids.is_empty()
+                    && details.cvss.is_empty()
                 {
                     return Err(AppError::Runtime(format!(
                         "finding {} has an empty scanner-provided detail record",
@@ -963,6 +965,8 @@ mod tests {
             installed_version: None,
             fixed_version: None,
             aws_iam_policy: None,
+            cwe_ids: Vec::new(),
+            cvss: Vec::new(),
         });
         let adapter = TestAdapter {
             output: AdapterOutput {
@@ -1022,6 +1026,8 @@ mod tests {
                     complete: true,
                 },
             }),
+            cwe_ids: Vec::new(),
+            cvss: Vec::new(),
         });
         let adapter = CloudsplainingTestAdapter {
             output: AdapterOutput {

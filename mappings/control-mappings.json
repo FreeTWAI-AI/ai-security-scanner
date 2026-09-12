@@ -1,10 +1,10 @@
 {
   "schema_version": "1.1",
-  "mapping_version": "2026-09-11.1",
+  "mapping_version": "2026-09-12.1",
   "provenance": {
-    "reviewed_at": "2026-09-11",
+    "reviewed_at": "2026-09-12",
     "review_process": "source_coordinate_and_rationale_review_v1",
-    "canonical_sha256": "627c398ca7ad69fc43a375723026a64219eda4030a3799aa82a958489822e702"
+    "canonical_sha256": "13bad6391588067335e3225ea3b8ced41cc8d8fe5054f47125e98c8cef4b5afb"
   },
   "relationship": "related",
   "disclaimer": "These evidence-to-control references indicate topical relationships only. They do not establish implementation, effectiveness, certification, or compliance.",
@@ -23,6 +23,26 @@
       "framework": "AIDEFEND",
       "framework_version": "1.20260805",
       "url": "https://github.com/edward-playground/aidefense-framework/blob/e10c1678ee49f03f8fb0c97d446ba3fbc3543655/data/data.json"
+    },
+    {
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "url": "https://owasp.org/Top10/"
+    },
+    {
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "url": "https://genai.owasp.org/llm-top-10/"
+    },
+    {
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "url": "https://www.cisecurity.org/benchmark/kubernetes"
+    },
+    {
+      "framework": "CIS Amazon Web Services Foundations Benchmark",
+      "framework_version": "3.0.0",
+      "url": "https://www.cisecurity.org/benchmark/amazon_web_services"
     }
   ],
   "controls": [
@@ -193,7 +213,7 @@
       "framework_version": "1.20260805",
       "control_id": "AID-H-003.001",
       "title": "Software Dependency & Package Security",
-      "aidefend_applicability": "ai_system"
+      "applicability": "ai_system"
     },
     {
       "key": "aidefend-h-003-005",
@@ -201,7 +221,7 @@
       "framework_version": "1.20260805",
       "control_id": "AID-H-003.005",
       "title": "Infrastructure as Code (IaC) Security Scanning for AI Systems",
-      "aidefend_applicability": "ai_system"
+      "applicability": "ai_system"
     },
     {
       "key": "aidefend-h-003-010",
@@ -209,7 +229,7 @@
       "framework_version": "1.20260805",
       "control_id": "AID-H-003.010",
       "title": "Deployed AI Software Vulnerability Remediation Lifecycle",
-      "aidefend_applicability": "ai_system"
+      "applicability": "ai_system"
     },
     {
       "key": "aidefend-h-025-001",
@@ -217,7 +237,7 @@
       "framework_version": "1.20260805",
       "control_id": "AID-H-025.001",
       "title": "Pre-Execution Static Analysis & Dangerous Construct Blocking",
-      "aidefend_applicability": "ai_system"
+      "applicability": "ai_system"
     },
     {
       "key": "aidefend-h-031-002",
@@ -225,7 +245,7 @@
       "framework_version": "1.20260805",
       "control_id": "AID-H-031.002",
       "title": "Static Admission Gates for AI-Generated Artifacts",
-      "aidefend_applicability": "ai_generated_artifact"
+      "applicability": "ai_generated_artifact"
     },
     {
       "key": "aidefend-i-001-001",
@@ -233,7 +253,150 @@
       "framework_version": "1.20260805",
       "control_id": "AID-I-001.001",
       "title": "Container-Based Isolation",
-      "aidefend_applicability": "ai_system"
+      "applicability": "ai_system"
+    },
+    {
+      "key": "owasp-2021-a01",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A01:2021",
+      "title": "Broken Access Control"
+    },
+    {
+      "key": "owasp-2021-a02",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A02:2021",
+      "title": "Cryptographic Failures"
+    },
+    {
+      "key": "owasp-2021-a03",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A03:2021",
+      "title": "Injection"
+    },
+    {
+      "key": "owasp-2021-a04",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A04:2021",
+      "title": "Insecure Design"
+    },
+    {
+      "key": "owasp-2021-a05",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A05:2021",
+      "title": "Security Misconfiguration"
+    },
+    {
+      "key": "owasp-2021-a06",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A06:2021",
+      "title": "Vulnerable and Outdated Components"
+    },
+    {
+      "key": "owasp-2021-a07",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A07:2021",
+      "title": "Identification and Authentication Failures"
+    },
+    {
+      "key": "owasp-2021-a08",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A08:2021",
+      "title": "Software and Data Integrity Failures"
+    },
+    {
+      "key": "owasp-2021-a09",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A09:2021",
+      "title": "Security Logging and Monitoring Failures"
+    },
+    {
+      "key": "owasp-2021-a10",
+      "framework": "OWASP Top 10",
+      "framework_version": "2021",
+      "control_id": "A10:2021",
+      "title": "Server-Side Request Forgery (SSRF)"
+    },
+    {
+      "key": "owasp-llm-2025-02",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM02:2025",
+      "title": "Sensitive Information Disclosure",
+      "applicability": "ai_system"
+    },
+    {
+      "key": "owasp-llm-2025-03",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM03:2025",
+      "title": "Supply Chain",
+      "applicability": "ai_system"
+    },
+    {
+      "key": "owasp-llm-2025-05",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM05:2025",
+      "title": "Improper Output Handling",
+      "applicability": "ai_system"
+    },
+    {
+      "key": "cis-k8s-4-1-1",
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "control_id": "4.1.1",
+      "title": "Ensure that the kubelet service file permissions are set to 600 or more restrictive"
+    },
+    {
+      "key": "cis-k8s-4-1-9",
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "control_id": "4.1.9",
+      "title": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive"
+    },
+    {
+      "key": "cis-k8s-4-1-10",
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "control_id": "4.1.10",
+      "title": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root"
+    },
+    {
+      "key": "cis-k8s-4-2-1",
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "control_id": "4.2.1",
+      "title": "Ensure that the --anonymous-auth argument is set to false"
+    },
+    {
+      "key": "cis-k8s-4-2-10",
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "control_id": "4.2.10",
+      "title": "Ensure that the --rotate-certificates argument is not set to false"
+    },
+    {
+      "key": "cis-k8s-4-3-1",
+      "framework": "CIS Kubernetes Benchmark",
+      "framework_version": "1.11",
+      "control_id": "4.3.1",
+      "title": "Ensure that the kube-proxy metrics service is bound to localhost"
+    },
+    {
+      "key": "cis-aws-1-16",
+      "framework": "CIS Amazon Web Services Foundations Benchmark",
+      "framework_version": "3.0.0",
+      "control_id": "1.16",
+      "title": "Ensure IAM policies that allow full \"*:*\" administrative privileges are not attached"
     }
   ],
   "entries": [
@@ -241,239 +404,657 @@
       "engine_id": "prowler",
       "match_kind": "exact",
       "source_rule": "iam_customer_attached_policy_no_administrative_privileges",
-      "controls": ["nist-pr-aa-05", "iso-5-18", "iso-8-2"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-18",
+        "iso-8-2",
+        "cis-aws-1-16"
+      ],
       "rationale": "Evidence that an attached identity policy grants unrestricted administrative permissions is related to least privilege, entitlement review, and privileged access safeguards."
     },
     {
       "engine_id": "scoutsuite",
       "match_kind": "exact",
       "source_rule": "s3-bucket-world-policy-star",
-      "controls": ["nist-pr-aa-05", "iso-5-15", "iso-5-23"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-15",
+        "iso-5-23"
+      ],
       "rationale": "Evidence that an object-storage resource permits public access is related to access policy, authorization review, and cloud service protection."
     },
     {
       "engine_id": "scoutsuite",
       "match_kind": "exact",
       "source_rule": "iam-password-policy-no-uppercase-required",
-      "controls": ["nist-pr-aa-01", "iso-5-17"],
+      "controls": [
+        "nist-pr-aa-01",
+        "iso-5-17"
+      ],
       "rationale": "Evidence that the account password policy does not require an uppercase character is related to credential lifecycle management and to safeguarding authentication information."
     },
     {
       "engine_id": "scoutsuite",
       "match_kind": "exact",
       "source_rule": "iam-ec2-role-without-instances",
-      "controls": ["nist-pr-aa-05", "iso-5-18"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-18"
+      ],
       "rationale": "Evidence that a role assumable by the EC2 service is attached to no instance is related to least privilege and entitlement review; an unused entitlement stays usable until it is removed."
     },
     {
       "engine_id": "cloudsplaining",
       "match_kind": "exact",
       "source_rule": "PrivilegeEscalation",
-      "controls": ["nist-pr-aa-05", "iso-5-18", "iso-8-2"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-18",
+        "iso-8-2"
+      ],
       "rationale": "Evidence of an identity privilege-escalation path is related to least privilege, entitlement review, and privileged access safeguards."
     },
     {
       "engine_id": "cloudsplaining",
       "match_kind": "exact",
       "source_rule": "CredentialsExposure",
-      "controls": ["nist-pr-aa-01", "nist-pr-aa-05", "iso-5-17", "iso-8-2"],
+      "controls": [
+        "nist-pr-aa-01",
+        "nist-pr-aa-05",
+        "iso-5-17",
+        "iso-8-2"
+      ],
       "rationale": "Evidence that an identity policy permits actions returning credential material is related to credential lifecycle management, least privilege, authentication information safeguards, and privileged access safeguards."
     },
     {
       "engine_id": "cloudsplaining",
       "match_kind": "exact",
       "source_rule": "DataExfiltration",
-      "controls": ["nist-pr-aa-05", "nist-pr-ds-01", "iso-5-15", "iso-5-18"],
+      "controls": [
+        "nist-pr-aa-05",
+        "nist-pr-ds-01",
+        "iso-5-15",
+        "iso-5-18"
+      ],
       "rationale": "Evidence that an identity policy permits actions that can read stored data out of the account is related to least privilege, protection of data at rest, access policy, and entitlement review."
     },
     {
       "engine_id": "cloudsplaining",
       "match_kind": "exact",
       "source_rule": "ResourceExposure",
-      "controls": ["nist-pr-aa-05", "iso-5-15", "iso-5-18", "iso-5-23"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-15",
+        "iso-5-18",
+        "iso-5-23"
+      ],
       "rationale": "Evidence that an identity policy permits actions that change who can reach a resource is related to least privilege, access policy, entitlement review, and cloud service security responsibilities."
     },
     {
       "engine_id": "cloudsplaining",
       "match_kind": "exact",
       "source_rule": "InfrastructureModification",
-      "controls": ["nist-pr-aa-05", "iso-5-18", "iso-8-2"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-18",
+        "iso-8-2"
+      ],
       "rationale": "Evidence that an identity policy permits actions that alter account infrastructure is related to least privilege, entitlement review, and privileged access safeguards."
     },
     {
       "engine_id": "cloudsplaining",
       "match_kind": "exact",
       "source_rule": "ServiceWildcard",
-      "controls": ["nist-pr-aa-05", "iso-5-18", "iso-8-2"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-5-18",
+        "iso-8-2"
+      ],
       "rationale": "Evidence that an identity policy grants every action in a service is related to least privilege, entitlement review, and privileged access safeguards; a wildcard also covers actions the account has never reviewed."
     },
     {
       "engine_id": "scubagear",
       "match_kind": "exact",
       "source_rule": "MS.AAD.1.1v1",
-      "controls": ["nist-pr-aa-03", "iso-5-17"],
+      "controls": [
+        "nist-pr-aa-03",
+        "iso-5-17"
+      ],
       "rationale": "Evidence that legacy authentication is not blocked is related to enforcing appropriate authentication and protecting authentication information."
     },
     {
       "engine_id": "maester",
       "match_kind": "exact",
       "source_rule": "MT.1001",
-      "controls": ["nist-pr-aa-03", "iso-5-17"],
+      "controls": [
+        "nist-pr-aa-03",
+        "iso-5-17"
+      ],
       "rationale": "Evidence that privileged identities lack phishing-resistant authentication is related to authentication enforcement and authentication information safeguards."
     },
     {
       "engine_id": "nuclei",
       "match_kind": "exact",
       "source_rule": "phpmyadmin-panel",
-      "controls": ["nist-id-ra-01", "iso-8-8"],
+      "controls": [
+        "nist-id-ra-01",
+        "iso-8-8"
+      ],
       "rationale": "Evidence of an exposed database administration interface is related to identifying, validating, recording, and handling technical vulnerabilities."
     },
     {
       "engine_id": "semgrep",
       "match_kind": "exact",
       "source_rule": "ai-security-scanner.python.dynamic-code-execution",
-      "controls": ["nist-pr-ps-06", "iso-8-28", "iso-8-29", "aidefend-h-025-001", "aidefend-h-031-002"],
+      "controls": [
+        "nist-pr-ps-06",
+        "iso-8-28",
+        "iso-8-29",
+        "aidefend-h-025-001",
+        "aidefend-h-031-002",
+        "owasp-llm-2025-05"
+      ],
       "rationale": "Static-analysis evidence of dynamic code execution is related to secure development and pre-execution dangerous-construct checks. AIDEFEND's AI-generated-artifact coordinate applies when the selected code was generated or materially changed by AI."
     },
     {
       "engine_id": "semgrep",
       "match_kind": "exact",
       "source_rule": "ai-security-scanner.python.shell-true",
-      "controls": ["nist-pr-ps-06", "iso-8-28", "iso-8-29", "aidefend-h-025-001", "aidefend-h-031-002"],
+      "controls": [
+        "nist-pr-ps-06",
+        "iso-8-28",
+        "iso-8-29",
+        "aidefend-h-025-001",
+        "aidefend-h-031-002",
+        "owasp-llm-2025-05"
+      ],
       "rationale": "Static-analysis evidence that Python code invokes an operating-system shell is related to secure development and pre-execution dangerous-construct checks. AIDEFEND's AI-generated-artifact coordinate applies when the selected code was generated or materially changed by AI."
     },
     {
       "engine_id": "semgrep",
       "match_kind": "exact",
       "source_rule": "ai-security-scanner.javascript.child-process-exec",
-      "controls": ["nist-pr-ps-06", "iso-8-28", "iso-8-29", "aidefend-h-025-001", "aidefend-h-031-002"],
+      "controls": [
+        "nist-pr-ps-06",
+        "iso-8-28",
+        "iso-8-29",
+        "aidefend-h-025-001",
+        "aidefend-h-031-002",
+        "owasp-llm-2025-05"
+      ],
       "rationale": "Static-analysis evidence that JavaScript or TypeScript code invokes a command through a shell is related to secure development and pre-execution dangerous-construct checks. AIDEFEND's AI-generated-artifact coordinate applies when the selected code was generated or materially changed by AI."
     },
     {
       "engine_id": "semgrep",
       "match_kind": "exact",
       "source_rule": "ai-security-scanner.generic.private-key",
-      "controls": ["nist-pr-aa-01", "iso-5-17", "aidefend-h-031-002"],
+      "controls": [
+        "nist-pr-aa-01",
+        "iso-5-17",
+        "aidefend-h-031-002",
+        "owasp-llm-2025-02"
+      ],
       "rationale": "Static-analysis evidence of private-key material in current project files is related to managing credentials and protecting authentication information. AIDEFEND's static-admission coordinate applies when the selected artifact was generated or materially changed by AI."
     },
     {
       "engine_id": "gitleaks",
       "match_kind": "exact",
       "source_rule": "generic-api-key",
-      "controls": ["nist-pr-aa-01", "iso-5-17", "aidefend-h-031-002"],
+      "controls": [
+        "nist-pr-aa-01",
+        "iso-5-17",
+        "aidefend-h-031-002",
+        "owasp-llm-2025-02"
+      ],
       "rationale": "Evidence of a credential embedded in current project files is related to managing credentials and protecting authentication information. AIDEFEND's static-admission coordinate applies when the selected artifact was generated or materially changed by AI."
     },
     {
       "engine_id": "trufflehog",
       "match_kind": "prefix",
       "source_rule": "trufflehog:",
-      "controls": ["nist-pr-aa-01", "iso-5-17", "aidefend-h-031-002"],
+      "controls": [
+        "nist-pr-aa-01",
+        "iso-5-17",
+        "aidefend-h-031-002",
+        "owasp-llm-2025-02"
+      ],
       "rationale": "Every TruffleHog result is a detected credential, so this reference covers the engine's whole detector surface rather than one detector. Evidence of a credential in source material is related to managing credentials and protecting authentication information. AIDEFEND's static-admission coordinate applies when the selected artifact was generated or materially changed by AI."
     },
     {
       "engine_id": "checkov",
       "match_kind": "exact",
       "source_rule": "CKV_AWS_18",
-      "controls": ["nist-pr-ps-04", "iso-8-15", "aidefend-h-003-005"],
+      "controls": [
+        "nist-pr-ps-04",
+        "iso-8-15",
+        "aidefend-h-003-005"
+      ],
       "rationale": "Infrastructure-as-code evidence that access logging is disabled is related to security-relevant audit records. AIDEFEND's IaC-scanning coordinate applies when the selected configuration provisions an AI system."
     },
     {
       "engine_id": "kics",
       "match_kind": "exact",
       "source_rule": "5fb49a69-8d46-4495-a2f8-9c8c622b2b6e",
-      "controls": ["nist-pr-ds-01", "iso-8-24", "aidefend-h-003-005"],
+      "controls": [
+        "nist-pr-ds-01",
+        "iso-8-24",
+        "aidefend-h-003-005"
+      ],
       "rationale": "Infrastructure-as-code evidence that server-side encryption is absent is related to protecting data at rest and using cryptographic safeguards. AIDEFEND's IaC-scanning coordinate applies when the selected configuration provisions an AI system."
     },
     {
       "engine_id": "trivy",
       "match_kind": "prefix",
       "source_rule": "CVE-",
-      "controls": ["nist-id-ra-01", "iso-8-8", "aidefend-h-003-001", "aidefend-h-003-010"],
+      "controls": [
+        "nist-id-ra-01",
+        "iso-8-8",
+        "aidefend-h-003-001",
+        "aidefend-h-003-010",
+        "owasp-2021-a06",
+        "owasp-llm-2025-03"
+      ],
       "rationale": "Evidence that an installed component is affected by a CVE is related to vulnerability handling. For an AI system, AIDEFEND separates build or deployment admission from the deployed-software remediation lifecycle; this reference does not decide which lifecycle state applies."
     },
     {
       "engine_id": "grype",
       "match_kind": "prefix",
       "source_rule": "CVE-",
-      "controls": ["nist-id-ra-01", "iso-8-8", "aidefend-h-003-001", "aidefend-h-003-010"],
+      "controls": [
+        "nist-id-ra-01",
+        "iso-8-8",
+        "aidefend-h-003-001",
+        "aidefend-h-003-010",
+        "owasp-2021-a06",
+        "owasp-llm-2025-03"
+      ],
       "rationale": "Evidence that an installed component is affected by a CVE is related to vulnerability handling. For an AI system, AIDEFEND separates build or deployment admission from the deployed-software remediation lifecycle; this reference does not decide which lifecycle state applies."
     },
     {
       "engine_id": "kubescape",
       "match_kind": "exact",
       "source_rule": "C-0002",
-      "controls": ["nist-pr-aa-05", "iso-8-2", "aidefend-i-001-001"],
+      "controls": [
+        "nist-pr-aa-05",
+        "iso-8-2",
+        "aidefend-i-001-001"
+      ],
       "rationale": "Evidence that subjects can run commands inside running containers is related to least-privilege authorization, privileged access safeguards, and container isolation. AIDEFEND's container-isolation coordinate applies when the workload is part of an AI system."
     },
     {
       "engine_id": "kubescape",
       "match_kind": "exact",
       "source_rule": "C-0009",
-      "controls": ["nist-pr-ir-04", "iso-8-6", "iso-8-9"],
+      "controls": [
+        "nist-pr-ir-04",
+        "iso-8-6",
+        "iso-8-9"
+      ],
       "rationale": "Evidence that a workload declares no CPU or memory limit is related to maintaining resource capacity for availability, capacity management, and platform configuration management."
     },
     {
       "engine_id": "kubescape",
       "match_kind": "exact",
       "source_rule": "C-0017",
-      "controls": ["nist-pr-ps-01", "iso-8-9", "aidefend-i-001-001"],
+      "controls": [
+        "nist-pr-ps-01",
+        "iso-8-9",
+        "aidefend-i-001-001"
+      ],
       "rationale": "Evidence that a container can write to its own root filesystem is related to platform configuration management and container isolation. AIDEFEND's container-isolation coordinate applies when the workload is part of an AI system."
     },
     {
       "engine_id": "kube-bench",
       "match_kind": "exact",
       "source_rule": "4.1.1",
-      "controls": ["nist-pr-ps-01", "iso-8-2", "iso-8-9"],
+      "controls": [
+        "nist-pr-ps-01",
+        "iso-8-2",
+        "iso-8-9",
+        "cis-k8s-4-1-1"
+      ],
       "rationale": "Evidence that the kubelet service file is writable beyond its owner is related to node configuration management and privileged access safeguards; that file governs a root-level service."
     },
     {
       "engine_id": "kube-bench",
       "match_kind": "exact",
       "source_rule": "4.1.9",
-      "controls": ["nist-pr-ps-01", "iso-8-2", "iso-8-9"],
+      "controls": [
+        "nist-pr-ps-01",
+        "iso-8-2",
+        "iso-8-9",
+        "cis-k8s-4-1-9"
+      ],
       "rationale": "Evidence that the kubelet config.yaml file is readable or writable beyond its owner is related to node configuration management and privileged access safeguards; that file holds the kubelet's security settings."
     },
     {
       "engine_id": "kube-bench",
       "match_kind": "exact",
       "source_rule": "4.1.10",
-      "controls": ["nist-pr-ps-01", "iso-8-2", "iso-8-9"],
+      "controls": [
+        "nist-pr-ps-01",
+        "iso-8-2",
+        "iso-8-9",
+        "cis-k8s-4-1-10"
+      ],
       "rationale": "Evidence that the kubelet config.yaml file is not owned by root is related to node configuration management and privileged access safeguards; a non-root owner can change the kubelet's security settings."
     },
     {
       "engine_id": "kube-bench",
       "match_kind": "exact",
       "source_rule": "4.2.1",
-      "controls": ["nist-pr-aa-03", "iso-5-17"],
+      "controls": [
+        "nist-pr-aa-03",
+        "iso-5-17",
+        "cis-k8s-4-2-1"
+      ],
       "rationale": "Evidence that the kubelet accepts anonymous authentication is related to authentication enforcement and authentication information safeguards. This is the node check the shipped snapshot benchmark runs; the control-plane equivalent is not in scope for this product."
     },
     {
       "engine_id": "kube-bench",
       "match_kind": "exact",
       "source_rule": "4.2.10",
-      "controls": ["nist-pr-aa-01", "iso-5-17", "iso-8-24"],
+      "controls": [
+        "nist-pr-aa-01",
+        "iso-5-17",
+        "iso-8-24",
+        "cis-k8s-4-2-10"
+      ],
       "rationale": "Evidence that kubelet client certificate rotation is turned off is related to credential lifecycle management, authentication information safeguards, and cryptographic safeguards."
     },
     {
       "engine_id": "kube-bench",
       "match_kind": "exact",
       "source_rule": "4.3.1",
-      "controls": ["nist-pr-ir-01", "nist-pr-ps-01", "iso-8-20"],
+      "controls": [
+        "nist-pr-ir-01",
+        "nist-pr-ps-01",
+        "iso-8-20",
+        "cis-k8s-4-3-1"
+      ],
       "rationale": "Evidence that the kube-proxy metrics endpoint is not bound to localhost is related to protecting networks from unauthorized access, node configuration management, and network security."
     },
     {
       "engine_id": "greenbone",
       "match_kind": "prefix",
       "source_rule": "1.3.6.1.4.1.25623.",
-      "controls": ["nist-id-ra-01", "iso-8-8", "aidefend-h-003-010"],
+      "controls": [
+        "nist-id-ra-01",
+        "iso-8-8",
+        "aidefend-h-003-010"
+      ],
       "rationale": "A Greenbone vulnerability-test alarm on an authorized host is evidence related to technical vulnerability handling. For an AI system, AIDEFEND separates build-time dependency admission from the deployed-software remediation lifecycle; this reference points at the deployed lifecycle and does not decide remediation state."
     },
     {
       "engine_id": "greenbone",
       "match_kind": "prefix",
       "source_rule": "CVE-",
-      "controls": ["nist-id-ra-01", "iso-8-8", "aidefend-h-003-010"],
+      "controls": [
+        "nist-id-ra-01",
+        "iso-8-8",
+        "aidefend-h-003-010",
+        "owasp-2021-a06"
+      ],
       "rationale": "A Greenbone vulnerability-test alarm on an authorized host is evidence related to technical vulnerability handling. For an AI system, AIDEFEND separates build-time dependency admission from the deployed-software remediation lifecycle; this reference points at the deployed lifecycle and does not decide remediation state."
+    }
+  ],
+  "cwe_derived_controls": [
+    {
+      "control": "owasp-2021-a01",
+      "cwe_ids": [
+        "CWE-22",
+        "CWE-23",
+        "CWE-35",
+        "CWE-59",
+        "CWE-200",
+        "CWE-201",
+        "CWE-219",
+        "CWE-264",
+        "CWE-275",
+        "CWE-276",
+        "CWE-284",
+        "CWE-285",
+        "CWE-352",
+        "CWE-359",
+        "CWE-377",
+        "CWE-402",
+        "CWE-425",
+        "CWE-441",
+        "CWE-497",
+        "CWE-538",
+        "CWE-540",
+        "CWE-548",
+        "CWE-552",
+        "CWE-566",
+        "CWE-601",
+        "CWE-639",
+        "CWE-651",
+        "CWE-668",
+        "CWE-706",
+        "CWE-862",
+        "CWE-863",
+        "CWE-913",
+        "CWE-922",
+        "CWE-1275"
+      ],
+      "rationale": "OWASP publishes A01:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a02",
+      "cwe_ids": [
+        "CWE-259",
+        "CWE-261",
+        "CWE-296",
+        "CWE-310",
+        "CWE-319",
+        "CWE-321",
+        "CWE-322",
+        "CWE-323",
+        "CWE-324",
+        "CWE-325",
+        "CWE-326",
+        "CWE-327",
+        "CWE-328",
+        "CWE-329",
+        "CWE-330",
+        "CWE-331",
+        "CWE-335",
+        "CWE-336",
+        "CWE-337",
+        "CWE-338",
+        "CWE-340",
+        "CWE-347",
+        "CWE-523",
+        "CWE-720",
+        "CWE-757",
+        "CWE-759",
+        "CWE-760",
+        "CWE-780",
+        "CWE-818",
+        "CWE-916"
+      ],
+      "rationale": "OWASP publishes A02:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a03",
+      "cwe_ids": [
+        "CWE-20",
+        "CWE-74",
+        "CWE-75",
+        "CWE-77",
+        "CWE-78",
+        "CWE-79",
+        "CWE-80",
+        "CWE-83",
+        "CWE-87",
+        "CWE-88",
+        "CWE-89",
+        "CWE-90",
+        "CWE-91",
+        "CWE-93",
+        "CWE-94",
+        "CWE-95",
+        "CWE-96",
+        "CWE-97",
+        "CWE-98",
+        "CWE-99",
+        "CWE-100",
+        "CWE-113",
+        "CWE-116",
+        "CWE-138",
+        "CWE-184",
+        "CWE-470",
+        "CWE-471",
+        "CWE-564",
+        "CWE-610",
+        "CWE-643",
+        "CWE-644",
+        "CWE-652",
+        "CWE-917"
+      ],
+      "rationale": "OWASP publishes A03:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a04",
+      "cwe_ids": [
+        "CWE-73",
+        "CWE-183",
+        "CWE-209",
+        "CWE-213",
+        "CWE-235",
+        "CWE-256",
+        "CWE-257",
+        "CWE-266",
+        "CWE-269",
+        "CWE-280",
+        "CWE-311",
+        "CWE-312",
+        "CWE-313",
+        "CWE-316",
+        "CWE-419",
+        "CWE-430",
+        "CWE-434",
+        "CWE-444",
+        "CWE-451",
+        "CWE-472",
+        "CWE-501",
+        "CWE-522",
+        "CWE-525",
+        "CWE-539",
+        "CWE-579",
+        "CWE-598",
+        "CWE-602",
+        "CWE-642",
+        "CWE-646",
+        "CWE-650",
+        "CWE-653",
+        "CWE-656",
+        "CWE-657",
+        "CWE-799",
+        "CWE-807",
+        "CWE-840",
+        "CWE-841",
+        "CWE-927",
+        "CWE-1021",
+        "CWE-1173"
+      ],
+      "rationale": "OWASP publishes A04:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a05",
+      "cwe_ids": [
+        "CWE-2",
+        "CWE-11",
+        "CWE-13",
+        "CWE-15",
+        "CWE-16",
+        "CWE-260",
+        "CWE-315",
+        "CWE-520",
+        "CWE-526",
+        "CWE-537",
+        "CWE-541",
+        "CWE-547",
+        "CWE-611",
+        "CWE-614",
+        "CWE-756",
+        "CWE-776",
+        "CWE-942",
+        "CWE-1004",
+        "CWE-1032",
+        "CWE-1174"
+      ],
+      "rationale": "OWASP publishes A05:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a06",
+      "cwe_ids": [
+        "CWE-937",
+        "CWE-1035",
+        "CWE-1104"
+      ],
+      "rationale": "OWASP publishes A06:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a07",
+      "cwe_ids": [
+        "CWE-255",
+        "CWE-259",
+        "CWE-287",
+        "CWE-288",
+        "CWE-290",
+        "CWE-294",
+        "CWE-295",
+        "CWE-297",
+        "CWE-300",
+        "CWE-302",
+        "CWE-304",
+        "CWE-306",
+        "CWE-307",
+        "CWE-346",
+        "CWE-384",
+        "CWE-521",
+        "CWE-613",
+        "CWE-620",
+        "CWE-640",
+        "CWE-798",
+        "CWE-940",
+        "CWE-1216"
+      ],
+      "rationale": "OWASP publishes A07:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a08",
+      "cwe_ids": [
+        "CWE-345",
+        "CWE-353",
+        "CWE-426",
+        "CWE-494",
+        "CWE-502",
+        "CWE-565",
+        "CWE-784",
+        "CWE-829",
+        "CWE-830",
+        "CWE-915"
+      ],
+      "rationale": "OWASP publishes A08:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a09",
+      "cwe_ids": [
+        "CWE-117",
+        "CWE-223",
+        "CWE-532",
+        "CWE-778"
+      ],
+      "rationale": "OWASP publishes A09:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
+    },
+    {
+      "control": "owasp-2021-a10",
+      "cwe_ids": [
+        "CWE-918"
+      ],
+      "rationale": "OWASP publishes A10:2021 as this set of CWEs, so a scanner-assigned CWE in the set places the result in the category."
     }
   ]
 }

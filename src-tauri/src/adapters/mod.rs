@@ -9,7 +9,7 @@ mod control_mapping;
 use crate::adapter::{AdapterInput, AdapterOutput, AdapterRegistry, EngineAdapter};
 use crate::domain::{
     AwsIamAttachedTo, AwsIamPolicyFindingDetails, AwsIamPolicySource, Confidence,
-    ConfidenceBasisCode, Evidence, EvidenceKind, Finding, FindingFamily, FindingStatus,
+    ConfidenceBasisCode, CvssScore, Evidence, EvidenceKind, Finding, FindingFamily, FindingStatus,
     InventoryObservation, InventoryObservationKind, ManualReviewControl, RawArtifact,
     ScannerFindingDetails, SecurityTemplateExecution, Severity, SeverityBasisCode,
     UnevaluatedTarget, UnevaluatedTargetCause,
@@ -590,12 +590,14 @@ pub(crate) fn control_mapping_provenance() -> AppResult<crate::domain::ControlMa
 pub(crate) fn validate_current_control_reference(
     reference: &crate::domain::ControlReference,
     evidence_sources: &[(String, String)],
+    evidence_cwe_ids: &[String],
     ai_system_applicable: bool,
     ai_generated_artifact_applicable: bool,
 ) -> AppResult<()> {
     control_mapping::validate_current_reference(
         reference,
         evidence_sources,
+        evidence_cwe_ids,
         ai_system_applicable,
         ai_generated_artifact_applicable,
     )
@@ -1691,6 +1693,168 @@ fn normalize_cve(value: &str) -> Option<String> {
 /// of control characters here, in one place, before it reaches durable
 /// evidence. Callers must still allowlist the source paths: secret values, raw
 /// matches, response bodies, and target-observed values never belong here.
+/// The most CWE identifiers and CVSS scores retained for one result.
+///
+/// Upstream can attach many of each (Trivy publishes a score per scoring
+/// vendor). Both are bounded so a hostile or merely verbose artifact cannot
+/// grow a case file through a field the reader only ever skims.
+const MAX_CWE_IDS: usize = 16;
+const MAX_CVSS_SCORES: usize = 8;
+
+/// Bounded upstream weakness classification for one result.
+///
+/// The identifiers are the scanner's, not this product's. Normalization is
+/// limited to shape -- `cwe-78`, `CWE-78`, and
+/// `CWE-78: Improper Neutralization of Special Elements` all name CWE-78 --
+/// and anything that cannot be read is dropped rather than guessed at.
+#[derive(Debug, Default)]
+struct UpstreamWeakness {
+    cwe_ids: Vec<String>,
+    cvss: Vec<CvssScore>,
+}
+
+impl UpstreamWeakness {
+    fn is_empty(&self) -> bool {
+        self.cwe_ids.is_empty() && self.cvss.is_empty()
+    }
+}
+
+/// Read `CWE-<digits>` out of one scanner value.
+///
+/// Scanners publish the same identifier in at least four shapes: the bare
+/// string, the lowercase `cwe-78` Nuclei uses, the numeric `78` some SARIF
+/// producers emit, and Semgrep's `CWE-78: <title>`. Only the number is the
+/// identifier; the rest is that scanner's presentation.
+fn cwe_identifier(value: &Value) -> Option<String> {
+    let text = match value {
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        _ => return None,
+    };
+    let text = text.trim();
+    let digits = match text.get(..4) {
+        Some(prefix) if prefix.eq_ignore_ascii_case("cwe-") => &text[4..],
+        _ => text,
+    };
+    let digits = digits
+        .split(|character: char| !character.is_ascii_digit())
+        .find(|part| !part.is_empty())?;
+    // A CWE id is a small integer; anything longer is not one, and truncating
+    // it would invent a different weakness.
+    if digits.len() > 7 {
+        return None;
+    }
+    Some(format!("CWE-{}", digits.trim_start_matches('0')))
+}
+
+/// Collect CWE identifiers from a field that may hold one value or a list.
+fn cwe_identifiers(value: Option<&Value>) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut push = |value: &Value| {
+        if ids.len() >= MAX_CWE_IDS {
+            return;
+        }
+        if let Some(id) = cwe_identifier(value)
+            && !ids.contains(&id)
+        {
+            ids.push(id);
+        }
+    };
+    match value {
+        Some(Value::Array(items)) => items.iter().for_each(&mut push),
+        Some(other) => push(other),
+        None => {}
+    }
+    ids
+}
+
+/// A CVSS base score kept as the scanner printed it.
+///
+/// Validated as a number in 0.0-10.0 and otherwise dropped: a score outside
+/// the scale is not a CVSS score, and passing it through would put a number
+/// the reader trusts next to one this product never checked. The digits are
+/// returned unreformatted so `9.8` stays `9.8`.
+fn cvss_base_score(value: Option<&Value>) -> Option<String> {
+    let text = match value? {
+        Value::String(text) => text.trim().to_owned(),
+        Value::Number(number) => number.to_string(),
+        _ => return None,
+    };
+    if text.is_empty() || text.len() > 8 {
+        return None;
+    }
+    let parsed = text.parse::<f64>().ok()?;
+    if !parsed.is_finite() || !(0.0..=10.0).contains(&parsed) {
+        return None;
+    }
+    Some(text)
+}
+
+/// Read the specification version out of a CVSS vector, e.g. `CVSS:3.1/AV:N`.
+///
+/// A vector that names no version is CVSS 2.0, which is the one version whose
+/// vectors carry no prefix.
+fn cvss_version_from_vector(vector: &str) -> String {
+    vector
+        .strip_prefix("CVSS:")
+        .and_then(|rest| rest.split('/').next())
+        .filter(|version| {
+            !version.is_empty()
+                && version.len() <= 4
+                && version
+                    .chars()
+                    .all(|character| character.is_ascii_digit() || character == '.')
+        })
+        .unwrap_or("2.0")
+        .to_owned()
+}
+
+/// Build one score from a vector and/or a base score, dropping the pair when
+/// the scanner supplied neither.
+fn cvss_score(
+    source: &str,
+    vector: Option<String>,
+    base_score: Option<String>,
+) -> Option<CvssScore> {
+    let vector = vector
+        .map(|vector| safe_text(&vector, MAX_SHORT_TEXT))
+        .filter(|vector| !vector.is_empty());
+    let base_score = base_score?;
+    Some(CvssScore {
+        version: vector
+            .as_deref()
+            .map(cvss_version_from_vector)
+            .unwrap_or_else(|| "unspecified".into()),
+        vector,
+        base_score,
+        source: safe_text(source, MAX_SHORT_TEXT),
+    })
+}
+
+/// Attach an upstream weakness classification to a record.
+///
+/// Creates the scanner-detail block when the record has none, so a parser can
+/// report a CWE for a result that carried no description or fix text.
+fn with_weakness(mut record: SourceRecord, weakness: UpstreamWeakness) -> SourceRecord {
+    if weakness.is_empty() {
+        return record;
+    }
+    let details = record
+        .scanner_details
+        .get_or_insert_with(|| ScannerFindingDetails {
+            description: None,
+            remediation: None,
+            installed_version: None,
+            fixed_version: None,
+            aws_iam_policy: None,
+            cwe_ids: Vec::new(),
+            cvss: Vec::new(),
+        });
+    details.cwe_ids = weakness.cwe_ids;
+    details.cvss = weakness.cvss;
+    record
+}
+
 fn with_scanner_details(
     mut record: SourceRecord,
     description: Option<String>,
@@ -1704,6 +1868,8 @@ fn with_scanner_details(
         installed_version: bounded_scanner_detail(installed_version, MAX_SHORT_TEXT),
         fixed_version: bounded_scanner_detail(fixed_version, MAX_SHORT_TEXT),
         aws_iam_policy: None,
+        cwe_ids: Vec::new(),
+        cvss: Vec::new(),
     };
     if details.description.is_some()
         || details.remediation.is_some()
@@ -2693,6 +2859,8 @@ fn with_aws_iam_policy_details(
                 installed_version: None,
                 fixed_version: None,
                 aws_iam_policy: Some(details),
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             });
         }
     }
@@ -3693,23 +3861,38 @@ fn extract_nuclei(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Nuclei
         if let Some(matcher) = string_any(object, &["matcher-name", "matcher_name"]) {
             tags.push(format!("matcher:{}", safe_tag(&matcher)));
         }
-        records.push(with_scanner_details(
-            record_with_derived_confidence!(
-                pointer,
-                rule_id,
-                title,
-                severity,
-                redact_location(&target),
-                string_any(object, &["asset_id"]),
-                derived_confidence(ConfidenceBasisCode::TemplateMatcher),
-                EvidenceKind::ExternalValidation,
-                references_from(value),
-                tags,
+        records.push(with_weakness(
+            with_scanner_details(
+                record_with_derived_confidence!(
+                    pointer,
+                    rule_id,
+                    title,
+                    severity,
+                    redact_location(&target),
+                    string_any(object, &["asset_id"]),
+                    derived_confidence(ConfidenceBasisCode::TemplateMatcher),
+                    EvidenceKind::ExternalValidation,
+                    references_from(value),
+                    tags,
+                ),
+                nested_string(value, &["info", "description"]),
+                nested_string(value, &["info", "remediation"]),
+                None,
+                None,
             ),
-            nested_string(value, &["info", "description"]),
-            nested_string(value, &["info", "remediation"]),
-            None,
-            None,
+            // Nuclei's template classification. It writes CWE ids lowercase
+            // (`cwe-78`) and publishes one unattributed score, which is the
+            // template author's, so the template engine is named as its source.
+            UpstreamWeakness {
+                cwe_ids: cwe_identifiers(value.pointer("/info/classification/cwe-id")),
+                cvss: cvss_score(
+                    "nuclei",
+                    nested_string(value, &["info", "classification", "cvss-metrics"]),
+                    cvss_base_score(value.pointer("/info/classification/cvss-score")),
+                )
+                .into_iter()
+                .collect(),
+            },
         ));
     }
     NucleiExtraction {
@@ -3911,16 +4094,47 @@ fn extract_greenbone(
                 tags,
             )
         };
-        records.push(with_scanner_details(
-            record,
-            // Only these two result-level fields are copied from the product
-            // launcher, which writes them from the pinned feed metadata.
-            // `<description>` is the target-observed result message and must
-            // remain only in the raw artifact.
-            result.summary.clone(),
-            result.solution.clone(),
-            None,
-            None,
+        records.push(with_weakness(
+            with_scanner_details(
+                record,
+                // Only these two result-level fields are copied from the product
+                // launcher, which writes them from the pinned feed metadata.
+                // `<description>` is the target-observed result message and must
+                // remain only in the raw artifact.
+                result.summary.clone(),
+                result.solution.clone(),
+                None,
+                None,
+            ),
+            // GMP defines a result's `<severity>` as its CVSS base score, so it
+            // is republished under the name the reader's other tools use. The
+            // vector lives on the NVT rather than the result, so the version
+            // stays unstated instead of being guessed from the number.
+            //
+            // Only a positive score is one: GMP writes 0.0 for a Log result
+            // that was never scored, and printing "CVSS 0.0" beside it would
+            // read as a scored, harmless vulnerability rather than as an
+            // observation nobody rated.
+            UpstreamWeakness {
+                cwe_ids: Vec::new(),
+                cvss: positive_severity
+                    .then(|| {
+                        cvss_score(
+                            "greenbone",
+                            None,
+                            cvss_base_score(
+                                result
+                                    .severity
+                                    .as_deref()
+                                    .map(|severity| Value::String(severity.to_owned()))
+                                    .as_ref(),
+                            ),
+                        )
+                    })
+                    .flatten()
+                    .into_iter()
+                    .collect(),
+            },
         ));
     }
     if saw_dead_host {
@@ -4002,7 +4216,8 @@ fn extract_semgrep(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<S
             let line = value.pointer("/start/line").and_then(positive_u32_scalar);
             let column = value.pointer("/start/col").and_then(positive_u32_scalar);
             let location = source_coordinate_location(&path, line, column, None);
-            Some(with_scanner_details(
+            Some(with_weakness(
+                with_scanner_details(
                 record_with_confidence_fallback!(
                     pointer,
                     rule_id.clone(),
@@ -4028,6 +4243,14 @@ fn extract_semgrep(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<S
                 nested_string(value, &["extra", "fix"]),
                 None,
                 None,
+                ),
+                // Semgrep's own rule metadata. `cwe` is a string on some rules
+                // and a list on others, and each entry reads
+                // `CWE-78: <weakness title>`.
+                UpstreamWeakness {
+                    cwe_ids: cwe_identifiers(value.pointer("/extra/metadata/cwe")),
+                    cvss: Vec::new(),
+                },
             ))
         })
         .collect()
@@ -4466,28 +4689,36 @@ fn extract_kics(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sour
             .flatten()
             .collect::<Vec<_>>()
             .join(",");
-            records.push(with_scanner_details(
-                record_with_derived_confidence!(
-                    file_pointer,
-                    rule_id.clone(),
-                    title.clone(),
-                    severity.clone(),
-                    source_coordinate_location(
-                        &path,
-                        line,
-                        None,
-                        (!resource.is_empty()).then_some(resource.as_str()),
+            records.push(with_weakness(
+                with_scanner_details(
+                    record_with_derived_confidence!(
+                        file_pointer,
+                        rule_id.clone(),
+                        title.clone(),
+                        severity.clone(),
+                        source_coordinate_location(
+                            &path,
+                            line,
+                            None,
+                            (!resource.is_empty()).then_some(resource.as_str()),
+                        ),
+                        string_any(file_object, &["asset_id"]),
+                        derived_confidence(ConfidenceBasisCode::DeterministicPolicyEvaluation),
+                        EvidenceKind::Configuration,
+                        references_from(query),
+                        vec![],
                     ),
-                    string_any(file_object, &["asset_id"]),
-                    derived_confidence(ConfidenceBasisCode::DeterministicPolicyEvaluation),
-                    EvidenceKind::Configuration,
-                    references_from(query),
-                    vec![],
+                    string_any(query_object, &["description"]),
+                    None,
+                    None,
+                    None,
                 ),
-                string_any(query_object, &["description"]),
-                None,
-                None,
-                None,
+                // Present on queries in newer KICS rule packs and absent on
+                // older ones; an absent field simply yields no classification.
+                UpstreamWeakness {
+                    cwe_ids: cwe_identifiers(query_object.get("cwe")),
+                    cvss: Vec::new(),
+                },
             ));
             if records.len() >= MAX_RECORDS {
                 return records;
@@ -4634,23 +4865,26 @@ fn extract_trivy(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
                     ),
                     _ => unreachable!("closed Trivy result kinds"),
                 };
-                records.push(with_scanner_details(
-                    record_with_derived_confidence!(
-                        format!("/Results/{result_index}/{field}/{item_index}"),
-                        rule_id,
-                        title,
-                        string_any(object, &["Severity"]).unwrap_or_else(|| "unknown".into()),
-                        location,
-                        asset_hint,
-                        derived_confidence(confidence_basis),
-                        kind.clone(),
-                        references_from(item),
-                        tags,
+                records.push(with_weakness(
+                    with_scanner_details(
+                        record_with_derived_confidence!(
+                            format!("/Results/{result_index}/{field}/{item_index}"),
+                            rule_id,
+                            title,
+                            string_any(object, &["Severity"]).unwrap_or_else(|| "unknown".into()),
+                            location,
+                            asset_hint,
+                            derived_confidence(confidence_basis),
+                            kind.clone(),
+                            references_from(item),
+                            tags,
+                        ),
+                        string_any(object, &["Description"]),
+                        None,
+                        string_any(object, &["InstalledVersion"]),
+                        string_any(object, &["FixedVersion"]),
                     ),
-                    string_any(object, &["Description"]),
-                    None,
-                    string_any(object, &["InstalledVersion"]),
-                    string_any(object, &["FixedVersion"]),
+                    trivy_weakness(object),
                 ));
                 if records.len() >= MAX_RECORDS {
                     return records;
@@ -4659,6 +4893,42 @@ fn extract_trivy(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
         }
     }
     records
+}
+
+/// Trivy's own classification for one result.
+///
+/// Trivy publishes a score per scoring vendor under `CVSS`, keyed by that
+/// vendor (`nvd`, `redhat`, `ghsa`), and each key may carry a v2, v3, and v4
+/// pair. Every published score is kept with its vendor attached: which vendor
+/// scored a vulnerability 9.8 and which scored it 5.3 is the reader's call to
+/// make, not this product's.
+fn trivy_weakness(object: &Map<String, Value>) -> UpstreamWeakness {
+    let cwe_ids = cwe_identifiers(object.get("CweIDs").or_else(|| object.get("cweIDs")));
+    let mut cvss = Vec::new();
+    if let Some(sources) = object.get("CVSS").and_then(Value::as_object) {
+        for (vendor, scores) in sources {
+            for (vector_key, score_key) in [
+                ("V4Vector", "V4Score"),
+                ("V3Vector", "V3Score"),
+                ("V2Vector", "V2Score"),
+            ] {
+                if cvss.len() >= MAX_CVSS_SCORES {
+                    break;
+                }
+                if let Some(score) = cvss_score(
+                    vendor,
+                    scores
+                        .get(vector_key)
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    cvss_base_score(scores.get(score_key)),
+                ) {
+                    cvss.push(score);
+                }
+            }
+        }
+    }
+    UpstreamWeakness { cwe_ids, cvss }
 }
 
 fn extract_grype(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<SourceRecord> {
@@ -4701,27 +4971,77 @@ fn extract_grype(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
                 nested_string(value, &["artifact", "name"]).unwrap_or_else(|| "package".into());
             let location = nested_string(value, &["artifact", "locations", "0", "path"])
                 .unwrap_or_else(|| package.clone());
-            Some(with_scanner_details(
-                record_with_derived_confidence!(
-                    pointer,
-                    rule_id.clone(),
-                    format!("Vulnerable package {package} ({rule_id})"),
-                    nested_string(value, &["vulnerability", "severity"])
-                        .unwrap_or_else(|| "unknown".into()),
-                    location,
-                    string_any(object, &["asset_id"]),
-                    derived_confidence(ConfidenceBasisCode::AdvisoryVersionMatch),
-                    EvidenceKind::PackageInventory,
-                    references_from(value),
-                    vec![format!("package:{}", safe_tag(&package))],
+            Some(with_weakness(
+                with_scanner_details(
+                    record_with_derived_confidence!(
+                        pointer,
+                        rule_id.clone(),
+                        format!("Vulnerable package {package} ({rule_id})"),
+                        nested_string(value, &["vulnerability", "severity"])
+                            .unwrap_or_else(|| "unknown".into()),
+                        location,
+                        string_any(object, &["asset_id"]),
+                        derived_confidence(ConfidenceBasisCode::AdvisoryVersionMatch),
+                        EvidenceKind::PackageInventory,
+                        references_from(value),
+                        vec![format!("package:{}", safe_tag(&package))],
+                    ),
+                    nested_string(value, &["vulnerability", "description"]),
+                    None,
+                    nested_string(value, &["artifact", "version"]),
+                    bounded_string_list(value.pointer("/vulnerability/fix/versions"), 16),
                 ),
-                nested_string(value, &["vulnerability", "description"]),
-                None,
-                nested_string(value, &["artifact", "version"]),
-                bounded_string_list(value.pointer("/vulnerability/fix/versions"), 16),
+                grype_weakness(value),
             ))
         })
         .collect()
+}
+
+/// Grype's own classification for one match.
+///
+/// Grype lists each upstream score as its own object carrying the source that
+/// published it, and repeats the same vulnerability's scores from `relatedVulnerabilities`
+/// when the advisory it matched only points at another one. Only the direct
+/// `vulnerability` block is read: a related advisory's score is a score for a
+/// different identifier.
+fn grype_weakness(value: &Value) -> UpstreamWeakness {
+    let mut cvss = Vec::new();
+    if let Some(entries) = value
+        .pointer("/vulnerability/cvss")
+        .and_then(Value::as_array)
+    {
+        for entry in entries.iter().take(MAX_CVSS_SCORES) {
+            let vector = entry
+                .get("vector")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let source = entry
+                .get("source")
+                .and_then(Value::as_str)
+                .filter(|source| !source.is_empty())
+                .unwrap_or("grype");
+            if let Some(mut score) = cvss_score(
+                source,
+                vector,
+                cvss_base_score(entry.pointer("/metrics/baseScore")),
+            ) {
+                // Grype names the version outright; prefer it over the one this
+                // product would infer from the vector prefix.
+                if let Some(version) = entry
+                    .get("version")
+                    .and_then(Value::as_str)
+                    .filter(|version| !version.is_empty() && version.len() <= 8)
+                {
+                    score.version = version.to_owned();
+                }
+                cvss.push(score);
+            }
+        }
+    }
+    UpstreamWeakness {
+        cwe_ids: Vec::new(),
+        cvss,
+    }
 }
 
 /// What Kubescape's `summaryDetails.controls` roll-up knows about a control.
@@ -5180,6 +5500,11 @@ fn merge_finding(
             control_references: mapping_control_references(
                 adapter.id,
                 record.mapping_source_rule.as_deref(),
+                record
+                    .scanner_details
+                    .as_ref()
+                    .map(|details| details.cwe_ids.as_slice())
+                    .unwrap_or_default(),
                 input.ai_system_applicable,
                 input.ai_generated_artifact_applicable,
             ),
@@ -5295,13 +5620,21 @@ fn exact_mapping_source_rule(value: &str) -> Option<String> {
     }
 }
 
+/// Every reviewed control this result relates to, by both routes the catalog
+/// offers.
+///
+/// The rule route is the scanner's own identifier matched against a reviewed
+/// entry. The CWE route is the scanner's own weakness classification matched
+/// against the CWE sets OWASP publishes for each Top 10 category. A result
+/// reached by both keeps one copy of each coordinate.
 fn mapping_control_references(
     engine_id: &str,
     mapping_source_rule: Option<&str>,
+    cwe_ids: &[String],
     ai_system_applicable: bool,
     ai_generated_artifact_applicable: bool,
 ) -> Vec<crate::domain::ControlReference> {
-    mapping_source_rule
+    let mut references = mapping_source_rule
         .map(|source_rule| {
             control_mapping::lookup(
                 engine_id,
@@ -5310,7 +5643,19 @@ fn mapping_control_references(
                 ai_generated_artifact_applicable,
             )
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    for derived in control_mapping::lookup_by_cwe(
+        cwe_ids,
+        ai_system_applicable,
+        ai_generated_artifact_applicable,
+    ) {
+        if !references.iter().any(|existing| {
+            existing.framework == derived.framework && existing.control_id == derived.control_id
+        }) {
+            references.push(derived);
+        }
+    }
+    references
 }
 
 fn resolve_asset(
@@ -6357,6 +6702,7 @@ mod tests {
             !mapping_control_references(
                 "semgrep",
                 valid.mapping_source_rule.as_deref(),
+                &[],
                 false,
                 false,
             )
@@ -6377,6 +6723,7 @@ mod tests {
                 mapping_control_references(
                     "semgrep",
                     invalid.mapping_source_rule.as_deref(),
+                    &[],
                     true,
                     true,
                 )

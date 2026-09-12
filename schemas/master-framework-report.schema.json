@@ -47,10 +47,10 @@
       "items": { "$ref": "#/$defs/observationProvenance" }
     },
     "frameworks": {
-      "$comment": "The three reference blocks are the shape of this optional export, not prerequisites for a scan or beginner report. A block can carry zero relationships or an unknown state.",
+      "$comment": "The seven reference blocks are the shape of this optional export, not prerequisites for a scan or beginner report. A block can carry zero relationships or an unknown state.",
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 7,
+      "maxItems": 7,
       "prefixItems": [
         {
           "allOf": [
@@ -84,6 +84,54 @@
               "properties": {
                 "framework": { "const": "AIDEFEND" },
                 "expected_version": { "const": "1.20260805" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/framework" },
+            {
+              "type": "object",
+              "properties": {
+                "framework": { "const": "OWASP Top 10" },
+                "expected_version": { "const": "2021" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/framework" },
+            {
+              "type": "object",
+              "properties": {
+                "framework": { "const": "OWASP Top 10 for LLM Applications" },
+                "expected_version": { "const": "2025" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/framework" },
+            {
+              "type": "object",
+              "properties": {
+                "framework": { "const": "CIS Kubernetes Benchmark" },
+                "expected_version": { "const": "1.11" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/framework" },
+            {
+              "type": "object",
+              "properties": {
+                "framework": { "const": "CIS Amazon Web Services Foundations Benchmark" },
+                "expected_version": { "const": "3.0.0" }
               }
             }
           ]
@@ -191,7 +239,17 @@
       "additionalProperties": false,
       "required": ["framework", "expected_version", "source", "observed_versions", "version_state", "observed_mapping_versions", "evidence_engine_mapping_versions", "mapping_version_state", "exact_match_relationship_count", "mismatch_relationship_count", "unavailable_relationship_count", "state", "relationship_count", "control_count", "finding_count", "explanation", "controls"],
       "properties": {
-        "framework": { "enum": ["NIST CSF", "ISO/IEC 27001", "AIDEFEND"] },
+        "framework": {
+          "enum": [
+            "NIST CSF",
+            "ISO/IEC 27001",
+            "AIDEFEND",
+            "OWASP Top 10",
+            "OWASP Top 10 for LLM Applications",
+            "CIS Kubernetes Benchmark",
+            "CIS Amazon Web Services Foundations Benchmark"
+          ]
+        },
         "expected_version": { "type": "string", "minLength": 1 },
         "source": { "$ref": "#/$defs/frameworkSource" },
         "observed_versions": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },

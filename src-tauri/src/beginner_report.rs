@@ -5494,6 +5494,8 @@ mod tests {
             installed_version: Some("1.0.0".into()),
             fixed_version: Some("1.0.1".into()),
             aws_iam_policy: None,
+            cwe_ids: Vec::new(),
+            cvss: Vec::new(),
         });
         case.findings = vec![low.clone(), high.clone()];
         case.finding_observations = vec![
@@ -5540,6 +5542,8 @@ mod tests {
                 installed_version: Some("1.0.0".into()),
                 fixed_version: Some("1.0.1".into()),
                 aws_iam_policy: None,
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             })
         );
         assert_eq!(evidence.kind, Some(EvidenceKind::Observation));

@@ -17,6 +17,9 @@ const MAX_CONTROLS: usize = 1_024;
 const MAX_ENTRIES: usize = 4_096;
 const MAX_REFERENCES_PER_ENTRY: usize = 8;
 const MAX_LOOKUP_RESULTS: usize = 32;
+/// An OWASP Top 10 category is defined by a few dozen CWEs at most; the widest
+/// published 2021 category names 40.
+const MAX_CWE_IDS_PER_DERIVED_CONTROL: usize = 64;
 const REVIEW_PROCESS_V1: &str = "source_coordinate_and_rationale_review_v1";
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +33,10 @@ struct MappingCatalog {
     sources: Vec<FrameworkSource>,
     controls: Vec<ControlDefinition>,
     entries: Vec<MappingEntry>,
+    /// Controls reached through a scanner's own CWE classification rather than
+    /// through its rule id. Optional so a catalog may carry none.
+    #[serde(default)]
+    cwe_derived_controls: Vec<CweDerivedEntry>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,8 +66,24 @@ struct ControlDefinition {
     framework_version: String,
     control_id: String,
     title: String,
+    /// Withholds this control unless the case declares the named kind of AI
+    /// involvement. Required on an AI-gated framework and rejected elsewhere.
     #[serde(default)]
-    aidefend_applicability: Option<AidefendApplicability>,
+    applicability: Option<AiApplicability>,
+}
+
+/// One OWASP Top 10 category and the CWEs whose membership defines it.
+///
+/// The Top 10 categories are published as CWE sets, so this is a restatement
+/// of that published membership rather than a judgement this product makes.
+/// The derivation runs on the scanner's own CWE assignment: a result the
+/// scanner never classified reaches no category.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CweDerivedEntry {
+    control: String,
+    cwe_ids: Vec<String>,
+    rationale: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,9 +103,17 @@ enum MatchKind {
     Prefix,
 }
 
+/// Frameworks whose coordinates are withheld until the case says the AI
+/// involvement they describe is actually present.
+///
+/// A defensive coordinate for a system that holds no model is not a weaker
+/// claim, it is a claim about something that is not there. Both frameworks
+/// here describe AI systems specifically, so both are gated the same way.
+const AI_GATED_FRAMEWORKS: [&str; 2] = ["AIDEFEND", "OWASP Top 10 for LLM Applications"];
+
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum AidefendApplicability {
+enum AiApplicability {
     AiSystem,
     AiGeneratedArtifact,
 }
@@ -94,6 +125,7 @@ struct ValidatedCatalog {
     relationship: String,
     controls: BTreeMap<String, ControlDefinition>,
     entries: Vec<MappingEntry>,
+    cwe_derived_controls: Vec<CweDerivedEntry>,
 }
 
 static CATALOG: OnceLock<Result<ValidatedCatalog, String>> = OnceLock::new();
@@ -130,6 +162,7 @@ pub(super) fn catalog_provenance() -> AppResult<ControlMappingProvenance> {
 pub(super) fn validate_current_reference(
     reference: &ControlReference,
     evidence_sources: &[(String, String)],
+    evidence_cwe_ids: &[String],
     ai_system_applicable: bool,
     ai_generated_artifact_applicable: bool,
 ) -> AppResult<()> {
@@ -167,16 +200,36 @@ pub(super) fn validate_current_reference(
             reference.framework, reference.control_id
         )));
     }
-    let applicable = match control.aidefend_applicability {
-        Some(AidefendApplicability::AiSystem) => ai_system_applicable,
-        Some(AidefendApplicability::AiGeneratedArtifact) => ai_generated_artifact_applicable,
-        None => control.framework != "AIDEFEND",
-    };
-    if !applicable {
+    if !control_is_applicable(
+        control,
+        ai_system_applicable,
+        ai_generated_artifact_applicable,
+    ) {
         return Err(AppError::InvalidRequest(format!(
-            "framework reference {} {} does not match its exact current-catalog AIDEFEND applicability condition",
+            "framework reference {} {} does not match its exact current-catalog AI applicability condition",
             reference.framework, reference.control_id
         )));
+    }
+    // A relationship reached through the scanner's CWE classification is proved
+    // against the derived section instead: it was never claimed to come from a
+    // rule entry, and requiring one would reject the coordinate it does have a
+    // reviewed basis for.
+    if let Some(derived) = catalog
+        .cwe_derived_controls
+        .iter()
+        .find(|derived| derived.control == *control_key)
+        && derived.rationale == reference.rationale
+    {
+        if !evidence_cwe_ids
+            .iter()
+            .any(|cwe| derived.cwe_ids.contains(cwe))
+        {
+            return Err(AppError::InvalidRequest(format!(
+                "framework reference {} {} was derived from a CWE its evidence does not carry",
+                reference.framework, reference.control_id
+            )));
+        }
+        return Ok(());
     }
     if evidence_sources.is_empty()
         || evidence_sources.iter().any(|(engine_id, source_rule)| {
@@ -226,17 +279,12 @@ pub(super) fn lookup(
             let Some(control) = catalog.controls.get(key) else {
                 continue;
             };
-            if control.framework == "AIDEFEND" {
-                let applicable = match control.aidefend_applicability {
-                    Some(AidefendApplicability::AiSystem) => ai_system_applicable,
-                    Some(AidefendApplicability::AiGeneratedArtifact) => {
-                        ai_generated_artifact_applicable
-                    }
-                    None => false,
-                };
-                if !applicable {
-                    continue;
-                }
+            if !control_is_applicable(
+                control,
+                ai_system_applicable,
+                ai_generated_artifact_applicable,
+            ) {
+                continue;
             }
             let identity = (
                 control.framework.clone(),
@@ -261,6 +309,76 @@ pub(super) fn lookup(
                 break;
             }
         }
+        if references.len() >= MAX_LOOKUP_RESULTS {
+            break;
+        }
+    }
+    references.into_values().collect()
+}
+
+/// Whether a control's AI gate is satisfied by what this case declared.
+///
+/// A control outside an AI-gated framework declares no applicability and is
+/// always in scope; validation guarantees the two agree.
+fn control_is_applicable(
+    control: &ControlDefinition,
+    ai_system_applicable: bool,
+    ai_generated_artifact_applicable: bool,
+) -> bool {
+    match control.applicability {
+        Some(AiApplicability::AiSystem) => ai_system_applicable,
+        Some(AiApplicability::AiGeneratedArtifact) => ai_generated_artifact_applicable,
+        None => !AI_GATED_FRAMEWORKS.contains(&control.framework.as_str()),
+    }
+}
+
+/// Controls reached through the CWE identifiers a scanner assigned to a result.
+///
+/// This is the OWASP Top 10 path. A Top 10 category is published as a set of
+/// CWEs, so membership is looked up rather than judged: the reader can check
+/// any coordinate here against the published set. A result whose scanner
+/// assigned no CWE reaches no category, which is why the trailing categories
+/// whose CWEs no scanner emits stay empty rather than being back-filled from
+/// something else.
+pub(super) fn lookup_by_cwe(
+    cwe_ids: &[String],
+    ai_system_applicable: bool,
+    ai_generated_artifact_applicable: bool,
+) -> Vec<ControlReference> {
+    if cwe_ids.is_empty() {
+        return Vec::new();
+    }
+    let Ok(catalog) = catalog() else {
+        return Vec::new();
+    };
+    let mut references = BTreeMap::new();
+    for derived in &catalog.cwe_derived_controls {
+        if !derived.cwe_ids.iter().any(|cwe| cwe_ids.contains(cwe)) {
+            continue;
+        }
+        let Some(control) = catalog.controls.get(&derived.control) else {
+            continue;
+        };
+        if !control_is_applicable(
+            control,
+            ai_system_applicable,
+            ai_generated_artifact_applicable,
+        ) {
+            continue;
+        }
+        references.insert(
+            control.control_id.clone(),
+            ControlReference {
+                framework: control.framework.clone(),
+                framework_version: control.framework_version.clone(),
+                control_id: control.control_id.clone(),
+                title: control.title.clone(),
+                relationship: catalog.relationship.clone(),
+                rationale: derived.rationale.clone(),
+                mapping_version: catalog.mapping_version.clone(),
+                mapping_provenance: Some(catalog.provenance.clone()),
+            },
+        );
         if references.len() >= MAX_LOOKUP_RESULTS {
             break;
         }
@@ -357,15 +475,16 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
         )?;
         validate_text("control id", &control.control_id, 1, 80)?;
         validate_text("control title", &control.title, 1, 160)?;
-        if control.framework == "AIDEFEND" && control.aidefend_applicability.is_none() {
+        let ai_gated = AI_GATED_FRAMEWORKS.contains(&control.framework.as_str());
+        if ai_gated && control.applicability.is_none() {
             return Err(format!(
-                "AIDEFEND control {} has no explicit applicability",
-                control.key
+                "{} control {} has no explicit applicability",
+                control.framework, control.key
             ));
         }
-        if control.framework != "AIDEFEND" && control.aidefend_applicability.is_some() {
+        if !ai_gated && control.applicability.is_some() {
             return Err(format!(
-                "non-AIDEFEND control {} declares AIDEFEND applicability",
+                "control {} declares AI applicability outside an AI-gated framework",
                 control.key
             ));
         }
@@ -463,6 +582,49 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
     }
 
     let mapping_version = parsed.mapping_version;
+    let mut derived_controls = BTreeSet::new();
+    for derived in &parsed.cwe_derived_controls {
+        validate_slug("cwe-derived control key", &derived.control, 80, true)?;
+        if !controls.contains_key(&derived.control) {
+            return Err(format!(
+                "cwe-derived mapping references unknown control {}",
+                derived.control
+            ));
+        }
+        if !derived_controls.insert(derived.control.clone()) {
+            return Err(format!(
+                "duplicate cwe-derived mapping for control {}",
+                derived.control
+            ));
+        }
+        if derived.cwe_ids.is_empty() || derived.cwe_ids.len() > MAX_CWE_IDS_PER_DERIVED_CONTROL {
+            return Err(format!(
+                "cwe-derived mapping for {} must name between 1 and {MAX_CWE_IDS_PER_DERIVED_CONTROL} CWE identifiers",
+                derived.control
+            ));
+        }
+        // Deliberately not a disjointness check across controls. OWASP's own
+        // published sets overlap -- CWE-259 is in both A02 and A07:2021 -- and
+        // a finding that genuinely sits in two categories should say so rather
+        // than have one silently dropped to make the sets tidy.
+        let mut seen_in_control = BTreeSet::new();
+        for cwe in &derived.cwe_ids {
+            if !is_cwe_identifier(cwe) {
+                return Err(format!(
+                    "cwe-derived mapping for {} names {cwe}, which is not a CWE-<digits> identifier",
+                    derived.control
+                ));
+            }
+            if !seen_in_control.insert(cwe.clone()) {
+                return Err(format!(
+                    "cwe-derived mapping for {} repeats {cwe}",
+                    derived.control
+                ));
+            }
+        }
+        validate_text("cwe-derived rationale", &derived.rationale, 20, 512)?;
+    }
+
     Ok(ValidatedCatalog {
         mapping_version: mapping_version.clone(),
         provenance: ControlMappingProvenance {
@@ -474,6 +636,7 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
         relationship: parsed.relationship,
         controls,
         entries: parsed.entries,
+        cwe_derived_controls: parsed.cwe_derived_controls,
     })
 }
 
@@ -576,6 +739,15 @@ fn write_canonical_json(value: &Value, output: &mut Vec<u8>) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+/// Exactly `CWE-` followed by digits. The catalog is hand-written, so a typo
+/// like `CWE 78` or `cwe-78` is caught at load rather than silently matching
+/// nothing at scan time.
+fn is_cwe_identifier(value: &str) -> bool {
+    value
+        .strip_prefix("CWE-")
+        .is_some_and(|digits| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn validate_https_url(value: &str) -> Result<(), String> {
@@ -685,8 +857,8 @@ mod tests {
     fn embedded_catalog_is_bounded_and_only_uses_known_engines() {
         validate_catalog(ENGINES).expect("valid embedded mappings");
         let provenance = catalog_provenance().expect("embedded provenance");
-        assert_eq!(provenance.mapping_version, "2026-09-11.1");
-        assert_eq!(provenance.reviewed_at, "2026-09-11");
+        assert_eq!(provenance.mapping_version, "2026-09-12.1");
+        assert_eq!(provenance.reviewed_at, "2026-09-12");
         assert_eq!(provenance.review_process, REVIEW_PROCESS_V1);
         assert_eq!(provenance.catalog_sha256.len(), 64);
     }
@@ -841,19 +1013,30 @@ mod tests {
             false,
             false,
         );
-        assert_eq!(overprivileged_policy.len(), 3);
+        assert_eq!(overprivileged_policy.len(), 4);
+        assert!(
+            overprivileged_policy
+                .iter()
+                .any(|item| item.control_id == "1.16"
+                    && item.framework == "CIS Amazon Web Services Foundations Benchmark")
+        );
         assert!(overprivileged_policy.iter().all(|item| {
             item.relationship == "related"
-                && item.mapping_version == "2026-09-11.1"
+                && item.mapping_version == "2026-09-12.1"
                 && item.mapping_provenance.as_ref().is_some_and(|provenance| {
                     provenance.catalog_sha256
-                        == "627c398ca7ad69fc43a375723026a64219eda4030a3799aa82a958489822e702"
+                        == "13bad6391588067335e3225ea3b8ced41cc8d8fe5054f47125e98c8cef4b5afb"
                 })
                 && !item.rationale.to_ascii_lowercase().contains("compliant")
         }));
 
         let ordinary_cve = lookup("trivy", "CVE-2026-12345", false, false);
-        assert_eq!(ordinary_cve.len(), 2);
+        assert_eq!(ordinary_cve.len(), 3);
+        assert!(
+            ordinary_cve
+                .iter()
+                .any(|item| item.control_id == "A06:2021")
+        );
         assert!(
             ordinary_cve
                 .iter()
@@ -862,7 +1045,12 @@ mod tests {
         assert!(ordinary_cve.iter().all(|item| item.framework != "AIDEFEND"));
 
         let ai_system_cve = lookup("trivy", "CVE-2026-12345", true, false);
-        assert_eq!(ai_system_cve.len(), 4);
+        assert_eq!(ai_system_cve.len(), 6);
+        assert!(
+            ai_system_cve
+                .iter()
+                .any(|item| item.control_id == "LLM03:2025")
+        );
         assert!(
             ai_system_cve
                 .iter()

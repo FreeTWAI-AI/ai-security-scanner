@@ -1337,7 +1337,13 @@ fn every_detector_places_its_finding_on_its_mapped_control() {
                         .unwrap()
                         .iter()
                         .map(|key| &control_by_key[key.as_str().unwrap()])
-                        .filter(|(framework, _)| framework != "AIDEFEND")
+                        // This case declares no AI system, so the frameworks
+                        // that only describe one are correctly withheld and are
+                        // not part of what every detector must reach here.
+                        .filter(|(framework, _)| {
+                            framework != "AIDEFEND"
+                                && framework != "OWASP Top 10 for LLM Applications"
+                        })
                         .map(|(framework, control_id)| format!("{framework}/{control_id}"))
                         .collect()
             };

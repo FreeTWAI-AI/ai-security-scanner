@@ -650,6 +650,8 @@ mod tests {
                         complete: false,
                     },
                 }),
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             }),
             source_rule: Some("DataExfiltration".into()),
             result_pointer_sha256: Some("def".into()),

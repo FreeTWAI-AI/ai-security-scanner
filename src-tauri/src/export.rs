@@ -3018,6 +3018,8 @@ mod tests {
                     installed_version: None,
                     fixed_version: None,
                     aws_iam_policy: Some(iam.clone()),
+                    cwe_ids: Vec::new(),
+                    cvss: Vec::new(),
                 }),
                 source_rule: Some("DataExfiltration".into()),
                 result_pointer_sha256: Some("b".repeat(64)),
@@ -3726,7 +3728,7 @@ mod tests {
             framework_report["export_kind"],
             "master_framework_relationship_report"
         );
-        assert_eq!(framework_report["frameworks"].as_array().unwrap().len(), 3);
+        assert_eq!(framework_report["frameworks"].as_array().unwrap().len(), 7);
         let beginner_report: Value = serde_json::from_slice(&archive_entry(
             &first,
             "exports/beginner-master-report.json",
@@ -3951,6 +3953,8 @@ mod tests {
                     complete: true,
                 },
             }),
+            cwe_ids: Vec::new(),
+            cvss: Vec::new(),
         });
         assert!(
             validate_evidence_references(&case)
@@ -4783,6 +4787,8 @@ mod tests {
                     installed_version: Some(format!("installed on {PLAN_HOSTNAME}")),
                     fixed_version: Some(format!("fixed for {PLAN_ADDRESS_ONE}")),
                     aws_iam_policy: None,
+                    cwe_ids: Vec::new(),
+                    cvss: Vec::new(),
                 }),
                 source_rule: None,
                 result_pointer_sha256: None,

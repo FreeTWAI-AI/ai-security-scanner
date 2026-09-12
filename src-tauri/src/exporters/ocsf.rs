@@ -680,6 +680,8 @@ mod tests {
                         complete: true,
                     },
                 }),
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             }),
             source_rule: Some("PrivilegeEscalation".into()),
             result_pointer_sha256: Some("def".into()),

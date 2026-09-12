@@ -2694,8 +2694,15 @@ fn versioned_control_references_are_allowlisted_relationships_not_assurance_clai
         );
         assert!(references.iter().all(|reference| {
             reference.relationship == "related"
-                && reference.mapping_version == "2026-09-11.1"
-                && matches!(reference.framework.as_str(), "NIST CSF" | "ISO/IEC 27001")
+                && reference.mapping_version == "2026-09-12.1"
+                && matches!(
+                    reference.framework.as_str(),
+                    "NIST CSF"
+                        | "ISO/IEC 27001"
+                        | "OWASP Top 10"
+                        | "CIS Kubernetes Benchmark"
+                        | "CIS Amazon Web Services Foundations Benchmark"
+                )
         }));
         assert!(
             references

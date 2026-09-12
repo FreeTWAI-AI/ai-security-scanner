@@ -14351,6 +14351,43 @@ fn html_evidence_reference(
                     html_escape(fixed_version),
                 ));
             }
+            if !details.cwe_ids.is_empty() {
+                rows.push_str(&format!(
+                    "<dt>{}</dt><dd>{}</dd>",
+                    catalog.text("Scanner-assigned CWE", "掃描工具標定的 CWE"),
+                    details
+                        .cwe_ids
+                        .iter()
+                        .map(|cwe| format!("<code>{}</code>", html_escape(cwe)))
+                        .collect::<Vec<_>>()
+                        .join(catalog.text(", ", "、")),
+                ));
+            }
+            for score in &details.cvss {
+                // Each score keeps the source that published it. Two engines
+                // scoring the same vulnerability differently is information the
+                // reader needs, not a conflict for this product to resolve.
+                let version = if score.version == "unspecified" {
+                    catalog.text("version not stated", "未載明版本").to_owned()
+                } else {
+                    format!("v{}", html_escape(&score.version))
+                };
+                rows.push_str(&format!(
+                    "<dt>{}</dt><dd><code>{}</code> · {} · {}{}</dd>",
+                    catalog.text("Scanner-reported CVSS", "掃描工具回報的 CVSS"),
+                    html_escape(&score.base_score),
+                    version,
+                    catalog.text("scored by ", "評分來源 "),
+                    html_escape(&score.source),
+                ));
+                if let Some(vector) = &score.vector {
+                    rows.push_str(&format!(
+                        "<dt>{}</dt><dd><code>{}</code></dd>",
+                        catalog.text("CVSS vector", "CVSS 向量"),
+                        html_escape(vector),
+                    ));
+                }
+            }
             if reference.engine_id == "cloudsplaining"
                 && let Some(iam) = &details.aws_iam_policy
             {
@@ -29987,6 +30024,8 @@ mod tests {
                         complete: true,
                     },
                 }),
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             }),
             summary: Some("summary".into()),
             kind: Some(EvidenceKind::SourceCode),
@@ -30207,6 +30246,8 @@ mod tests {
                     installed_version: Some("installed<1.2.3>".into()),
                     fixed_version: Some("1.2.4&later".into()),
                     aws_iam_policy: None,
+                    cwe_ids: Vec::new(),
+                    cvss: Vec::new(),
                 }),
                 source_rule: Some("generic-api-key".into()),
                 result_pointer_sha256: None,
@@ -30261,6 +30302,8 @@ mod tests {
                 installed_version: Some(NEWER_EVIDENCE_SENTINEL.into()),
                 fixed_version: Some(NEWER_EVIDENCE_SENTINEL.into()),
                 aws_iam_policy: None,
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             });
         mutable_canonical.official_references = vec![NEWER_EVIDENCE_SENTINEL.into()];
         case.findings.push(mutable_canonical);
@@ -30802,6 +30845,8 @@ mod tests {
                 installed_version: Some(sentinel.into()),
                 fixed_version: Some(sentinel.into()),
                 aws_iam_policy: None,
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
             }),
             summary: Some(sentinel.into()),
             kind: Some(EvidenceKind::Configuration),
@@ -35860,7 +35905,7 @@ mod tests {
             assert_eq!(framework_export.format.as_deref(), Some("framework_report"));
             let framework: Value =
                 serde_json::from_slice(&fs::read(&framework_destination).unwrap()).unwrap();
-            assert_eq!(framework["frameworks"].as_array().unwrap().len(), 3);
+            assert_eq!(framework["frameworks"].as_array().unwrap().len(), 7);
             assert_eq!(framework["coverage"]["state"], "incomplete_or_unknown");
             assert_eq!(framework["coverage"]["selected_run_checks_complete"], false);
         }

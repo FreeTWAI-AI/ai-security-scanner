@@ -1325,6 +1325,41 @@ pub struct ScannerFindingDetails {
     /// strings remain untrusted evidence and are never executed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aws_iam_policy: Option<AwsIamPolicyFindingDetails>,
+    /// CWE identifiers the scanner assigned to this result, normalized to
+    /// `CWE-<digits>` and deduplicated, in the scanner's own order.
+    ///
+    /// The scanner's classification, not this product's. Kept here rather than
+    /// on the finding because a finding merged from two engines carries each
+    /// engine's classification separately: Trivy and Grype disagreeing about a
+    /// package's weakness class is information, and flattening it to one list
+    /// would silently pick a winner.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cwe_ids: Vec<String>,
+    /// CVSS scores the scanner reported, one per scoring source it published.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cvss: Vec<CvssScore>,
+}
+
+/// One CVSS score exactly as a scanner published it.
+///
+/// The base score stays a string because it is the scanner's own printed
+/// value: parsing it into a float and printing it back is how `9.8` becomes
+/// `9.800000000000001` in a report. Adapters validate that it reads as a
+/// number in 0.0-10.0 and otherwise drop it, so a reader can trust the digits
+/// without this product having reformatted them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CvssScore {
+    /// CVSS specification version the scanner scored against, e.g. `3.1`.
+    pub version: String,
+    /// Full vector string when the scanner published one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector: Option<String>,
+    /// Base score verbatim, e.g. `9.8`.
+    pub base_score: String,
+    /// Who scored it, as the scanner named them, e.g. `nvd` or `redhat`.
+    /// Falls back to the engine's own id when the format publishes only one
+    /// unattributed score.
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

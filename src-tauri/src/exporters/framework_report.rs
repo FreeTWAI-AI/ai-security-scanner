@@ -14,11 +14,21 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const MASTER_FRAMEWORK_REPORT_SCHEMA_VERSION: &str = "1.4.0";
 pub const MASTER_FRAMEWORK_REPORT_NOTICE: &str = "This report groups preliminary scanner observations by related framework coordinate. It is not an audit, certification, attestation, compliance determination, implementation assessment, score, pass, or fail. Missing relationships are unknown whenever coverage is incomplete. The legacy knowledge_date is only a run-level compatibility timestamp; engine, rule, feed, database, and mapping freshness come from their own technical records.";
 
-const FRAMEWORKS: [(&str, &str); 3] = [
+const FRAMEWORKS: [(&str, &str); 7] = [
     ("NIST CSF", "2.0"),
     ("ISO/IEC 27001", "2022"),
     ("AIDEFEND", "1.20260805"),
+    ("OWASP Top 10", "2021"),
+    ("OWASP Top 10 for LLM Applications", "2025"),
+    ("CIS Kubernetes Benchmark", "1.11"),
+    ("CIS Amazon Web Services Foundations Benchmark", "3.0.0"),
 ];
+
+/// Frameworks that describe AI systems specifically, and so are withheld until
+/// the case declares the AI involvement they assume. Kept beside the catalog's
+/// own gate rather than derived from it: this export refuses the coordinate a
+/// second time so a stale frozen finding cannot carry one past the check.
+const AI_GATED_FRAMEWORKS: [&str; 2] = ["AIDEFEND", "OWASP Top 10 for LLM Applications"];
 const MAPPING_REVIEW_PROCESS_V1: &str = "source_coordinate_and_rationale_review_v1";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -228,6 +238,10 @@ struct ValidatedEvidenceBinding {
     engine_run_id: String,
     engine_id: String,
     source_rule: Option<String>,
+    /// The scanner's own CWE classification for this evidence record. It is the
+    /// second thing a relationship can be proved from: an OWASP Top 10
+    /// coordinate is reached through the CWE, not through the rule id.
+    cwe_ids: Vec<String>,
     engine_mapping_version: Option<String>,
     engine_mapping_provenance_state: &'static str,
     engine_mapping_provenance: Option<ControlMappingProvenance>,
@@ -324,12 +338,12 @@ pub fn export_master_framework_report(
                 });
                 continue;
             }
-            if reference.framework == "AIDEFEND"
+            if AI_GATED_FRAMEWORKS.contains(&reference.framework.as_str())
                 && aidefend_applicability != AidefendApplicability::Applicable
             {
                 return Err(AppError::InvalidRequest(format!(
-                    "AIDEFEND reference {} has no explicit applicable AI-system or AI-generated-artifact context",
-                    reference.control_id
+                    "{} reference {} has no explicit applicable AI-system or AI-generated-artifact context",
+                    reference.framework, reference.control_id
                 )));
             }
             findings_with_relationship.insert(finding.id.clone());
@@ -510,6 +524,7 @@ fn validate_observation_evidence(
                 engine_run_id: engine_run.id.clone(),
                 engine_id: engine_run.engine_id.clone(),
                 source_rule: None,
+                cwe_ids: Vec::new(),
                 engine_mapping_version: engine_run.mapping_version.clone(),
                 engine_mapping_provenance_state,
                 engine_mapping_provenance: engine_run.mapping_provenance.clone(),
@@ -619,6 +634,11 @@ fn validate_observation_evidence(
             engine_run_id: engine_run.id.clone(),
             engine_id: engine_run.engine_id.clone(),
             source_rule,
+            cwe_ids: evidence
+                .scanner_details
+                .as_ref()
+                .map(|details| details.cwe_ids.clone())
+                .unwrap_or_default(),
             engine_mapping_version: engine_run.mapping_version.clone(),
             engine_mapping_provenance_state,
             engine_mapping_provenance: engine_run.mapping_provenance.clone(),
@@ -1145,17 +1165,19 @@ fn framework_summary(
             "related_coordinates_observed",
             "One or more preliminary findings carry an evidence-bound relationship to this framework. The relationship is a navigation aid, not a control result.",
         )
-    } else if framework == "AIDEFEND"
+    } else if AI_GATED_FRAMEWORKS.contains(&framework)
         && aidefend_applicability == AidefendApplicability::NotApplicable
     {
         (
             "not_applicable_to_declared_context",
-            "The frozen answers explicitly identify a non-AI assessment and a non-AI-generated artifact, so AIDEFEND coordinates were not inferred.",
+            "The frozen answers explicitly identify a non-AI assessment and a non-AI-generated artifact, so coordinates from frameworks that only describe AI systems were not inferred.",
         )
-    } else if framework == "AIDEFEND" && aidefend_applicability == AidefendApplicability::Unknown {
+    } else if AI_GATED_FRAMEWORKS.contains(&framework)
+        && aidefend_applicability == AidefendApplicability::Unknown
+    {
         (
             "unknown_due_to_unanswered_context",
-            "No AIDEFEND coordinate was inferred because at least one required AI-context answer is legacy or unanswered. This remains unknown, not not-applicable.",
+            "No coordinate from this AI-specific framework was inferred because at least one required AI-context answer is legacy or unanswered. This remains unknown, not not-applicable.",
         )
     } else if coverage.state == "incomplete_or_unknown" {
         (
@@ -1211,6 +1233,34 @@ fn framework_source_attribution(framework: &str) -> FrameworkSourceAttribution {
             license_notice: "Creative Commons Attribution 4.0 International: https://creativecommons.org/licenses/by/4.0/".into(),
             modifications_notice: "ai-security-scanner uses a modified, project-authored six-record metadata selection from AIDEFEND 1.20260805 at pinned commit e10c1678ee49f03f8fb0c97d446ba3fbc3543655.".into(),
             non_endorsement_notice: "This independent integration is not affiliated with, approved, certified, sponsored, or endorsed by AIDEFEND or its owner.".into(),
+        },
+        "OWASP Top 10" => FrameworkSourceAttribution {
+            source_url: "https://owasp.org/Top10/".into(),
+            attribution_notice: "OWASP Top 10:2021, Copyright (c) 2003-2025 The OWASP Foundation, Inc., licensed under CC BY-SA 4.0.".into(),
+            license_notice: "Creative Commons Attribution-ShareAlike 4.0 International: https://creativecommons.org/licenses/by-sa/4.0/".into(),
+            modifications_notice: "Category membership is read from the CWE sets OWASP publishes for each 2021 category; the rationales beside them are project-authored navigation metadata.".into(),
+            non_endorsement_notice: "The OWASP Foundation has not reviewed or endorsed this report or integration.".into(),
+        },
+        "OWASP Top 10 for LLM Applications" => FrameworkSourceAttribution {
+            source_url: "https://genai.owasp.org/llm-top-10/".into(),
+            attribution_notice: "OWASP Top 10 for LLM Applications 2025, OWASP GenAI Security Project, Copyright (c) The OWASP Foundation, Inc., licensed under CC BY-SA 4.0.".into(),
+            license_notice: "Creative Commons Attribution-ShareAlike 4.0 International: https://creativecommons.org/licenses/by-sa/4.0/".into(),
+            modifications_notice: "This report references three of the ten 2025 categories, the only ones the packaged engines produce evidence for; the rationales are project-authored navigation metadata.".into(),
+            non_endorsement_notice: "The OWASP Foundation and the OWASP GenAI Security Project have not reviewed or endorsed this report or integration.".into(),
+        },
+        "CIS Kubernetes Benchmark" => FrameworkSourceAttribution {
+            source_url: "https://www.cisecurity.org/benchmark/kubernetes".into(),
+            attribution_notice: "CIS Kubernetes Benchmark v1.11 recommendation numbers and titles are referenced nominatively; they are the coordinates kube-bench itself reports against.".into(),
+            license_notice: "CIS Benchmark content remains subject to the Center for Internet Security's terms of use; this report is not a copy of the benchmark.".into(),
+            modifications_notice: "Recommendation titles are reproduced as the pinned kube-bench image reports them.".into(),
+            non_endorsement_notice: "The Center for Internet Security has not reviewed or endorsed this report or integration.".into(),
+        },
+        "CIS Amazon Web Services Foundations Benchmark" => FrameworkSourceAttribution {
+            source_url: "https://www.cisecurity.org/benchmark/amazon_web_services".into(),
+            attribution_notice: "CIS Amazon Web Services Foundations Benchmark v3.0.0 recommendation numbers and titles are referenced nominatively.".into(),
+            license_notice: "CIS Benchmark content remains subject to the Center for Internet Security's terms of use; this report is not a copy of the benchmark.".into(),
+            modifications_notice: "The recommendation-to-check relationship is the one Prowler publishes in its own CIS 3.0 compliance file.".into(),
+            non_endorsement_notice: "The Center for Internet Security has not reviewed or endorsed this report or integration.".into(),
         },
         _ => unreachable!("framework source is defined for every fixed report framework"),
     }
@@ -1288,9 +1338,16 @@ fn relationship_from_reference(
                     })
             })
             .collect::<AppResult<Vec<_>>>()?;
+        let evidence_cwe_ids = validated_bindings
+            .iter()
+            .flat_map(|binding| binding.cwe_ids.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
         validate_current_control_reference(
             reference,
             &evidence_sources,
+            &evidence_cwe_ids,
             ai_system_applicable,
             ai_generated_artifact_applicable,
         )?;
@@ -1927,22 +1984,40 @@ mod tests {
         );
     }
 
+    /// The framework blocks that actually carry a control.
+    ///
+    /// Every block is always present -- an empty one is the report saying "no
+    /// related coordinate observed", which is a real answer -- so a test about
+    /// what a relationship looks like walks only the populated blocks, and
+    /// fails outright if the fixture stopped producing any.
+    fn populated(report: &MasterFrameworkReport) -> Vec<&FrameworkSummary> {
+        let blocks = report
+            .frameworks
+            .iter()
+            .filter(|framework| !framework.controls.is_empty())
+            .collect::<Vec<_>>();
+        assert!(
+            !blocks.is_empty(),
+            "the fixture produced no framework block with a control"
+        );
+        blocks
+    }
+
     #[test]
-    fn consolidates_all_three_frameworks_without_claiming_compliance() {
+    fn consolidates_every_reference_framework_without_claiming_compliance() {
         let case = fixture();
         let expected_mapping_version = case.scan_runs[0].engine_runs[0]
             .mapping_version
             .clone()
             .unwrap();
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        assert_eq!(report.frameworks.len(), 3);
+        assert_eq!(report.frameworks.len(), FRAMEWORKS.len());
         assert!(
-            report
-                .frameworks
+            populated(&report)
                 .iter()
                 .all(|framework| framework.control_count == 1)
         );
-        assert!(report.frameworks.iter().all(|framework| {
+        assert!(populated(&report).iter().all(|framework| {
             framework.mapping_version_state == "all_relationships_exact_match"
                 && framework.evidence_engine_mapping_versions == [expected_mapping_version.clone()]
         }));
@@ -2040,7 +2115,7 @@ mod tests {
         case.scan_runs[0].engine_runs.push(second_execution);
 
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(report.frameworks.iter().all(|framework| {
+        assert!(populated(&report).iter().all(|framework| {
             framework.mapping_version_state == "all_relationships_exact_match"
                 && framework.evidence_engine_mapping_versions
                     == [first_provenance.mapping_version.clone()]
@@ -2056,7 +2131,7 @@ mod tests {
             Some(first_provenance.mapping_version.clone());
         case.scan_runs[0].engine_runs[1].mapping_provenance = Some(first_provenance);
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(report.frameworks.iter().all(|framework| {
+        assert!(populated(&report).iter().all(|framework| {
             framework.mapping_version_state == "relationship_provenance_unavailable"
                 && framework.evidence_engine_mapping_versions
                     == [second_provenance.mapping_version.clone()]
@@ -2396,7 +2471,7 @@ mod tests {
             report.observation_provenance[0].evidence_reference_state,
             "validated_from_run_snapshot"
         );
-        for framework in &report.frameworks {
+        for framework in populated(&report) {
             let relationship = &framework.controls[0].relationships[0];
             assert_eq!(relationship.mapping_version_state, "exact_match");
             assert_eq!(relationship.evidence_bindings.len(), 1);
@@ -2441,7 +2516,7 @@ mod tests {
         snapshot.evidence.push(second);
 
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        for framework in &report.frameworks {
+        for framework in populated(&report) {
             let bindings = &framework.controls[0].relationships[0].evidence_bindings;
             assert_eq!(bindings.len(), 2);
             assert_eq!(
@@ -2542,7 +2617,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("exact current-catalog AIDEFEND applicability condition")
+                .contains("exact current-catalog AI applicability condition")
         );
     }
 
@@ -2823,7 +2898,7 @@ mod tests {
         case.finding_observations[0].finding_snapshot = Some(case.findings[0].clone());
 
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(report.frameworks.iter().all(|framework| {
+        assert!(populated(&report).iter().all(|framework| {
             let relationship = &framework.controls[0].relationships[0];
             framework.mapping_version_state == "relationship_provenance_unavailable"
                 && relationship.mapping_version_state == "unavailable"
@@ -2842,7 +2917,7 @@ mod tests {
         }
         case.finding_observations[0].finding_snapshot = Some(case.findings[0].clone());
         let legacy = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(legacy.frameworks.iter().all(|framework| {
+        assert!(populated(&legacy).iter().all(|framework| {
             framework.controls[0].relationships[0].mapping_provenance_state == "unavailable_legacy"
                 && framework.controls[0].relationships[0]
                     .mapping_provenance
@@ -2858,13 +2933,13 @@ mod tests {
         case.finding_observations[0].finding_snapshot = Some(case.findings[0].clone());
         case.scan_runs[0].engine_runs[0].mapping_provenance = None;
         let legacy_engine = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(legacy_engine.frameworks.iter().all(|framework| {
+        assert!(populated(&legacy_engine).iter().all(|framework| {
             framework.mapping_version_state == "relationship_provenance_unavailable"
                 && framework.controls[0].relationships[0].mapping_version_state == "unavailable"
         }));
         case.scan_runs[0].engine_runs[0].mapping_provenance = Some(current.clone());
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(report.frameworks.iter().all(|framework| {
+        assert!(populated(&report).iter().all(|framework| {
             framework.controls[0].relationships[0].mapping_provenance_state
                 == "verified_current_catalog"
         }));
@@ -2900,7 +2975,7 @@ mod tests {
         }
         case.finding_observations[0].finding_snapshot = Some(case.findings[0].clone());
         let report = export_master_framework_report(&case, "run-1").unwrap();
-        assert!(report.frameworks.iter().all(|framework| {
+        assert!(populated(&report).iter().all(|framework| {
             let relationship = &framework.controls[0].relationships[0];
             relationship.mapping_provenance_state == "unverified_historical_catalog"
                 && relationship.mapping_version_state == "unavailable"
