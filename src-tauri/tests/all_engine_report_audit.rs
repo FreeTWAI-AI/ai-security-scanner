@@ -2553,6 +2553,35 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 );
             }
 
+            // The asset column and the index's asset cell are the two narrow
+            // places a full URL is printed, and overflow-wrap was breaking it
+            // mid-label. A reader cannot tell that seam from the name.
+            for html in [&ordered_html, &zh_html] {
+                assert!(
+                    html.contains("https:<wbr>/<wbr>/<wbr>portal.<wbr>example.<wbr>test:<wbr>443"),
+                    "a target identity offers no place to break but the middle of a label"
+                );
+                // Only where the column width is fixed. The tested table is
+                // sized by what is in it, and letting a target wrap there cost
+                // five pages across the four reports.
+                let tested = &html[html.find("<table class=\"tested-table\"").expect("tested")..];
+                let tested = &tested[..tested.find("</table>").expect("tested end")];
+                assert!(
+                    tested.contains("tested-time"),
+                    "the audit lost the tested table"
+                );
+                assert!(
+                    !tested.contains("<wbr>"),
+                    "a content-sized column was given a reason to wrap"
+                );
+                let index = &html[html.find("<table class=\"finding-index\"").expect("index")..];
+                let index = &index[..index.find("</table>").expect("index end")];
+                assert!(
+                    index.contains("<wbr>"),
+                    "the index's fixed-width asset cell still breaks mid-label"
+                );
+            }
+
             // An evidence record answers with what the scanner reported. Two
             // fields answered with the report's own defaults instead:
             // "Redacted: No" on forty-eight of fifty-one records, and

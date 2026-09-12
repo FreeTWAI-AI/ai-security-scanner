@@ -13856,13 +13856,36 @@ fn readable_target_list(
     labels: &BTreeMap<Id, String>,
     catalog: HtmlReportCatalog,
 ) -> String {
+    target_list(asset_ids, labels, catalog, html_escape)
+}
+
+/// The same list, offering a break opportunity inside each identity.
+///
+/// Only for a column whose width is fixed. Where a column is sized by what is
+/// in it, a break opportunity is an invitation to wrap: offering one in the
+/// tested table and the requested-target list let their targets fold onto
+/// second lines and cost five pages across the four reports.
+fn breakable_target_list(
+    asset_ids: &[Id],
+    labels: &BTreeMap<Id, String>,
+    catalog: HtmlReportCatalog,
+) -> String {
+    target_list(asset_ids, labels, catalog, html_escape_breakable_identity)
+}
+
+fn target_list(
+    asset_ids: &[Id],
+    labels: &BTreeMap<Id, String>,
+    catalog: HtmlReportCatalog,
+    escape: fn(&str) -> String,
+) -> String {
     if asset_ids.is_empty() {
         return catalog.text("none retained", "未保留").into();
     }
     asset_ids
         .iter()
         .map(|asset_id| {
-            html_escape(
+            escape(
                 labels
                     .get(asset_id)
                     .map(String::as_str)
@@ -15384,7 +15407,7 @@ fn html_asset_result_section(
                     "<td class=\"asset-result__mix\">{}</td>"
                 ),
                 class_name,
-                html_escape(target_label),
+                html_escape_breakable_identity(target_label),
                 target_kind,
                 html_escape(&status_label),
                 html_asset_severity_strip(&severity_counts, catalog),
@@ -16931,7 +16954,11 @@ fn html_report_bytes(
                 },
             );
         }
-        let targets = readable_target_list(&finding.target_asset_ids, &target_labels, catalog);
+        // The index's asset column is a fixed 9rem, so offering break points
+        // inside it changes where a URL breaks, not how wide anything is. The
+        // tested table and the requested-target list are sized by their
+        // content: breaking there let a target wrap and cost five pages.
+        let targets = breakable_target_list(&finding.target_asset_ids, &target_labels, catalog);
         if finding
             .severity_basis_code
             .is_some_and(|code| code.is_exposure_observation())
@@ -18130,6 +18157,31 @@ fn html_report_bytes(
         ),
     ));
     Ok(document.into_bytes())
+}
+
+/// One target identity, escaped, with a break opportunity at each separator a
+/// reader expects a URL to break on.
+///
+/// The asset column is the narrowest place a full URL is printed, and
+/// `overflow-wrap:anywhere` was breaking it mid-label -- "https://portal.
+/// example.t" over "est:443". A seam there is ambiguous: a reader cannot tell
+/// whether the name really contains what sits at the break. `<wbr>` offers the
+/// separators as the places to break, and the overflow rule stays behind it for
+/// a label that has no separator at all.
+fn html_escape_breakable_identity(value: &str) -> String {
+    const SEPARATORS: [char; 8] = ['/', '.', ':', '@', '?', '&', '=', '_'];
+    let mut escaped = String::with_capacity(value.len());
+    let mut segment_start = 0usize;
+    for (index, character) in value.char_indices() {
+        if SEPARATORS.contains(&character) {
+            let end = index + character.len_utf8();
+            escaped.push_str(&html_escape(&value[segment_start..end]));
+            escaped.push_str("<wbr>");
+            segment_start = end;
+        }
+    }
+    escaped.push_str(&html_escape(&value[segment_start..]));
+    escaped
 }
 
 fn html_escape(value: &str) -> String {
@@ -32630,6 +32682,30 @@ mod tests {
         assert!(!zh_html.contains("<img src="));
         assert!(!zh_html.contains("<script>"));
         assert!(!zh_html.contains("href=\"https://docs.example"));
+    }
+
+    #[test]
+    fn a_target_identity_breaks_on_its_separators_and_nowhere_else() {
+        let broken = html_escape_breakable_identity("https://portal.example.test:443");
+        assert_eq!(
+            broken,
+            "https:<wbr>/<wbr>/<wbr>portal.<wbr>example.<wbr>test:<wbr>443"
+        );
+        // Every break offered is after a separator, so a seam can never land
+        // inside a label where a reader cannot tell it from the name.
+        for piece in broken.split("<wbr>").filter(|piece| !piece.is_empty()) {
+            let last = piece.chars().last().expect("a non-empty piece");
+            assert!(
+                ['/', '.', ':', '@', '?', '&', '=', '_'].contains(&last) || piece == "443",
+                "a break was offered mid-label, after {last:?}"
+            );
+        }
+        // Escaping still happens, and an entity never gets a break inside it.
+        let escaped = html_escape_breakable_identity("a&b?c<d");
+        assert_eq!(escaped, "a&amp;<wbr>b?<wbr>c&lt;d");
+        // A label with no separator keeps its shape; the overflow rule is what
+        // catches that one.
+        assert_eq!(html_escape_breakable_identity("repository"), "repository");
     }
 
     #[test]
