@@ -13955,6 +13955,502 @@ fn html_asset_result_rank(status: HtmlAssetResultStatus) -> u8 {
     }
 }
 
+/// The four sentences a reader who reads nothing else should get.
+///
+/// Deliberately composed from counts this report already establishes rather
+/// than from a judgement: what ran, what it found, what to do first, and what
+/// was not covered. It states the top action by naming the report's own first
+/// next step, so the summary and the plan cannot drift apart.
+fn html_executive_summary(
+    report: &BeginnerMasterReport,
+    counts: &crate::beginner_report::CoverageCounts,
+    problem_count: usize,
+    catalog: HtmlReportCatalog,
+) -> String {
+    let severities = problem_severity_counts(report);
+    let urgent = severities
+        .iter()
+        .filter(|(severity, _)| {
+            matches!(
+                severity,
+                crate::domain::Severity::Critical | crate::domain::Severity::High
+            )
+        })
+        .map(|(_, count)| *count)
+        .sum::<usize>();
+
+    let scanned = match catalog.locale {
+        crate::export::ReportLocale::ZhHant => format!(
+            "本輪對 {} 項資產完成了 {} 項檢查。",
+            catalog.format_number(report.requested.targets.len()),
+            catalog.format_number(counts.tested_complete),
+        ),
+        _ => format!(
+            "This run completed {} checks across {} assets.",
+            catalog.format_number(counts.tested_complete),
+            catalog.format_number(report.requested.targets.len()),
+        ),
+    };
+
+    let found = match (catalog.locale, problem_count, urgent) {
+        (crate::export::ReportLocale::ZhHant, 0, _) => "已完成的檢查沒有回報任何問題。".to_owned(),
+        (crate::export::ReportLocale::ZhHant, total, 0) => format!(
+            "共發現 {} 個問題，其中沒有嚴重或高嚴重程度的項目。",
+            catalog.format_number(total)
+        ),
+        (crate::export::ReportLocale::ZhHant, total, urgent) => format!(
+            "共發現 {} 個問題，其中 {} 個是嚴重或高嚴重程度。",
+            catalog.format_number(total),
+            catalog.format_number(urgent),
+        ),
+        (_, 0, _) => "The checks that completed reported no problems.".to_owned(),
+        (_, total, 0) => format!(
+            "{} problems were found, none of them Critical or High severity.",
+            catalog.format_number(total)
+        ),
+        (_, total, urgent) => format!(
+            "{} problems were found, {} of them Critical or High severity.",
+            catalog.format_number(total),
+            catalog.format_number(urgent),
+        ),
+    };
+
+    let first_action = report.next_steps.first().map(|step| {
+        let action = beginner_step_action(report, step, catalog);
+        match catalog.locale {
+            crate::export::ReportLocale::ZhHant => format!("建議最先處理的是：{action}"),
+            _ => format!("The first thing to do is: {action}"),
+        }
+    });
+
+    let untested = counts.failed + counts.timed_out + counts.not_tested;
+    let not_covered = match (catalog.locale, untested, report.coverage_gaps.len()) {
+        (_, 0, 0) => None,
+        (crate::export::ReportLocale::ZhHant, checks, gaps) => Some(format!(
+            "有 {} 項檢查沒有完成，另有 {} 項覆蓋缺口——這些範圍未經測試，不能視為安全。",
+            catalog.format_number(checks),
+            catalog.format_number(gaps),
+        )),
+        (_, checks, gaps) => Some(format!(
+            "{} did not complete and {} remain. Those areas were not tested and cannot be read as clear.",
+            if checks == 1 {
+                "1 check".to_owned()
+            } else {
+                format!("{} checks", catalog.format_number(checks))
+            },
+            if gaps == 1 {
+                "1 coverage gap".to_owned()
+            } else {
+                format!("{} coverage gaps", catalog.format_number(gaps))
+            },
+        )),
+    };
+
+    let mut sentences = vec![scanned, found];
+    sentences.extend(first_action);
+    sentences.extend(not_covered);
+    format!(
+        "<section class=\"executive-summary\"><h2>{}</h2>{}</section>",
+        catalog.text("In short", "重點摘要"),
+        sentences
+            .iter()
+            .map(|sentence| format!("<p>{}</p>", html_escape(sentence)))
+            .collect::<String>(),
+    )
+}
+
+/// The findings this report presents as problems, by severity, highest first.
+///
+/// Reachability records share the finding pipeline but are inventory, not
+/// weaknesses, so they are excluded here for the same reason they are excluded
+/// from the problem count -- a severity chart that counted them would show
+/// twelve Unknown "problems" that are really open ports nobody rated.
+fn problem_severity_counts(report: &BeginnerMasterReport) -> Vec<(crate::domain::Severity, usize)> {
+    let mut counts = BTreeMap::new();
+    for finding in &report.findings {
+        if finding
+            .severity_basis_code
+            .is_some_and(|code| code.is_exposure_observation())
+            && report.inventory.total > 0
+        {
+            continue;
+        }
+        *counts.entry(finding.severity.clone()).or_insert(0usize) += 1;
+    }
+    let mut ordered = counts.into_iter().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| right.0.cmp(&left.0));
+    ordered
+}
+
+/// CSS class suffix for a severity, so the stylesheet owns the colour rather
+/// than each call site inlining one.
+fn severity_slug(severity: &crate::domain::Severity) -> &'static str {
+    use crate::domain::Severity;
+    match severity {
+        Severity::Critical => "critical",
+        Severity::High => "high",
+        Severity::Medium => "medium",
+        Severity::Low => "low",
+        Severity::Informational => "informational",
+        Severity::Unknown => "unknown",
+    }
+}
+
+/// A proportional bar per severity, widest first.
+///
+/// Bars are `<div>`s with a percentage width rather than a chart image: the
+/// export is a single self-contained file under a `default-src 'none'` policy,
+/// so there is nothing to fetch and nothing to script. The number is always
+/// printed beside the bar, because the bar is the summary and the count is the
+/// fact.
+fn html_severity_profile(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> String {
+    let counts = problem_severity_counts(report);
+    if counts.is_empty() {
+        return String::new();
+    }
+    let largest = counts
+        .iter()
+        .map(|(_, count)| *count)
+        .max()
+        .expect("a non-empty severity profile has a largest count");
+    let mut rows = String::new();
+    for (severity, count) in &counts {
+        // Against the largest bar, not the total: with one Critical among
+        // forty Mediums, a total-relative Critical bar rounds to invisible,
+        // and invisible is the wrong way to draw the one that matters most.
+        let width = (count * 100).div_ceil(largest.max(1));
+        rows.push_str(&format!(
+            concat!(
+                "<div class=\"severity-row\"><span class=\"severity-row__label\">{}</span>",
+                "<span class=\"severity-bar\"><span class=\"severity-bar__fill severity-bar__fill--{}\" ",
+                "style=\"width:{}%\"></span></span>",
+                "<span class=\"severity-row__count\">{}</span></div>"
+            ),
+            html_escape(&catalog.identifier(&enum_key(severity))),
+            severity_slug(severity),
+            width,
+            catalog.format_number(*count),
+        ));
+    }
+    format!(
+        "<section class=\"severity-profile\"><h2>{}</h2><p>{}</p>{rows}</section>",
+        catalog.text("Problems by severity", "問題的嚴重程度分布"),
+        catalog.text(
+            "Severity describes possible impact. It is the scanner's rating where one was given, and this product's stated basis where none was.",
+            "嚴重程度描述可能的影響。掃描工具有給評級時採用其評級，沒有給時則採用本產品載明的推導依據。"
+        ),
+    )
+}
+
+/// One next step's action sentence, composed for the report's language.
+///
+/// A finding-derived step's action is that finding's own recommendation and
+/// needs the same composition the finding itself gets; a gap-derived step
+/// carries no family and is looked up as coverage prose instead; the
+/// unattributed one is composed from its payload, which is the only place the
+/// identifier a beginner must add is spelled out. Shared with the executive
+/// summary so its first action and this list's first entry are one sentence,
+/// not two renderings of one step.
+fn beginner_step_action(
+    report: &BeginnerMasterReport,
+    step: &crate::beginner_report::BeginnerNextStep,
+    catalog: HtmlReportCatalog,
+) -> String {
+    let derived_from = step.finding_id.as_deref().and_then(|finding_id| {
+        report
+            .findings
+            .iter()
+            .find(|finding| finding.finding_id == finding_id)
+    });
+    let action = match catalog.locale {
+        crate::export::ReportLocale::En => derived_from.map_or_else(
+            || step.action.clone(),
+            |finding| {
+                crate::finding_narrative::action_english(
+                    &step.action,
+                    step.family,
+                    beginner_aws_iam_policy(finding),
+                )
+            },
+        ),
+        crate::export::ReportLocale::ZhHant => crate::finding_narrative::action_zh_hant(
+            &step.action,
+            step.recommended_expert_type.as_deref().unwrap_or_default(),
+            step.family,
+            derived_from.and_then(beginner_aws_iam_policy),
+        ),
+    };
+    match (catalog.locale, step.unattributed.as_ref(), derived_from) {
+        (crate::export::ReportLocale::ZhHant, Some(unattributed), _) => {
+            let engine_id = step
+                .reason
+                .split_once(' ')
+                .map(|(engine, _)| engine)
+                .unwrap_or(step.reason.as_str());
+            let (_, _, next_action) = crate::finding_narrative::unattributed_gap_zh_hant(
+                &engine_named(engine_id),
+                unattributed,
+            );
+            next_action
+        }
+        (crate::export::ReportLocale::ZhHant, None, None) => {
+            crate::finding_narrative::coverage_gap_prose_zh_hant(&action).unwrap_or(action)
+        }
+        (crate::export::ReportLocale::En, None, None) => {
+            crate::finding_narrative::coverage_gap_prose_english(&action)
+        }
+        _ => action,
+    }
+}
+
+/// Severity counts for one asset's problems, worst first.
+///
+/// Deduplicated by finding id for the same reason the count beside it is: one
+/// finding naming two assets is one problem on each, not two on either.
+fn asset_severity_counts(
+    report: &BeginnerMasterReport,
+    asset_id: &Id,
+) -> Vec<(crate::domain::Severity, usize)> {
+    let mut seen = BTreeSet::new();
+    let mut counts = BTreeMap::new();
+    for finding in &report.findings {
+        if finding
+            .severity_basis_code
+            .is_some_and(|basis| basis.is_exposure_observation())
+            || !finding.target_asset_ids.contains(asset_id)
+            || !seen.insert(finding.finding_id.as_str())
+        {
+            continue;
+        }
+        *counts.entry(finding.severity.clone()).or_insert(0usize) += 1;
+    }
+    let mut ordered = counts.into_iter().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| right.0.cmp(&left.0));
+    ordered
+}
+
+/// What one asset's problem count is made of, as a single composition bar.
+///
+/// "Problems found: 22" reads the same whether those are twenty-two low
+/// notes or two critical ones, and that difference is the whole decision.
+/// Segments are sized with `flex` rather than a percentage so the smallest
+/// one still has a floor width, and every segment is named in the line below
+/// the bar: the colour is the shortcut, not the only carrier.
+fn html_asset_severity_strip(
+    counts: &[(crate::domain::Severity, usize)],
+    catalog: HtmlReportCatalog,
+) -> String {
+    if counts.is_empty() {
+        return String::new();
+    }
+    let mut segments = String::new();
+    let mut named = Vec::new();
+    for (severity, count) in counts {
+        let name = format!(
+            "{} {}",
+            html_escape(&catalog.identifier(&enum_key(severity))),
+            catalog.format_number(*count),
+        );
+        segments.push_str(&format!(
+            "<span class=\"asset-severity__part severity-bar__fill--{}\" style=\"flex:{count}\" title=\"{name}\"></span>",
+            severity_slug(severity),
+        ));
+        named.push(name);
+    }
+    let names = named.join(" \u{b7} ");
+    format!(
+        "<div class=\"asset-severity\" role=\"img\" aria-label=\"{names}\">{segments}</div>\
+         <p class=\"asset-severity__legend\">{names}</p>",
+    )
+}
+
+/// Which engine reached which asset, as one grid.
+///
+/// This is the section that answers "what was not tested" at a glance. The
+/// same facts are already in the report as prose and collapsed detail, but
+/// spread across dozens of blocks, and a reader checking whether their
+/// database server was covered should not have to open them one at a time.
+/// A blank cell is deliberate and labelled: no check of that engine was
+/// planned for that asset, which is not the same as one that failed.
+fn html_coverage_matrix(
+    report: &BeginnerMasterReport,
+    labels: &BTreeMap<Id, String>,
+    catalog: HtmlReportCatalog,
+) -> String {
+    if report.requested.targets.is_empty() || report.actual.checks.is_empty() {
+        return String::new();
+    }
+    // One column per engine that ran, named by the check id the report already
+    // uses elsewhere so the grid and the run list agree.
+    let mut engines = report
+        .actual
+        .checks
+        .iter()
+        .map(|check| check.check_id.as_str())
+        .collect::<Vec<_>>();
+    engines.sort_unstable();
+    engines.dedup();
+    // A grid wider than this stops being readable and starts being a spreadsheet.
+    const MAX_MATRIX_ENGINES: usize = 24;
+    if engines.len() > MAX_MATRIX_ENGINES {
+        return String::new();
+    }
+
+    let mut header = String::new();
+    for engine in &engines {
+        header.push_str(&format!(
+            "<th scope=\"col\"><span class=\"matrix-engine\">{}</span></th>",
+            html_escape(&catalog.identifier(engine)),
+        ));
+    }
+
+    let mut body = String::new();
+    for target in &report.requested.targets {
+        let label = labels
+            .get(&target.asset_id)
+            .cloned()
+            .unwrap_or_else(|| target.asset_id.clone());
+        let mut cells = String::new();
+        for engine in &engines {
+            let mut status = None;
+            for check in report.actual.checks.iter().filter(|check| {
+                check.check_id == *engine && check.target_asset_ids.contains(&target.asset_id)
+            }) {
+                // Worst outcome wins the cell: an engine that completed one
+                // task and failed another against the same asset has not
+                // covered it, and showing the completed half would say it had.
+                status = Some(match status {
+                    Some(existing) if worse_status(existing, check.status) => existing,
+                    _ => check.status,
+                });
+            }
+            let (slug, mark, text) = matrix_cell_state(status, catalog);
+            // The mark carries the state, the colour repeats it, and the title
+            // spells it out. Colour alone would fail a colourblind reader and
+            // every black-and-white print of this report.
+            cells.push_str(&format!(
+                "<td class=\"matrix-cell matrix-cell--{slug}\" title=\"{}\"><span aria-hidden=\"true\">{}</span><span class=\"visually-hidden\">{}</span></td>",
+                html_escape(text),
+                mark,
+                html_escape(text),
+            ));
+        }
+        body.push_str(&format!(
+            "<tr><th scope=\"row\">{}</th>{cells}</tr>",
+            html_escape(&label),
+        ));
+    }
+
+    format!(
+        concat!(
+            "<section><h2>{}</h2><p>{}</p>",
+            "<div class=\"matrix-scroll\"><table class=\"coverage-matrix\">",
+            "<thead><tr><th scope=\"col\">{}</th>{}</tr></thead>",
+            "<tbody>{}</tbody></table></div>{}</section>"
+        ),
+        catalog.text("What each check reached", "每個檢查涵蓋到的範圍"),
+        catalog.text(
+            "One row per requested asset, one column per check that ran. An empty cell means no check of that kind was planned for that asset, which is not a result.",
+            "每一列是一項要求掃描的資產，每一欄是一項執行過的檢查。空白代表該資產沒有安排這類檢查，而不是檢查結果。"
+        ),
+        catalog.text("Asset", "資產"),
+        header,
+        body,
+        html_matrix_legend(catalog),
+    )
+}
+
+/// The mark, colour class, and spelled-out name for one matrix cell.
+///
+/// Every state gets a distinct shape, not just a distinct colour: the marks
+/// are what survives a monochrome print and a colourblind reader. `None` is an
+/// empty cell rather than a mark, because "no check of this kind was planned
+/// here" is the absence of a result and should not look like one.
+fn matrix_cell_state(
+    status: Option<CoverageDimensionStatus>,
+    catalog: HtmlReportCatalog,
+) -> (&'static str, &'static str, &'static str) {
+    match status {
+        Some(CoverageDimensionStatus::TestedComplete) => {
+            ("complete", "\u{25cf}", catalog.text("Completed", "已完成"))
+        }
+        Some(CoverageDimensionStatus::TestedPartial) => (
+            "partial",
+            "\u{25d0}",
+            catalog.text("Partly completed", "部分完成"),
+        ),
+        Some(CoverageDimensionStatus::TimedOut) => {
+            ("timed-out", "\u{25d1}", catalog.text("Timed out", "逾時"))
+        }
+        Some(CoverageDimensionStatus::Cancelled) => {
+            ("cancelled", "\u{25c7}", catalog.text("Cancelled", "已取消"))
+        }
+        Some(CoverageDimensionStatus::InProgress) => (
+            "in-progress",
+            "\u{25cc}",
+            catalog.text("Still running", "仍在執行"),
+        ),
+        Some(CoverageDimensionStatus::Failed) => {
+            ("failed", "\u{2715}", catalog.text("Failed", "失敗"))
+        }
+        Some(CoverageDimensionStatus::NotTested) => (
+            "not-tested",
+            "\u{25cb}",
+            catalog.text("Not tested", "未測試"),
+        ),
+        None => (
+            "not-planned",
+            "",
+            catalog.text("No check planned", "未安排檢查"),
+        ),
+    }
+}
+
+/// Names every mark the grid above it uses, in the order a reader meets them.
+fn html_matrix_legend(catalog: HtmlReportCatalog) -> String {
+    let states = [
+        Some(CoverageDimensionStatus::TestedComplete),
+        Some(CoverageDimensionStatus::TestedPartial),
+        Some(CoverageDimensionStatus::TimedOut),
+        Some(CoverageDimensionStatus::Cancelled),
+        Some(CoverageDimensionStatus::InProgress),
+        Some(CoverageDimensionStatus::Failed),
+        Some(CoverageDimensionStatus::NotTested),
+        None,
+    ];
+    let items = states
+        .into_iter()
+        .map(|status| {
+            let (slug, mark, text) = matrix_cell_state(status, catalog);
+            format!(
+                "<li><span class=\"matrix-key matrix-cell--{slug}\">{}</span> {}</li>",
+                if mark.is_empty() { "&nbsp;" } else { mark },
+                html_escape(text),
+            )
+        })
+        .collect::<String>();
+    format!("<ul class=\"matrix-legend\">{items}</ul>")
+}
+
+/// Whether the already-recorded status is the worse of the two.
+///
+/// Ordered by how much the reader should distrust the cell, not by the enum's
+/// own order: an untested asset is a bigger hole than a partly tested one.
+fn worse_status(existing: CoverageDimensionStatus, candidate: CoverageDimensionStatus) -> bool {
+    fn rank(status: CoverageDimensionStatus) -> u8 {
+        match status {
+            CoverageDimensionStatus::TestedComplete => 0,
+            CoverageDimensionStatus::TestedPartial => 1,
+            CoverageDimensionStatus::InProgress => 2,
+            CoverageDimensionStatus::TimedOut => 3,
+            CoverageDimensionStatus::Cancelled => 4,
+            CoverageDimensionStatus::Failed => 5,
+            CoverageDimensionStatus::NotTested => 6,
+        }
+    }
+    rank(existing) >= rank(candidate)
+}
+
 fn html_asset_result_section(
     report: &BeginnerMasterReport,
     labels: &BTreeMap<Id, String>,
@@ -13985,18 +14481,11 @@ fn html_asset_result_section(
                     && check.effective_result_kind() == CheckResultKind::SecurityCheck
             })
             .count();
-        let finding_count = report
-            .findings
+        let severity_counts = asset_severity_counts(report, &target.asset_id);
+        let finding_count = severity_counts
             .iter()
-            .filter(|finding| {
-                !finding
-                    .severity_basis_code
-                    .is_some_and(|basis| basis.is_exposure_observation())
-                    && finding.target_asset_ids.contains(&target.asset_id)
-            })
-            .map(|finding| finding.finding_id.as_str())
-            .collect::<BTreeSet<_>>()
-            .len();
+            .map(|(_, count)| count)
+            .sum::<usize>();
         let gaps = report
             .coverage_gaps
             .iter()
@@ -14200,13 +14689,14 @@ fn html_asset_result_section(
                 concat!(
                     "<li class=\"asset-result asset-result--{}\">",
                     "<div class=\"asset-result__identity\"><strong>{}</strong>{}</div>",
-                    "<strong class=\"pill asset-result__status\">{}</strong>",
+                    "<strong class=\"pill asset-result__status\">{}</strong>{}",
                     "<p><strong>{}</strong><br>{}</p></li>"
                 ),
                 class_name,
                 html_escape(target_label),
                 target_kind,
                 html_escape(status_label),
+                html_asset_severity_strip(&severity_counts, catalog),
                 html_escape(&summary),
                 html_escape(&action),
             ),
@@ -15186,62 +15676,33 @@ fn html_report_bytes(
                     .iter()
                     .find(|finding| finding.finding_id == finding_id)
             });
-            // A finding-derived step's action is that finding's own
-            // recommendation, so it needs the same composition the finding
-            // itself gets; a gap-derived step carries no family and keeps its
-            // stored text.
-            let (action, expert) = match catalog.locale {
-                crate::export::ReportLocale::En => (
-                    derived_from.map_or_else(
-                        || step.action.clone(),
-                        |finding| {
-                            crate::finding_narrative::action_english(
-                                &step.action,
-                                step.family,
-                                beginner_aws_iam_policy(finding),
-                            )
-                        },
-                    ),
-                    step.recommended_expert_type.clone(),
-                ),
-                crate::export::ReportLocale::ZhHant => (
-                    crate::finding_narrative::action_zh_hant(
-                        &step.action,
-                        step.recommended_expert_type.as_deref().unwrap_or_default(),
-                        step.family,
-                        derived_from.and_then(beginner_aws_iam_policy),
-                    ),
-                    step.recommended_expert_type.as_ref().map(|expert| {
-                        crate::finding_narrative::expert_type_zh_hant(expert).to_owned()
-                    }),
-                ),
+            let action = beginner_step_action(&report, step, catalog);
+            let expert = match catalog.locale {
+                crate::export::ReportLocale::En => step.recommended_expert_type.clone(),
+                crate::export::ReportLocale::ZhHant => step
+                    .recommended_expert_type
+                    .as_ref()
+                    .map(|expert| crate::finding_narrative::expert_type_zh_hant(expert).to_owned()),
             };
-            // A gap-derived step carries no family, so the branch above leaves
-            // its action alone. The unattributed one is composed from its
-            // payload instead: it is the first thing a beginner reads and the
-            // only place the identifier they must add is spelled out.
-            let (action, reason) = match (catalog.locale, step.unattributed.as_ref(), derived_from)
-            {
+            let reason = match (catalog.locale, step.unattributed.as_ref(), derived_from) {
                 (crate::export::ReportLocale::ZhHant, Some(unattributed), _) => {
                     let engine_id = step
                         .reason
                         .split_once(' ')
                         .map(|(engine, _)| engine)
                         .unwrap_or(step.reason.as_str());
-                    let (_, reason, next_action) =
-                        crate::finding_narrative::unattributed_gap_zh_hant(
-                            &engine_named(engine_id),
-                            unattributed,
-                        );
-                    (next_action, reason)
+                    let (_, reason, _) = crate::finding_narrative::unattributed_gap_zh_hant(
+                        &engine_named(engine_id),
+                        unattributed,
+                    );
+                    reason
                 }
                 // A finding-derived step's reason is the finding's title and its
                 // two ratings. The title is the engine's own words and stays;
                 // the ratings are labelled from the finding the step points at,
                 // the same way the finding's own section labels them, rather
                 // than parsed back out of the stored English.
-                (crate::export::ReportLocale::ZhHant, None, Some(finding)) => (
-                    action,
+                (crate::export::ReportLocale::ZhHant, None, Some(finding)) => {
                     format!(
                         "{} — 嚴重程度：{}；信心程度：{}",
                         finding.title,
@@ -15251,22 +15712,20 @@ fn html_report_bytes(
                             finding.confidence_basis_code,
                             &finding.priority_reasons,
                         ),
-                    ),
-                ),
+                    )
+                }
                 // Every other gap-derived step carries the gap's own two
                 // sentences verbatim, so they are looked up the same way the
                 // coverage row above looks them up. An unrecognized one keeps
                 // its stored English.
-                (crate::export::ReportLocale::ZhHant, None, None) => (
-                    crate::finding_narrative::coverage_gap_prose_zh_hant(&action).unwrap_or(action),
+                (crate::export::ReportLocale::ZhHant, None, None) => {
                     crate::finding_narrative::coverage_gap_prose_zh_hant(&step.reason)
-                        .unwrap_or_else(|| step.reason.clone()),
-                ),
-                (crate::export::ReportLocale::En, None, None) => (
-                    crate::finding_narrative::coverage_gap_prose_english(&action),
-                    crate::finding_narrative::coverage_gap_prose_english(&step.reason),
-                ),
-                _ => (action, step.reason.clone()),
+                        .unwrap_or_else(|| step.reason.clone())
+                }
+                (crate::export::ReportLocale::En, None, None) => {
+                    crate::finding_narrative::coverage_gap_prose_english(&step.reason)
+                }
+                _ => step.reason.clone(),
             };
             // A gap-derived step's stored reason is the coverage row's own
             // sentence, printed one section above this list. Repeating it was
@@ -16196,7 +16655,41 @@ fn html_report_bytes(
         "details.finding-technical{margin-top:1rem;padding-top:0.5rem}",
         "details.finding-technical>summary{cursor:pointer;color:#4b5563}",
         "@media(max-width:760px){body{padding:1rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
-        ".pill{border:1px solid currentColor;border-radius:1rem;padding:.1rem .5rem}</style></head><body>"
+        ".pill{border:1px solid currentColor;border-radius:1rem;padding:.1rem .5rem}",
+        ".executive-summary{border:1px solid #ccd1d1;border-left-width:5px;border-left-color:#17202a;border-radius:.5rem;padding:1rem 1.25rem;margin:1.5rem 0;background:#f8faf8}",
+        ".executive-summary h2{margin-top:0}.executive-summary p{margin:.4rem 0}",
+        ".severity-profile{margin:1.5rem 0}",
+        ".severity-row{display:grid;grid-template-columns:7rem 1fr 3.5rem;gap:.75rem;align-items:center;margin:.3rem 0}",
+        ".severity-row__count{text-align:right;font-variant-numeric:tabular-nums}",
+        ".severity-bar{display:block;background:#eceff1;border-radius:.2rem;height:1.1rem;overflow:hidden}",
+        ".severity-bar__fill{display:block;height:100%;border-radius:.2rem}",
+        ".severity-bar__fill--critical{background:#7a271a}.severity-bar__fill--high{background:#b42318}",
+        ".severity-bar__fill--medium{background:#b54708}.severity-bar__fill--low{background:#7f8c8d}",
+        ".severity-bar__fill--informational{background:#98a2b3}.severity-bar__fill--unknown{background:#475467}",
+        ".matrix-scroll{overflow-x:auto}",
+        ".coverage-matrix{font-size:.85rem}.coverage-matrix th,.coverage-matrix td{padding:.35rem .4rem}",
+        ".coverage-matrix thead th{vertical-align:bottom}",
+        ".matrix-engine{display:inline-block;white-space:nowrap}",
+        ".matrix-cell{text-align:center;white-space:nowrap;font-size:1rem;line-height:1}",
+        ".matrix-cell--complete{background:#e7f4ec;color:#1a7f4b}.matrix-cell--partial{background:#fdf1dc;color:#b54708}",
+        ".matrix-cell--failed{background:#fbe9e7;color:#b42318}.matrix-cell--timed-out{background:#fdf1dc;color:#b54708}",
+        ".matrix-cell--cancelled{background:#eceff1;color:#475467}.matrix-cell--in-progress{background:#eceff1;color:#475467}",
+        ".matrix-cell--not-tested{background:#eceff1;color:#475467}.matrix-cell--not-planned{background:transparent}",
+        ".matrix-legend{list-style:none;padding:0;margin:.6rem 0 0;display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.8rem;color:#475467}",
+        ".matrix-legend li{display:flex;align-items:center;gap:.3rem}",
+        ".matrix-key{display:inline-block;min-width:1.2rem;text-align:center;border:1px solid #d0d5dd;border-radius:.2rem;padding:.05rem .15rem;line-height:1}",
+        ".asset-severity{display:flex;height:.55rem;border-radius:.28rem;overflow:hidden;margin:.35rem 0 .15rem;background:#eceff1}",
+        ".asset-severity__part{display:block;height:100%}",
+        ".asset-severity__legend{margin:0 0 .4rem;font-size:.8rem;color:#475467}",
+        ".visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}",
+        "@media print{body{max-width:none;padding:0;font-size:11pt;color:#000}",
+        "details{display:block}details>summary{display:none}",
+        "section,article,.asset-result,tr{break-inside:avoid}",
+        "h1,h2{break-after:avoid}.matrix-scroll{overflow:visible}",
+        ".severity-bar__fill,.asset-severity__part,.matrix-cell,.matrix-key",
+        "{-webkit-print-color-adjust:exact;print-color-adjust:exact}",
+        ".coverage-matrix th,.coverage-matrix td{border:1px solid #999}",
+        "a{text-decoration:none;color:#000}}</style></head><body>"
     ));
     document.push_str(&format!(
         concat!(
@@ -16234,6 +16727,16 @@ fn html_report_bytes(
         catalog.text("Problems found", "發現的問題"),
         catalog.format_number(problem_count),
     ));
+    // Before the asset list: a reader who stops after one screen should still
+    // have the run's outcome, its shape, and what was left uncovered.
+    document.push_str(&html_executive_summary(
+        &report,
+        report_counts,
+        problem_count,
+        catalog,
+    ));
+    document.push_str(&html_severity_profile(&report, catalog));
+    document.push_str(&html_coverage_matrix(&report, &target_labels, catalog));
     document.push_str(&html_asset_result_section(&report, &target_labels, catalog));
     document.push_str(&typed_inventory_section);
     document.push_str(&format!(

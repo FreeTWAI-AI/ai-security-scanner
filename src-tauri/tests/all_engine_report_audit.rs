@@ -1133,20 +1133,32 @@ fn all_engines_in_one_report<T>(
 /// paragraph early, plus a stray end tag after it. No reader saw an error and
 /// no assertion about the report's words could see it either.
 fn assert_paragraphs_are_well_formed(html: &str, label: &str) {
+    // `<p class="...">` counts too. Counting only the bare tag would let a
+    // styled paragraph carry the next nested heading past this gate.
+    let opens = |html: &str| {
+        html.match_indices("<p")
+            .filter(|(at, _)| matches!(html[at + "<p".len()..].chars().next(), Some('>' | ' ')))
+            .map(|(at, _)| at)
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        html.matches("<p>").count(),
+        opens(html).len(),
         html.matches("</p>").count(),
         "{label} does not close every paragraph"
     );
     let mut cursor = 0usize;
-    while let Some(at) = html[cursor..].find("<p>") {
-        let start = cursor + at + "<p>".len();
+    while let Some(at) = opens(&html[cursor..]).first().copied() {
+        let start = cursor
+            + at
+            + html[cursor + at..]
+                .find('>')
+                .expect("a paragraph open tag ends")
+            + 1;
         let end = html[start..]
             .find("</p>")
             .map_or(html.len(), |offset| start + offset);
         for block in [
-            "<p>", "<h1", "<h2", "<h3", "<h4", "<ul", "<ol", "<table", "<section", "<article",
-            "<details",
+            "<h1", "<h2", "<h3", "<h4", "<ul", "<ol", "<table", "<section", "<article", "<details",
         ] {
             assert!(
                 !html[start..end].contains(block),
@@ -1154,6 +1166,11 @@ fn assert_paragraphs_are_well_formed(html: &str, label: &str) {
                 &html[start..end.min(start + 200)]
             );
         }
+        assert!(
+            opens(&html[start..end]).is_empty(),
+            "{label} opens a paragraph inside a paragraph: {}",
+            &html[start..end.min(start + 200)]
+        );
         cursor = end;
     }
 }
