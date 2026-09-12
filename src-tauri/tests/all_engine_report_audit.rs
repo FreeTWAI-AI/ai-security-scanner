@@ -2,12 +2,13 @@ use ai_security_scanner_lib::adapter::AdapterRegistry;
 use ai_security_scanner_lib::adapters::{BUILTIN_ENGINE_IDS, builtin_adapter_registry};
 use ai_security_scanner_lib::artifact_store::ArtifactStore;
 use ai_security_scanner_lib::beginner_report::{
-    BeginnerInventoryItemKind, BeginnerMasterReport, CoverageDimensionStatus,
+    BeginnerInventoryItemKind, BeginnerMasterReport, CoverageDimensionStatus, CoverageGapKind,
     build_beginner_master_report,
 };
 use ai_security_scanner_lib::case_service::{
     CaseExportFormat, CaseService, DurableExecutionReport, EngineAssetRoute,
-    PlannedEngineExecution, ScanPlanRequest, ScopeApprovalRequest, SourceMutation,
+    NaabuLauncherV2CoverageApplyOutcome, PlannedEngineExecution, ScanPlanRequest,
+    ScopeApprovalRequest, SourceMutation,
 };
 use ai_security_scanner_lib::connectors::{
     LIVE_PROVIDER_ARTIFACT_SET_SCHEMA, LiveProviderArtifactPage, LiveProviderArtifactSet,
@@ -15,20 +16,25 @@ use ai_security_scanner_lib::connectors::{
 };
 use ai_security_scanner_lib::container_runtime::{
     CONTAINER_EXECUTION_TIMEOUT_ERROR, CancellationToken, FakeContainerRuntime, FakeRunBehavior,
-    NetworkPolicy, ResourceLimits, ScannerCredentialSet,
+    NetworkPolicy, ResourceLimits, RuntimeCommandProvenance, RuntimeProvider, ScannerCredentialSet,
 };
 use ai_security_scanner_lib::discovery::run_connector;
 use ai_security_scanner_lib::domain::{
     AiGeneratedArtifactAnswer, AssessmentActivity, AssessmentCase, AssessmentIntent, AssetKind,
     CreateCaseRequest, DataClass, DeclaredAssetInput, DeclaredAssetKind, DeclaredHostScanInput,
     DeclaredHostScanProfile, DeclaredNetworkProtocol, DeclaredWebProtocol, DeclaredWebServiceInput,
-    EngineRunStatus, ScanPermission, SourceConnectionStatus, SourceKind,
+    EngineRunStatus, NAABU_ATTEMPT_REQUEST_SCHEMA_VERSION, NaabuAttemptRequest, ScanPermission,
+    SourceConnectionStatus, SourceKind,
 };
 use ai_security_scanner_lib::export::{ExportOptions, RedactionProfile, ReportLocale};
 use ai_security_scanner_lib::external_scope::{
-    ExternalActivity, ExternalScopeRequest, RatePolicy, TemplatePolicy, TransportProtocol,
+    CanonicalTarget, ExternalActivity, ExternalScopeRequest, RatePolicy, TemplatePolicy,
+    TransportProtocol, freeze_external_plan,
 };
 use ai_security_scanner_lib::managed_network::GatewayDestination;
+use ai_security_scanner_lib::naabu_work_plan::{
+    NaabuLauncherPlanDocument, NaabuWorkPlanIdentity, NaabuWorkPlanV1, build_naabu_work_plan,
+};
 use ai_security_scanner_lib::orchestrator::{
     EngineExecutionRequest, ExecutionCheckpoint, ExecutionReport, ExecutionStage, Orchestrator,
 };
@@ -46,7 +52,23 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-fn fixture(engine: &str) -> (&'static [u8], &'static str) {
+/// Which shape of finished run the harness produces.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EngineOutcomes {
+    /// One check per terminal state -- a failure, a host timeout, a
+    /// cancellation, a partial run and an empty completion -- beside the
+    /// checks that report. This is the run the coverage and next-step
+    /// sections are written for.
+    MixedTerminalStates,
+    /// Every detector completes and reports. Five packaged catalog entries
+    /// belong to checks that only ever carry a terminal state in the mixed
+    /// run, so nothing else proves their adapter can carry a finding through
+    /// the report and onto its mapped control.
+    EveryDetectorReports,
+}
+
+fn fixture(engine: &str, outcomes: EngineOutcomes) -> (&'static [u8], &'static str) {
+    let reporting = outcomes == EngineOutcomes::EveryDetectorReports;
     match engine {
         "cloudquery" => (
             include_bytes!("fixtures/adapters/cloudquery.json"),
@@ -84,13 +106,25 @@ fn fixture(engine: &str) -> (&'static [u8], &'static str) {
             include_bytes!("fixtures/adapters/httpx.jsonl"),
             "httpx.jsonl",
         ),
+        "nuclei" if reporting => (
+            include_bytes!("fixtures/adapters/nuclei.jsonl"),
+            "nuclei.jsonl",
+        ),
         "nuclei" => (
             include_bytes!("fixtures/adapters/malformed-nuclei.jsonl"),
             "nuclei.jsonl",
         ),
+        "greenbone" if reporting => (
+            include_bytes!("fixtures/adapters/greenbone.xml"),
+            "greenbone.xml",
+        ),
         "greenbone" => (
             include_bytes!("fixtures/adapters/greenbone-result-types.xml"),
             "greenbone.xml",
+        ),
+        "semgrep" if reporting => (
+            include_bytes!("fixtures/adapters/semgrep.json"),
+            "semgrep.json",
         ),
         "semgrep" => (
             include_bytes!("fixtures/adapters/semgrep-empty.json"),
@@ -259,8 +293,13 @@ fn attach_provider_asset(
         .id
 }
 
-fn substituted_fixture(engine: &str, asset_id: &str, grant_id: &str) -> (&'static str, Vec<u8>) {
-    let (bytes, name) = fixture(engine);
+fn substituted_fixture(
+    engine: &str,
+    asset_id: &str,
+    grant_id: &str,
+    outcomes: EngineOutcomes,
+) -> (&'static str, Vec<u8>) {
+    let (bytes, name) = fixture(engine, outcomes);
     let text = String::from_utf8(bytes.to_vec()).unwrap();
     (
         name,
@@ -272,33 +311,133 @@ fn substituted_fixture(engine: &str, asset_id: &str, grant_id: &str) -> (&'stati
     )
 }
 
+/// Everything one Naabu attempt needs before it may reach a target: the
+/// immutable work plan the case service freezes, the launcher request recorded
+/// against that plan, the private launcher document the container reads, its
+/// exact digest, and the gateway those selected work units address.
+struct NaabuAttempt {
+    plan: NaabuWorkPlanV1,
+    request: NaabuAttemptRequest,
+    launcher: NaabuLauncherPlanDocument,
+    launcher_sha256: String,
+    gateway: Vec<GatewayDestination>,
+}
+
+/// Rebuilds the private launcher work the current Naabu launcher demands.
+///
+/// Naabu is the one engine the orchestrator refuses to start from its scope
+/// grant alone: it wants the frozen work-unit document a real attempt saves
+/// before any contact, and the digest of the exact bytes that document
+/// serializes to. Building it here through the production builder keeps the
+/// audit run on the path a real attempt takes instead of teaching the harness
+/// its own idea of an authorized port sweep.
+fn naabu_attempt(execution: &PlannedEngineExecution) -> NaabuAttempt {
+    let external = execution.scope_grants[0]
+        .external_scope
+        .as_ref()
+        .expect("the Naabu grant carries a structured external scope");
+    let frozen_at = Utc::now();
+    // The grant names a literal address, so freezing consults no resolver and
+    // the empty candidate list below is never read.
+    let resolved = freeze_external_plan(external, [], frozen_at).expect("frozen external plan");
+    let identity = NaabuWorkPlanIdentity::new(
+        &execution.case_id,
+        &execution.scan_run_id,
+        &execution.engine_run_id,
+        frozen_at,
+    );
+    let plan = build_naabu_work_plan(identity, std::slice::from_ref(&resolved), None)
+        .expect("Naabu work plan");
+    let requested_unit_ids = plan
+        .work_units
+        .iter()
+        .map(|unit| unit.unit_id.clone())
+        .collect::<Vec<_>>();
+    let selected = requested_unit_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let launcher = plan
+        .launcher_plan_v3(execution.attempt, Some(&selected))
+        .expect("Naabu launcher plan");
+    let launcher_sha256 = hex::encode(Sha256::digest(
+        serde_json::to_vec(&launcher).expect("launcher plan JSON"),
+    ));
+    // The orchestrator requires the attempt gateway to be exactly the endpoint
+    // rectangles the selected work units address -- not the grant's whole
+    // corpus -- so project it off the plan rather than restating it.
+    let mut gateway = plan
+        .resolved_plans_for_work_units(&requested_unit_ids)
+        .expect("Naabu attempt gateway")
+        .iter()
+        .map(|resolved| GatewayDestination {
+            hostname: match &resolved.target {
+                CanonicalTarget::Hostname(hostname) => Some(hostname.clone()),
+                CanonicalTarget::Address(_) | CanonicalTarget::Network(_) => None,
+            },
+            addresses: resolved.resolution.addresses.iter().copied().collect(),
+            ports: resolved.ports.iter().copied().collect(),
+            allow_sensitive_networks: resolved.allow_sensitive_networks,
+        })
+        .collect::<Vec<_>>();
+    gateway.sort();
+    gateway.dedup();
+    NaabuAttempt {
+        plan,
+        request: NaabuAttemptRequest {
+            schema_version: NAABU_ATTEMPT_REQUEST_SCHEMA_VERSION,
+            execution_attempt: execution.attempt,
+            requested_unit_ids,
+            launcher_plan_sha256: launcher_sha256.clone(),
+        },
+        launcher,
+        launcher_sha256,
+        gateway,
+    }
+}
+
 fn execute(
     orchestrator: &Orchestrator<'_, FakeContainerRuntime>,
     runtime: &FakeContainerRuntime,
     execution: &PlannedEngineExecution,
     workspace: Option<&Path>,
     cancellation: &CancellationToken,
+    outcomes: EngineOutcomes,
+    naabu: Option<(&CaseService<'_>, &NaabuAttempt)>,
 ) -> ExecutionReport {
     let manifest = execution.manifest.clone();
     let (name, output) = substituted_fixture(
         &execution.manifest.id,
         &execution.assets[0].id,
         &execution.scope_grants[0].id,
+        outcomes,
     );
     runtime.set_behavior(FakeRunBehavior {
-        exit_code: if manifest.id == "checkov" {
+        exit_code: if manifest.id == "checkov" && outcomes == EngineOutcomes::MixedTerminalStates {
             Some(9)
         } else {
             Some(0)
         },
         stdout: vec![],
         stderr: vec![],
-        output_files: BTreeMap::from([(name.into(), output)]),
+        output_files: match naabu {
+            Some((_, attempt)) => launcher_output(execution, attempt, output),
+            None => BTreeMap::from([(name.into(), output)]),
+        },
     });
+    let gateway = naabu.map(|(_, attempt)| attempt.gateway.as_slice());
     let destinations = match execution.manifest.id.as_str() {
         "nuclei" | "httpx" => vec!["portal.example.test:443".into()],
         "greenbone" => vec!["203.0.113.10:443".into(), "203.0.113.10:8443".into()],
-        "naabu" => vec!["203.0.113.11:443".into(), "203.0.113.11:8443".into()],
+        "naabu" => gateway
+            .expect("the Naabu run carries its prepared attempt")
+            .iter()
+            .flat_map(|destination| {
+                destination.addresses.iter().flat_map(|address| {
+                    destination
+                        .ports
+                        .iter()
+                        .map(move |port| std::net::SocketAddr::new(*address, *port).to_string())
+                })
+            })
+            .collect(),
         _ => manifest.network_destinations.clone(),
     };
     let network = if destinations.is_empty() {
@@ -324,38 +463,153 @@ fn execute(
             ports: BTreeSet::from([443]),
             allow_sensitive_networks: false,
         }]),
-        "naabu" => Some(vec![GatewayDestination {
-            hostname: None,
-            addresses: BTreeSet::from(["203.0.113.11".parse().unwrap()]),
-            ports: BTreeSet::from([443, 8443]),
-            allow_sensitive_networks: true,
-        }]),
+        "naabu" => Some(
+            gateway
+                .expect("the Naabu run carries its prepared attempt")
+                .to_vec(),
+        ),
         _ => None,
     };
-    orchestrator
-        .execute(
-            &EngineExecutionRequest {
-                case_id: &execution.case_id,
-                scan_run_id: &execution.scan_run_id,
-                engine_run_id: &execution.engine_run_id,
-                manifest: &manifest,
-                ai_system_applicable: execution.ai_system_applicable,
-                ai_generated_artifact_applicable: execution.ai_generated_artifact
-                    == AiGeneratedArtifactAnswer::Yes,
-                assets: &execution.assets,
-                scope_grants: &execution.scope_grants,
-                frozen_destinations: frozen.as_deref(),
-                naabu_launcher_plan: None,
-                expected_naabu_launcher_plan_sha256: None,
-                workspace,
-                network_policy: &network,
-                resource_limits: &resources,
-                credentials: &ScannerCredentialSet::default(),
-                attempt: execution.attempt,
-            },
-            cancellation,
+    let request = EngineExecutionRequest {
+        case_id: &execution.case_id,
+        scan_run_id: &execution.scan_run_id,
+        engine_run_id: &execution.engine_run_id,
+        manifest: &manifest,
+        ai_system_applicable: execution.ai_system_applicable,
+        ai_generated_artifact_applicable: execution.ai_generated_artifact
+            == AiGeneratedArtifactAnswer::Yes,
+        assets: &execution.assets,
+        scope_grants: &execution.scope_grants,
+        frozen_destinations: frozen.as_deref(),
+        naabu_launcher_plan: naabu.map(|(_, attempt)| &attempt.launcher),
+        expected_naabu_launcher_plan_sha256: naabu
+            .map(|(_, attempt)| attempt.launcher_sha256.as_str()),
+        workspace,
+        network_policy: &network,
+        resource_limits: &resources,
+        credentials: &ScannerCredentialSet::default(),
+        attempt: execution.attempt,
+    };
+    let Some((service, attempt)) = naabu else {
+        return orchestrator.execute(&request, cancellation).unwrap();
+    };
+    // The launcher is the one engine whose process exit is not the coverage
+    // authority: the orchestrator hands back a captured attempt and the host
+    // reads which work units were actually tested out of the journal, then
+    // runs the adapter over the per-unit results. That is three calls, in this
+    // order, and skipping any of them leaves the check reported as not tested.
+    let report = stamped(orchestrator.execute(&request, cancellation).unwrap());
+    let applied = service
+        .apply_naabu_launcher_v2_execution_report(
+            &execution.case_id,
+            &DurableExecutionReport::from(&report),
         )
-        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(
+            applied.coverage,
+            NaabuLauncherV2CoverageApplyOutcome::Persisted { .. }
+        ),
+        "the launcher attempt recorded no work-unit coverage: {:?}",
+        applied.coverage
+    );
+    service
+        .adapt_and_persist_naabu_attempt(
+            &execution.case_id,
+            &execution.scan_run_id,
+            &execution.engine_run_id,
+            attempt.request.execution_attempt,
+        )
+        .unwrap();
+    service
+        .finish_naabu_launcher_v2_normalization(
+            &execution.case_id,
+            &execution.scan_run_id,
+            &execution.engine_run_id,
+            false,
+        )
+        .unwrap();
+    report
+}
+
+/// Writes what a finished launcher attempt leaves under `/output`: one result
+/// file per requested work unit, and the append-only journal that says which
+/// units the attempt actually tested.
+///
+/// The whole port corpus goes to the first unit's file and later units finish
+/// empty, which is what a sweep of a small corpus produces: the division is by
+/// endpoint rectangle, not by how many ports happen to answer.
+fn launcher_output(
+    execution: &PlannedEngineExecution,
+    attempt: &NaabuAttempt,
+    scanner_output: Vec<u8>,
+) -> BTreeMap<String, Vec<u8>> {
+    let units_by_id = attempt
+        .plan
+        .work_units
+        .iter()
+        .map(|unit| (unit.unit_id.as_str(), unit.scope_sha256.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut files = BTreeMap::new();
+    let mut journal = format!(
+        "{}\n",
+        serde_json::json!({
+            "record_type": "header",
+            "schema_version": 2,
+            "engine_run_id": execution.engine_run_id,
+            "execution_attempt": execution.attempt,
+            "requested_work_units": attempt
+                .request
+                .requested_unit_ids
+                .iter()
+                .map(|unit_id| serde_json::json!({
+                    "unit_id": unit_id,
+                    "scope_sha256": units_by_id[unit_id.as_str()],
+                }))
+                .collect::<Vec<_>>(),
+        })
+    );
+    for (ordinal, unit_id) in attempt.request.requested_unit_ids.iter().enumerate() {
+        let bytes = if ordinal == 0 {
+            scanner_output.clone()
+        } else {
+            Vec::new()
+        };
+        let relative_path = format!(
+            "launcher-v2/units/unit-{ordinal:06}/attempt-{}.jsonl",
+            execution.attempt
+        );
+        journal.push_str(&format!(
+            "{}\n",
+            serde_json::json!({
+                "record_type": "attempt_finished",
+                "unit_id": unit_id,
+                "scope_sha256": units_by_id[unit_id.as_str()],
+                "attempt": execution.attempt,
+                "outcome": "tested_complete",
+                "final_artifact": {
+                    "engine_run_id": execution.engine_run_id,
+                    "unit_id": unit_id,
+                    "scope_sha256": units_by_id[unit_id.as_str()],
+                    "attempt": execution.attempt,
+                    "relative_path": relative_path,
+                    "sha256": hex::encode(Sha256::digest(&bytes)),
+                    "byte_length": bytes.len(),
+                },
+            })
+        ));
+        files.insert(relative_path, bytes);
+    }
+    files.insert("launcher-v2/journal.jsonl".into(), journal.into_bytes());
+    files
+}
+
+/// Records which runtime produced one report, the way the desktop path records
+/// it after its own preflight.
+fn stamped(mut report: ExecutionReport) -> ExecutionReport {
+    report.checkpoint.runtime_provider = Some(RuntimeProvider::Docker);
+    report.checkpoint.runtime_command_provenance = Some(RuntimeCommandProvenance::Compatibility);
+    report
 }
 
 /// One finished all-engine run, handed to the audit body by reference so the
@@ -385,6 +639,7 @@ struct AllEngineRun<'a> {
 fn all_engines_in_one_report<T>(
     intent: AssessmentIntent,
     ai_generated: AiGeneratedArtifactAnswer,
+    outcomes: EngineOutcomes,
     audit: impl FnOnce(&AllEngineRun<'_>) -> T,
 ) -> T {
     let temp = tempfile::tempdir().unwrap();
@@ -743,10 +998,12 @@ fn all_engines_in_one_report<T>(
 
     let runtime = FakeContainerRuntime::default();
     let orchestrator = Orchestrator::new(&runtime, &artifacts, &adapters);
-    // Outcome carriers: nuclei=partial; semgrep=complete-empty; checkov=failed;
-    // kics=timed out on the host deadline; trufflehog=cancelled;
-    // greenbone=unevaluated/dead host.
-    // Syft, CloudQuery, Steampipe, Naabu and HTTPX are observation/inventory only.
+    // Outcome carriers, on the mixed run: nuclei=partial;
+    // semgrep=complete-empty; checkov=failed; kics=timed out on the host
+    // deadline; trufflehog=cancelled; greenbone=unevaluated/dead host.
+    // Syft, CloudQuery, Steampipe, Naabu and HTTPX are observation/inventory
+    // only in either run: discovery prepares a target, it is not a result.
+    let mixed = outcomes == EngineOutcomes::MixedTerminalStates;
     for execution in &plan.executable {
         let workspace = local_assets
             .values()
@@ -757,7 +1014,7 @@ fn all_engines_in_one_report<T>(
                     .tree_path
             });
         let mut report = match execution.manifest.id.as_str() {
-            "naabu" => ExecutionReport {
+            "naabu" if mixed => ExecutionReport {
                 checkpoint: ExecutionCheckpoint {
                     case_id: execution.case_id.clone(),
                     scan_run_id: execution.scan_run_id.clone(),
@@ -789,14 +1046,7 @@ fn all_engines_in_one_report<T>(
                 artifact_root: artifact_root.clone(),
                 output_directory: artifact_root.join("naabu-cancelled"),
             },
-            "checkov" => execute(
-                &orchestrator,
-                &runtime,
-                execution,
-                workspace.as_deref(),
-                &CancellationToken::default(),
-            ),
-            "trufflehog" => {
+            "trufflehog" if mixed => {
                 let token = CancellationToken::default();
                 token.cancel();
                 execute(
@@ -805,6 +1055,31 @@ fn all_engines_in_one_report<T>(
                     execution,
                     workspace.as_deref(),
                     &token,
+                    outcomes,
+                    None,
+                )
+            }
+            "naabu" => {
+                // The launcher's own precondition: the exact work request is
+                // durable before the attempt may contact anything.
+                let attempt = naabu_attempt(execution);
+                service
+                    .persist_naabu_attempt_request(
+                        &execution.case_id,
+                        &execution.scan_run_id,
+                        &execution.engine_run_id,
+                        &attempt.plan,
+                        &attempt.request,
+                    )
+                    .unwrap();
+                execute(
+                    &orchestrator,
+                    &runtime,
+                    execution,
+                    workspace.as_deref(),
+                    &CancellationToken::default(),
+                    outcomes,
+                    Some((&service, &attempt)),
                 )
             }
             _ => execute(
@@ -813,9 +1088,11 @@ fn all_engines_in_one_report<T>(
                 execution,
                 workspace.as_deref(),
                 &CancellationToken::default(),
+                outcomes,
+                None,
             ),
         };
-        if execution.manifest.id == "kics" {
+        if mixed && execution.manifest.id == "kics" {
             // The product's own host deadline, recorded the way the runtime
             // records it. An invented marker here would have exercised a
             // shape no run produces and left the timed-out row untested.
@@ -824,9 +1101,14 @@ fn all_engines_in_one_report<T>(
             report.exit_code = None;
             report.findings.clear();
         }
-        service
-            .apply_execution_report(&case.id, &DurableExecutionReport::from(&report))
-            .unwrap();
+        // The launcher run already applied its own interim and terminal
+        // reports, the second through the launcher-v2 path that reads
+        // work-unit coverage. Everything else applies once, here.
+        if mixed || execution.manifest.id != "naabu" {
+            service
+                .apply_execution_report(&case.id, &DurableExecutionReport::from(&report))
+                .unwrap();
+        }
     }
 
     let completed = service.show_case(&case.id).unwrap();
@@ -850,6 +1132,32 @@ fn all_engines_in_one_report<T>(
 /// nested in a paragraph, which every parser recovers from by closing the
 /// paragraph early, plus a stray end tag after it. No reader saw an error and
 /// no assertion about the report's words could see it either.
+fn assert_paragraphs_are_well_formed(html: &str, label: &str) {
+    assert_eq!(
+        html.matches("<p>").count(),
+        html.matches("</p>").count(),
+        "{label} does not close every paragraph"
+    );
+    let mut cursor = 0usize;
+    while let Some(at) = html[cursor..].find("<p>") {
+        let start = cursor + at + "<p>".len();
+        let end = html[start..]
+            .find("</p>")
+            .map_or(html.len(), |offset| start + offset);
+        for block in [
+            "<p>", "<h1", "<h2", "<h3", "<h4", "<ul", "<ol", "<table", "<section", "<article",
+            "<details",
+        ] {
+            assert!(
+                !html[start..end].contains(block),
+                "{label} opens {block} inside a paragraph: {}",
+                &html[start..end.min(start + 200)]
+            );
+        }
+        cursor = end;
+    }
+}
+
 /// The reader-visible text of one rendered report, markup and entities gone.
 fn strip_markup(html: &str) -> String {
     let mut text = String::with_capacity(html.len());
@@ -903,30 +1211,284 @@ fn an_ascii_clause_break_is_only_reported_where_a_chinese_clause_ends() {
     assert!(ascii_clause_break_after_han("移除群組只會附加歷史，不會刪除成員。").is_none());
 }
 
-fn assert_paragraphs_are_well_formed(html: &str, label: &str) {
-    assert_eq!(
-        html.matches("<p>").count(),
-        html.matches("</p>").count(),
-        "{label} does not close every paragraph"
-    );
-    let mut cursor = 0usize;
-    while let Some(at) = html[cursor..].find("<p>") {
-        let start = cursor + at + "<p>".len();
-        let end = html[start..]
-            .find("</p>")
-            .map_or(html.len(), |offset| start + offset);
-        for block in [
-            "<p>", "<h1", "<h2", "<h3", "<h4", "<ul", "<ol", "<table", "<section", "<article",
-            "<details",
-        ] {
+/// Discovery engines prepare a target for a security check. Their output is
+/// inventory, not a result, in either run.
+const INVENTORY_ONLY_ENGINES: [&str; 5] = ["cloudquery", "httpx", "naabu", "steampipe", "syft"];
+
+/// What the other run cannot show: every detector reporting at once.
+///
+/// The mixed run spends five checks on terminal states, so Checkov, KICS,
+/// Semgrep, TruffleHog and Nuclei never carry a finding into a report there --
+/// and each of those five has a packaged mapping-catalog entry that nothing
+/// else exercises end to end. A detector that cannot place its own finding on
+/// its own control is wired up in name only.
+#[test]
+fn every_detector_places_its_finding_on_its_mapped_control() {
+    all_engines_in_one_report(
+        AssessmentIntent::InternalItEnvironment,
+        AiGeneratedArtifactAnswer::No,
+        EngineOutcomes::EveryDetectorReports,
+        |subject| {
+            let &AllEngineRun {
+                engines,
+                adapters,
+                database,
+                artifact_root,
+                signing_key,
+                case_id,
+                scan_run_id,
+                ..
+            } = subject;
+            let report = &subject.report;
+            let reporting = report
+                .findings
+                .iter()
+                .flat_map(|finding| &finding.evidence_references)
+                .map(|reference| reference.engine_id.as_str())
+                .collect::<BTreeSet<_>>();
+            let silent = BUILTIN_ENGINE_IDS
+                .iter()
+                .copied()
+                .filter(|engine| {
+                    !INVENTORY_ONLY_ENGINES.contains(engine) && !reporting.contains(engine)
+                })
+                .collect::<Vec<_>>();
             assert!(
-                !html[start..end].contains(block),
-                "{label} opens {block} inside a paragraph: {}",
-                &html[start..end.min(start + 200)]
+                silent.is_empty(),
+                "these checks ran and reported nothing a reader can see: {silent:?}"
             );
-        }
-        cursor = end;
-    }
+            let unfinished = report
+                .actual
+                .checks
+                .iter()
+                .filter(|check| check.status != CoverageDimensionStatus::TestedComplete)
+                .map(|check| (check.check_id.clone(), check.status))
+                .collect::<Vec<_>>();
+            assert!(
+                unfinished.is_empty(),
+                "these checks did not complete on the run where every check succeeds: {unfinished:#?}"
+            );
+            // What is left is coverage data, not unfinished execution: a
+            // pinned catalog whose declared support has ended, and a control
+            // upstream evaluated but left for a person to rule on.
+            let unfinished_gaps = report
+                .coverage_gaps
+                .iter()
+                .filter(|gap| {
+                    !matches!(gap.kind, CoverageGapKind::ManualReview)
+                        && !gap.dimension.ends_with("expired detection knowledge")
+                })
+                .collect::<Vec<_>>();
+            assert!(unfinished_gaps.is_empty(), "{unfinished_gaps:#?}");
+
+            // Discovery still reports inventory rather than problems. A port
+            // that answers is a target for a security check, not a result.
+            assert!(
+                report.inventory.total > 0,
+                "the discovery checks recorded nothing"
+            );
+            for engine in INVENTORY_ONLY_ENGINES {
+                assert!(
+                    !reporting.contains(engine),
+                    "{engine} is a discovery check and must not raise a problem"
+                );
+            }
+
+            // The five coordinates the mixed run cannot reach. What each one
+            // should land on is read out of the packaged catalog rather than
+            // repeated here: the claim under test is that the entry shipped
+            // for an engine and rule is the control the reader is shown, so
+            // restating the control would only test this file against itself.
+            // AIDEFEND coordinates are withheld from a case that declares no
+            // AI system, which is this case, so they are not expected.
+            let catalog = serde_json::from_slice::<serde_json::Value>(
+                &fs::read(
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .parent()
+                        .expect("the crate sits inside the repository")
+                        .join("mappings/control-mappings.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let control_by_key = catalog["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|control| {
+                    (
+                        control["key"].as_str().unwrap().to_owned(),
+                        (
+                            control["framework"].as_str().unwrap().to_owned(),
+                            control["control_id"].as_str().unwrap().to_owned(),
+                        ),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let packaged = |engine: &str, rule: &str| -> BTreeSet<String> {
+                catalog["entries"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|entry| entry["engine_id"] == engine && entry["source_rule"] == rule)
+                        .unwrap_or_else(|| panic!("no packaged catalog entry for {engine} {rule}"))
+                        ["controls"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|key| &control_by_key[key.as_str().unwrap()])
+                        .filter(|(framework, _)| framework != "AIDEFEND")
+                        .map(|(framework, control_id)| format!("{framework}/{control_id}"))
+                        .collect()
+            };
+
+            let placed = report
+                .findings
+                .iter()
+                .flat_map(|finding| {
+                    finding.evidence_references.iter().map(move |reference| {
+                        (
+                            reference.engine_id.clone(),
+                            reference.source_rule.clone().unwrap_or_default(),
+                            finding
+                                .framework_references
+                                .iter()
+                                .map(|control| {
+                                    format!("{}/{}", control.framework, control.control_id)
+                                })
+                                .collect::<BTreeSet<_>>(),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            for (engine, rule) in [
+                ("checkov", "CKV_AWS_18"),
+                ("kics", "5fb49a69-8d46-4495-a2f8-9c8c622b2b6e"),
+                ("semgrep", "ai-security-scanner.python.shell-true"),
+                ("nuclei", "phpmyadmin-panel"),
+            ] {
+                let reached = placed
+                    .iter()
+                    .filter(|(placed_engine, placed_rule, _)| {
+                        placed_engine == engine && placed_rule == rule
+                    })
+                    .flat_map(|(_, _, controls)| controls)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                let expected = packaged(engine, rule);
+                assert!(
+                    expected.is_subset(&reached),
+                    "{engine} rule {rule} reached {reached:?}, missing {:?}",
+                    expected.difference(&reached).collect::<Vec<_>>()
+                );
+            }
+            // TruffleHog's catalog entry matches by prefix, so its rule is
+            // whatever detector fired rather than a fixed string.
+            let secrets = packaged("trufflehog", "trufflehog:");
+            assert!(
+                placed
+                    .iter()
+                    .any(|(engine, rule, controls)| engine == "trufflehog"
+                        && rule.starts_with("trufflehog:")
+                        && secrets.is_subset(controls)),
+                "TruffleHog placed no finding on {secrets:?}: {placed:#?}"
+            );
+
+            let reopened_storage = Storage::open(database).unwrap();
+            let reopened_service = CaseService::new(
+                &reopened_storage,
+                engines,
+                adapters,
+                artifact_root,
+                signing_key,
+            );
+            let export = |format, name, locale| {
+                let path = artifact_root.join(name);
+                reopened_service
+                    .export_case(
+                        case_id,
+                        scan_run_id,
+                        format,
+                        path.clone(),
+                        ExportOptions {
+                            redaction: RedactionProfile::None,
+                            include_raw_artifacts: false,
+                            locale,
+                        },
+                    )
+                    .unwrap();
+                fs::read_to_string(&path).unwrap()
+            };
+            let english = export(
+                CaseExportFormat::Html,
+                "every-detector-en.html",
+                ReportLocale::En,
+            );
+            let chinese = export(
+                CaseExportFormat::Html,
+                "every-detector-zh.html",
+                ReportLocale::ZhHant,
+            );
+            assert_paragraphs_are_well_formed(&english, "the English report");
+            assert_paragraphs_are_well_formed(&chinese, "the Chinese report");
+            if let Some(offence) = ascii_clause_break_after_han(&strip_markup(&chinese)) {
+                panic!("the Chinese report ends a clause as English: {offence}");
+            }
+            // Nothing is missing, so the report says so instead of leaving the
+            // coverage and next-step sections blank.
+            assert!(english.contains("What needs attention"));
+            assert!(english.contains("What to do next"));
+
+            // A coverage row's third field is composed the same way its name
+            // is, and was the one field left in English: a Chinese reader saw
+            // the launcher's "2 of 2" and Greenbone's
+            // "applicability-driven upstream profile on asset ... across ...".
+            // The mixed run has neither row, so only this run can see it.
+            let tested_zh = &chinese[chinese
+                .find(">實際測試的內容</h2>")
+                .expect("the Chinese tested section")..];
+            let tested_zh = &tested_zh[..tested_zh
+                .find(">需要留意的內容</h2>")
+                .expect("the gaps section follows")];
+            for english in [
+                "2 of 2",
+                "applicability-driven upstream profile",
+                " approved TCP ports",
+            ] {
+                assert!(
+                    !tested_zh.contains(english),
+                    "a Chinese coverage row measured in English: {english}"
+                );
+            }
+            for translated in ["2 個中的 2 個", "依適用性選擇的上游設定檔"] {
+                assert!(
+                    tested_zh.contains(translated),
+                    "the Chinese coverage row lost: {translated}"
+                );
+            }
+
+            if let Some(dump) = std::env::var_os("AI_SCANNER_REPORT_DUMP_DIR").map(PathBuf::from) {
+                let dump = dump.join("every-detector");
+                fs::create_dir_all(&dump).unwrap();
+                fs::write(dump.join("report-en.html"), &english).unwrap();
+                fs::write(dump.join("report-zh.html"), &chinese).unwrap();
+                fs::write(
+                    dump.join("framework.json"),
+                    export(
+                        CaseExportFormat::FrameworkReport,
+                        "every-detector-framework.json",
+                        ReportLocale::En,
+                    ),
+                )
+                .unwrap();
+                fs::write(
+                    dump.join("beginner-report.json"),
+                    serde_json::to_string_pretty(report).unwrap(),
+                )
+                .unwrap();
+            }
+        },
+    );
 }
 
 #[test]
@@ -934,6 +1496,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
     all_engines_in_one_report(
         AssessmentIntent::InternalItEnvironment,
         AiGeneratedArtifactAnswer::No,
+        EngineOutcomes::MixedTerminalStates,
         |subject| {
             let &AllEngineRun {
                 engines,
@@ -1784,122 +2347,128 @@ fn aidefend_view(
     intent: AssessmentIntent,
     ai_generated: AiGeneratedArtifactAnswer,
 ) -> AidefendView {
-    all_engines_in_one_report(intent, ai_generated, |subject| {
-        let storage = Storage::open(subject.database).unwrap();
-        let service = CaseService::new(
-            &storage,
-            subject.engines,
-            subject.adapters,
-            subject.artifact_root,
-            subject.signing_key,
-        );
-        let export = |format, name: &str, locale| {
-            let path = subject.artifact_root.join(name);
-            service
-                .export_case(
-                    subject.case_id,
-                    subject.scan_run_id,
-                    format,
-                    path.clone(),
-                    ExportOptions {
-                        redaction: RedactionProfile::None,
-                        include_raw_artifacts: false,
-                        locale,
-                    },
-                )
-                .unwrap();
-            fs::read(&path).unwrap()
-        };
-        let framework: serde_json::Value = serde_json::from_slice(&export(
-            CaseExportFormat::FrameworkReport,
-            "aidefend-framework.json",
-            ReportLocale::En,
-        ))
-        .unwrap();
-        assert!(
-            framework["unrecognized_relationships"]
+    all_engines_in_one_report(
+        intent,
+        ai_generated,
+        EngineOutcomes::MixedTerminalStates,
+        |subject| {
+            let storage = Storage::open(subject.database).unwrap();
+            let service = CaseService::new(
+                &storage,
+                subject.engines,
+                subject.adapters,
+                subject.artifact_root,
+                subject.signing_key,
+            );
+            let export = |format, name: &str, locale| {
+                let path = subject.artifact_root.join(name);
+                service
+                    .export_case(
+                        subject.case_id,
+                        subject.scan_run_id,
+                        format,
+                        path.clone(),
+                        ExportOptions {
+                            redaction: RedactionProfile::None,
+                            include_raw_artifacts: false,
+                            locale,
+                        },
+                    )
+                    .unwrap();
+                fs::read(&path).unwrap()
+            };
+            let framework: serde_json::Value = serde_json::from_slice(&export(
+                CaseExportFormat::FrameworkReport,
+                "aidefend-framework.json",
+                ReportLocale::En,
+            ))
+            .unwrap();
+            assert!(
+                framework["unrecognized_relationships"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty(),
+                "a relationship the catalog cannot explain must never reach a reader"
+            );
+            let family = framework["frameworks"]
                 .as_array()
                 .unwrap()
-                .is_empty(),
-            "a relationship the catalog cannot explain must never reach a reader"
-        );
-        let family = framework["frameworks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|entry| entry["framework"] == "AIDEFEND")
-            .expect("AIDEFEND is one of the declared families")
-            .clone();
-        let mut reached = BTreeMap::<String, BTreeSet<String>>::new();
-        for control in family["controls"].as_array().unwrap() {
-            for relationship in control["relationships"].as_array().unwrap() {
-                // A drifted mapping version is a different claim than one the
-                // current catalog still states, and the reader cannot tell
-                // them apart from the coordinate alone.
-                assert_eq!(relationship["mapping_version_state"], "exact_match");
-                assert_eq!(
-                    relationship["mapping_provenance_state"],
-                    "verified_current_catalog"
-                );
-                let engines = reached
-                    .entry(control["control_id"].as_str().unwrap().to_owned())
-                    .or_default();
-                for engine in relationship["finding"]["engine_ids"].as_array().unwrap() {
-                    engines.insert(engine.as_str().unwrap().to_owned());
+                .iter()
+                .find(|entry| entry["framework"] == "AIDEFEND")
+                .expect("AIDEFEND is one of the declared families")
+                .clone();
+            let mut reached = BTreeMap::<String, BTreeSet<String>>::new();
+            for control in family["controls"].as_array().unwrap() {
+                for relationship in control["relationships"].as_array().unwrap() {
+                    // A drifted mapping version is a different claim than one the
+                    // current catalog still states, and the reader cannot tell
+                    // them apart from the coordinate alone.
+                    assert_eq!(relationship["mapping_version_state"], "exact_match");
+                    assert_eq!(
+                        relationship["mapping_provenance_state"],
+                        "verified_current_catalog"
+                    );
+                    let engines = reached
+                        .entry(control["control_id"].as_str().unwrap().to_owned())
+                        .or_default();
+                    for engine in relationship["finding"]["engine_ids"].as_array().unwrap() {
+                        engines.insert(engine.as_str().unwrap().to_owned());
+                    }
                 }
             }
-        }
-        let mut mapping_states = BTreeMap::<String, usize>::new();
-        for entry in framework["observation_provenance"].as_array().unwrap() {
-            *mapping_states
-                .entry(
-                    entry["framework_mapping_state"]
-                        .as_str()
-                        .unwrap()
-                        .to_owned(),
-                )
-                .or_default() += 1;
-        }
-        let html = String::from_utf8(export(
-            CaseExportFormat::Html,
-            "aidefend-report.html",
-            ReportLocale::En,
-        ))
-        .unwrap();
-        let zh_html = String::from_utf8(export(
-            CaseExportFormat::Html,
-            "aidefend-report-zh.html",
-            ReportLocale::ZhHant,
-        ))
-        .unwrap();
-        assert_paragraphs_are_well_formed(&html, "the English report");
-        assert_paragraphs_are_well_formed(&zh_html, "the Chinese report");
-        AidefendView {
-            state: family["state"].as_str().unwrap().to_owned(),
-            mapped: framework["coverage"]["selected_run_findings_with_framework_relationship"]
-                .as_u64()
-                .unwrap() as usize,
-            unmapped: framework["coverage"]["selected_run_findings_without_framework_relationship"]
-                .as_u64()
-                .unwrap() as usize,
-            limitations: framework["coverage"]["limitations"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|limitation| limitation.as_str().unwrap().to_owned())
-                .collect(),
-            mapping_states,
-            reached,
-            finding_titles: subject
-                .report
-                .findings
-                .iter()
-                .map(|finding| finding.title.clone())
-                .collect(),
-            html,
-            zh_html,
-        }
-    })
+            let mut mapping_states = BTreeMap::<String, usize>::new();
+            for entry in framework["observation_provenance"].as_array().unwrap() {
+                *mapping_states
+                    .entry(
+                        entry["framework_mapping_state"]
+                            .as_str()
+                            .unwrap()
+                            .to_owned(),
+                    )
+                    .or_default() += 1;
+            }
+            let html = String::from_utf8(export(
+                CaseExportFormat::Html,
+                "aidefend-report.html",
+                ReportLocale::En,
+            ))
+            .unwrap();
+            let zh_html = String::from_utf8(export(
+                CaseExportFormat::Html,
+                "aidefend-report-zh.html",
+                ReportLocale::ZhHant,
+            ))
+            .unwrap();
+            assert_paragraphs_are_well_formed(&html, "the English report");
+            assert_paragraphs_are_well_formed(&zh_html, "the Chinese report");
+            AidefendView {
+                state: family["state"].as_str().unwrap().to_owned(),
+                mapped: framework["coverage"]["selected_run_findings_with_framework_relationship"]
+                    .as_u64()
+                    .unwrap() as usize,
+                unmapped:
+                    framework["coverage"]["selected_run_findings_without_framework_relationship"]
+                        .as_u64()
+                        .unwrap() as usize,
+                limitations: framework["coverage"]["limitations"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|limitation| limitation.as_str().unwrap().to_owned())
+                    .collect(),
+                mapping_states,
+                reached,
+                finding_titles: subject
+                    .report
+                    .findings
+                    .iter()
+                    .map(|finding| finding.title.clone())
+                    .collect(),
+                html,
+                zh_html,
+            }
+        },
+    )
 }
 
 /// AIDEFEND is a third of the framework structure this product maps to, and
