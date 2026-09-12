@@ -2807,6 +2807,36 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert_eq!(html.matches(footnote).count(), 1);
             }
 
+            // Cloudsplaining keys a policy finding on the action it found, so
+            // sixteen of the eighteen policy records printed that one string
+            // under two labels. Both rows stay where the list says more, or
+            // where it is not the whole list.
+            for (html, identity, actions) in [
+                (
+                    &ordered_html,
+                    "<dt>Upstream finding</dt><dd>",
+                    "<dt>Reported actions</dt><dd>",
+                ),
+                (&zh_html, "<dt>上游問題</dt><dd>", "<dt>回報的動作</dt><dd>"),
+            ] {
+                let policies = html.matches(actions).count();
+                assert!(policies >= 10, "the audit lost the policy records");
+                let identities = html.matches(identity).count();
+                assert!(
+                    identities < policies / 4,
+                    "{identities} of {policies} policy records restate their identity"
+                );
+                assert!(identities > 0, "an upstream identity is never reported");
+                for (at, _) in html.match_indices(identity) {
+                    let named = &html[at + identity.len()..];
+                    let named = &named[..named.find("</dd>").expect("a value closes")];
+                    assert!(
+                        !html.contains(&format!("{actions}{named}</dd>")),
+                        "an upstream identity repeats the action list beside it: {named}"
+                    );
+                }
+            }
+
             // The phase is the state under a finer name. Twenty-three of the
             // twenty-four records printed the same word twice -- "Completed"
             // as the state, then the backend's raw "completed" as the phase,

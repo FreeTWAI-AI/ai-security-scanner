@@ -15729,16 +15729,28 @@ fn html_evidence_reference(
                 } else {
                     catalog.text("Retained actions", "已保留的動作")
                 };
-                for (label_en, label_zh, value) in [
+                // Cloudsplaining keys a finding on the action it found, so a
+                // record carrying that one action and nothing else printed the
+                // same string under two labels -- sixteen of the eighteen
+                // policy records read that way. The upstream identity stays
+                // wherever the list says anything more, and wherever the list
+                // is not the whole list: there the identity is the only thing
+                // the reader can be sure the scanner keyed on.
+                let identity_is_the_whole_action_list = iam.actions_complete
+                    && matches!(iam.actions.as_slice(), [only] if *only == iam.finding_identity);
+                let mut fields = vec![
                     ("Policy source", "政策來源", source.to_owned()),
                     ("Policy", "政策", iam.policy_name.clone()),
-                    (
+                ];
+                if !identity_is_the_whole_action_list {
+                    fields.push((
                         "Upstream finding",
                         "上游問題",
                         iam.finding_identity.clone(),
-                    ),
-                    (action_label, action_label, value(&iam.actions)),
-                ] {
+                    ));
+                }
+                fields.push((action_label, action_label, value(&iam.actions)));
+                for (label_en, label_zh, value) in fields {
                     rows.push_str(&format!(
                         "<dt>{}</dt><dd>{}</dd>",
                         catalog.text(label_en, label_zh),
@@ -32902,6 +32914,116 @@ mod tests {
             HtmlReportCatalog::new(crate::export::ReportLocale::En),
         );
         assert!(unknown.contains("<dt>Redacted</dt><dd>not provided</dd>"));
+    }
+
+    /// Cloudsplaining keys a policy finding on the action it found, so the
+    /// upstream identity and the reported-action list are usually the same
+    /// string. Printed under two labels they read as two facts.
+    #[test]
+    fn an_upstream_identity_that_is_the_whole_action_list_is_not_printed_twice() {
+        let policy = |identity: &str, actions: &[&str], complete: bool| {
+            crate::domain::AwsIamPolicyFindingDetails {
+                policy_source: crate::domain::AwsIamPolicySource::Inline,
+                policy_name: "InsecurePolicy".into(),
+                finding_identity: identity.into(),
+                actions: actions.iter().map(|action| (*action).to_owned()).collect(),
+                actions_complete: complete,
+                attached_to: crate::domain::AwsIamAttachedTo {
+                    roles: Vec::new(),
+                    groups: vec!["AdminGroup".into()],
+                    users: Vec::new(),
+                    complete: true,
+                },
+            }
+        };
+        let render = |policy, locale| {
+            html_evidence_reference(
+                &crate::beginner_report::FindingEvidenceReference {
+                    evidence_id: "evidence-1".into(),
+                    engine_id: "cloudsplaining".into(),
+                    details_frozen: true,
+                    source_rule: Some("ResourceExposure".into()),
+                    scanner_details: Some(crate::domain::ScannerFindingDetails {
+                        description: None,
+                        remediation: None,
+                        installed_version: None,
+                        fixed_version: None,
+                        aws_iam_policy: Some(policy),
+                        cwe_ids: Vec::new(),
+                        cvss: Vec::new(),
+                    }),
+                    summary: Some("summary".into()),
+                    kind: Some(EvidenceKind::Configuration),
+                    engine_run_id: Some("run".into()),
+                    artifact_id: Some("artifact".into()),
+                    redacted: Some(false),
+                    artifact_sha256: "a".repeat(64),
+                    observed_at: Utc::now(),
+                    location: Some("policy".into()),
+                },
+                HtmlReportCatalog::new(locale),
+            )
+        };
+
+        for (locale, identity, actions, retained) in [
+            (
+                crate::export::ReportLocale::En,
+                "<dt>Upstream finding</dt>",
+                "<dt>Reported actions</dt>",
+                "<dt>Retained actions</dt>",
+            ),
+            (
+                crate::export::ReportLocale::ZhHant,
+                "<dt>上游問題</dt>",
+                "<dt>回報的動作</dt>",
+                "<dt>已保留的動作</dt>",
+            ),
+        ] {
+            // The one action the finding was keyed on, and nothing else.
+            let same = render(
+                policy("s3:PutObjectAcl", &["s3:PutObjectAcl"], true),
+                locale,
+            );
+            assert!(!same.contains(identity), "the identity was printed twice");
+            assert!(same.contains(&format!("{actions}<dd>s3:PutObjectAcl</dd>")));
+
+            // The same action spelled another way is not the same string, and
+            // the reader is the one who decides whether it is the same action.
+            let spelled = render(
+                policy("CreateLoginProfile", &["iam:createloginprofile"], true),
+                locale,
+            );
+            assert!(
+                spelled.contains(identity),
+                "a differing identity was dropped"
+            );
+
+            // A list that says more than the identity keeps both.
+            let listed = render(
+                policy(
+                    "s3:PutObjectAcl",
+                    &["s3:PutObjectAcl", "s3:PutObject"],
+                    true,
+                ),
+                locale,
+            );
+            assert!(
+                listed.contains(identity),
+                "the identity of a listed finding was dropped"
+            );
+
+            // A truncated list is not the whole list, so the identity is the
+            // only thing the reader can be sure the scanner keyed on.
+            let cut = render(
+                policy("s3:PutObjectAcl", &["s3:PutObjectAcl"], false),
+                locale,
+            );
+            assert!(
+                cut.contains(identity),
+                "the identity of a cut list was dropped"
+            );
+            assert!(cut.contains(retained));
+        }
     }
 
     /// The adapters compose the evidence summary from the check, the source
