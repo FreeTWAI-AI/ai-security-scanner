@@ -13665,6 +13665,10 @@ impl HtmlReportCatalog {
             "pull_pinned_image" => "拉取已釘選映像".into(),
             "build_from_pinned_source" => "由已釘選來源建置".into(),
             "external_executable" => "外部執行檔".into(),
+            // Task phases, under a translated "階段" label. The backend writes
+            // these as it reaches them, so this list grows the same way the
+            // ones above did: when a report is seen carrying one.
+            "captured_awaiting_adapter" => "已擷取，等待轉接器處理".into(),
             // `LocalhostTcpOutcome`.
             "reachable" => "可連線".into(),
             "closed" => "已關閉".into(),
@@ -17518,10 +17522,26 @@ fn html_report_bytes(
                 )
             })
             .unwrap_or_else(|| catalog.text("not recorded", "未記錄").into());
+        // The phase is the state under a finer name, and twenty-three of the
+        // twenty-four records printed the same word twice: once title-cased as
+        // the state, once as the raw snake_case key the backend stores -- which
+        // in a Chinese record read "階段: completed" under a translated label.
+        // It is humanized like every other identifier, and shown only where it
+        // says something the state did not.
+        let state = catalog.identifier(&enum_key(&task.status));
+        let named_phase = catalog.identifier(&task.phase);
+        let phase = match named_phase == state {
+            true => String::new(),
+            false => format!(
+                "<strong>{}:</strong> {} · ",
+                catalog.text("Phase", "階段"),
+                html_escape(&named_phase),
+            ),
+        };
         let body = format!(
             concat!(
                 "<article><h3>{} <code>{}</code></h3>",
-                "<p><strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
+                "<p><strong>{}:</strong> {} · {}",
                 "<strong>{}:</strong> {}%</p>",
                 "<p><strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
                 "<strong>{}:</strong> {}</p>",
@@ -17533,9 +17553,8 @@ fn html_report_bytes(
             catalog.text("Task", "工作"),
             html_escape(&task.task_id),
             catalog.text("State", "狀態"),
-            html_escape(&catalog.identifier(&enum_key(&task.status))),
-            catalog.text("Phase", "階段"),
-            html_escape(&task.phase),
+            html_escape(&state),
+            phase,
             catalog.text("Progress", "進度"),
             catalog.format_number(task.progress_percent as usize),
             catalog.text("Started", "開始"),

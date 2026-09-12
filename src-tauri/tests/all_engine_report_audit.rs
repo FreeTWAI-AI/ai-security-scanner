@@ -2807,6 +2807,55 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert_eq!(html.matches(footnote).count(), 1);
             }
 
+            // The phase is the state under a finer name. Twenty-three of the
+            // twenty-four records printed the same word twice -- "Completed"
+            // as the state, then the backend's raw "completed" as the phase,
+            // which under a translated Chinese label was the English one.
+            for (html, state, phase) in [
+                (
+                    &ordered_html,
+                    "<strong>State:</strong> ",
+                    "<strong>Phase:</strong> ",
+                ),
+                (
+                    &zh_html,
+                    "<strong>狀態:</strong> ",
+                    "<strong>階段:</strong> ",
+                ),
+            ] {
+                let states = html.matches(state).count();
+                assert!(states >= 20, "the audit lost the task records");
+                let phases = html
+                    .match_indices(phase)
+                    .map(|(at, _)| {
+                        let value = &html[at + phase.len()..];
+                        value[..value.find(" \u{b7} ").expect("a phase ends")].to_owned()
+                    })
+                    .collect::<Vec<_>>();
+                assert!(
+                    phases.len() < states / 4,
+                    "{} of {states} records restate their state as a phase",
+                    phases.len()
+                );
+                assert!(!phases.is_empty(), "a phase that differs is not reported");
+                for named in &phases {
+                    assert!(
+                        !named.contains('_'),
+                        "a phase reached the report as a raw key: {named}"
+                    );
+                    let stated = format!("{state}{named} \u{b7} ");
+                    assert!(
+                        !html.contains(&stated),
+                        "a phase repeats the state beside it: {named}"
+                    );
+                }
+            }
+            // Under a translated label, in the translated vocabulary.
+            assert!(
+                zh_html.contains("<strong>階段:</strong> 已擷取，等待轉接器處理"),
+                "a task phase stayed in English in the Chinese report"
+            );
+
             // One embedded catalog produced every coordinate in this run, so
             // its version and digest are one fact about the report, not a
             // hundred and forty-nine facts about individual references. The
