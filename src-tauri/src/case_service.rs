@@ -16273,8 +16273,12 @@ const REDACTION_MARKERS: [(&str, &str); 43] = [
 
 /// The three markers the redaction numbers as it assigns them. The number is
 /// what tells one redacted target from another, so it is kept.
-const NUMBERED_REDACTION_MARKERS: [(&str, &str); 3] = [
+const NUMBERED_REDACTION_MARKERS: [(&str, &str); 7] = [
     ("address set", "位址集合"),
+    ("IAM group", "IAM 群組"),
+    ("IAM policy", "IAM 政策"),
+    ("IAM role", "IAM 角色"),
+    ("IAM user", "IAM 使用者"),
     ("network target", "網路目標"),
     ("port set", "連接埠集合"),
 ];

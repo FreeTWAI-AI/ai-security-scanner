@@ -3062,10 +3062,6 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // Named, not merely removed: a withheld value still says which
             // kind of value it was, on the page as much as in the JSON.
             for (english, chinese) in [
-                (
-                    "[redacted IAM policy]",
-                    "\u{ff08}IAM \u{653f}\u{7b56}\u{ff09}",
-                ),
                 ("[redacted location]", "\u{ff08}\u{4f4d}\u{7f6e}\u{ff09}"),
                 (
                     "[redacted result pointer]",
@@ -3083,6 +3079,43 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     named,
                     "{english} lost its Chinese placeholder"
                 );
+            }
+
+            // Numbered, so eighteen findings over three policies do not all
+            // read as one. The unnumbered marker is the fallback for a name
+            // the alias walk never reached, and this fixture reaches them all.
+            for (kind, translated) in [
+                ("policy", "IAM \u{653f}\u{7b56}"),
+                ("group", "IAM \u{7fa4}\u{7d44}"),
+                ("user", "IAM \u{4f7f}\u{7528}\u{8005}"),
+            ] {
+                assert_eq!(
+                    redacted_english
+                        .matches(&format!("[redacted IAM {kind}]"))
+                        .count(),
+                    0,
+                    "an IAM {kind} was withheld without a number"
+                );
+                let numbered = (1..=9)
+                    .map(|at| {
+                        let named = redacted_english
+                            .matches(&format!("[redacted IAM {kind} {at}]"))
+                            .count();
+                        assert_eq!(
+                            redacted_chinese
+                                .matches(&format!("\u{ff08}{translated} {at}\u{ff09}"))
+                                .count(),
+                            named,
+                            "IAM {kind} {at} lost its Chinese placeholder"
+                        );
+                        named
+                    })
+                    .filter(|named| *named > 0)
+                    .count();
+                assert!(numbered > 0, "no IAM {kind} survived the redaction");
+                if kind == "policy" {
+                    assert_eq!(numbered, 3, "the three policies stopped being told apart");
+                }
             }
 
             if let Some(dump) = std::env::var_os("AI_SCANNER_REPORT_DUMP_DIR").map(PathBuf::from) {

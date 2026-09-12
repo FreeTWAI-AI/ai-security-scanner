@@ -1103,6 +1103,7 @@ pub(crate) fn case_for_export(
 
     if redaction == RedactionProfile::Standard {
         let sensitive_replacements = standard_redaction_replacements(&exported);
+        let iam_aliases = IamAliases::of(&exported);
         exported.title = "Redacted assessment case".into();
         exported.profile.organization_name = "[redacted]".into();
         exported.profile.notes = None;
@@ -1186,11 +1187,11 @@ pub(crate) fn case_for_export(
             }
         }
         for finding in &mut exported.findings {
-            redact_finding(finding, &sensitive_replacements);
+            redact_finding(finding, &sensitive_replacements, &iam_aliases);
         }
         for observation in &mut exported.finding_observations {
             if let Some(snapshot) = &mut observation.finding_snapshot {
-                redact_finding(snapshot, &sensitive_replacements);
+                redact_finding(snapshot, &sensitive_replacements, &iam_aliases);
             }
         }
         for observation in &mut exported.inventory_observations {
@@ -1297,6 +1298,7 @@ pub(crate) fn beginner_report_for_export(
 
 fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &AssessmentCase) {
     let replacements = standard_redaction_replacements(case);
+    let aliases = IamAliases::of(case);
     let iam_context_by_finding = report
         .findings
         .iter()
@@ -1432,7 +1434,7 @@ fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &Asses
             .map(|(is_cloudsplaining, context)| (*is_cloudsplaining, context.as_ref()))
             .unwrap_or((false, None));
         if let Some((source_rule, iam)) = iam_context {
-            finding.title = redacted_aws_iam_finding_title(source_rule.as_deref(), iam);
+            finding.title = redacted_aws_iam_finding_title(source_rule.as_deref(), iam, &aliases);
         } else if is_cloudsplaining {
             redact_legacy_cloudsplaining_prose(&mut finding.title, &mut finding.next_step);
         }
@@ -1467,7 +1469,7 @@ fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &Asses
                 reference.pointer = Some("[redacted result pointer]".into());
             }
             if let Some(details) = &mut reference.scanner_details {
-                redact_scanner_finding_details(details, &replacements);
+                redact_scanner_finding_details(details, &replacements, &aliases);
             }
         }
         if let Some(iam) = finding.evidence_references.iter().find_map(|reference| {
@@ -1658,7 +1660,7 @@ fn redact_data_source(source: &mut DataSource, index: usize) {
     source.metadata.clear();
 }
 
-fn redact_finding(finding: &mut Finding, replacements: &[(String, String)]) {
+fn redact_finding(finding: &mut Finding, replacements: &[(String, String)], aliases: &IamAliases) {
     let is_cloudsplaining = finding
         .evidence
         .iter()
@@ -1675,7 +1677,7 @@ fn redact_finding(finding: &mut Finding, replacements: &[(String, String)]) {
                 .map(|details| (evidence.source_rule.clone(), details))
         });
     if let Some((source_rule, iam)) = &iam_context {
-        finding.title = redacted_aws_iam_finding_title(source_rule.as_deref(), iam);
+        finding.title = redacted_aws_iam_finding_title(source_rule.as_deref(), iam, aliases);
     } else if is_cloudsplaining {
         redact_legacy_cloudsplaining_prose(&mut finding.title, &mut finding.recommendation);
     }
@@ -1703,7 +1705,7 @@ fn redact_finding(finding: &mut Finding, replacements: &[(String, String)]) {
             evidence.location = Some("[redacted location]".into());
         }
         if let Some(details) = &mut evidence.scanner_details {
-            redact_scanner_finding_details(details, replacements);
+            redact_scanner_finding_details(details, replacements, aliases);
         }
         evidence.pointer = None;
         evidence.redacted = true;
@@ -1724,14 +1726,97 @@ fn redact_finding(finding: &mut Finding, replacements: &[(String, String)]) {
     }
 }
 
+/// Stable numbers for the IAM names a Standard export withholds.
+///
+/// The redaction already numbers the other things it withholds -- assets, data
+/// sources, network targets -- so a reader can tell one from another. IAM names
+/// were the exception: eighteen findings over three policies every one of which
+/// read "[redacted IAM policy]", which hides the fact that decides the order of
+/// the work, that nine of them close when a single policy is narrowed.
+///
+/// Numbered in the case's own order, not alphabetically, and only for names the
+/// case actually carries. Nothing here discloses a name; it says which withheld
+/// name is which.
+#[derive(Default)]
+struct IamAliases {
+    policies: Vec<String>,
+    roles: Vec<String>,
+    groups: Vec<String>,
+    users: Vec<String>,
+}
+
+impl IamAliases {
+    fn of(case: &AssessmentCase) -> Self {
+        let mut aliases = Self::default();
+        let snapshots = case
+            .finding_observations
+            .iter()
+            .filter_map(|observation| observation.finding_snapshot.as_ref());
+        for finding in case.findings.iter().chain(snapshots) {
+            let policies = finding
+                .evidence
+                .iter()
+                .filter_map(|evidence| evidence.scanner_details.as_ref())
+                .filter_map(|details| details.aws_iam_policy.as_ref());
+            for iam in policies {
+                Self::remember(&mut aliases.policies, &iam.policy_name);
+                for role in &iam.attached_to.roles {
+                    Self::remember(&mut aliases.roles, role);
+                }
+                for group in &iam.attached_to.groups {
+                    Self::remember(&mut aliases.groups, group);
+                }
+                for user in &iam.attached_to.users {
+                    Self::remember(&mut aliases.users, user);
+                }
+            }
+        }
+        aliases
+    }
+
+    fn remember(seen: &mut Vec<String>, name: &str) {
+        if !seen.iter().any(|kept| kept == name) {
+            seen.push(name.to_owned());
+        }
+    }
+
+    /// A name the walk never reached is still withheld, just unnumbered. It is
+    /// the only outcome that can lose a reader information rather than mislead
+    /// them, so it is the one to fall back to.
+    fn numbered(seen: &[String], kind: &str, name: &str) -> String {
+        match seen.iter().position(|kept| kept == name) {
+            Some(at) => format!("[redacted IAM {kind} {}]", at + 1),
+            None => format!("[redacted IAM {kind}]"),
+        }
+    }
+
+    fn policy(&self, name: &str) -> String {
+        Self::numbered(&self.policies, "policy", name)
+    }
+
+    fn role(&self, name: &str) -> String {
+        Self::numbered(&self.roles, "role", name)
+    }
+
+    fn group(&self, name: &str) -> String {
+        Self::numbered(&self.groups, "group", name)
+    }
+
+    fn user(&self, name: &str) -> String {
+        Self::numbered(&self.users, "user", name)
+    }
+}
+
 fn redacted_aws_iam_finding_title(
     source_rule: Option<&str>,
     iam: &crate::domain::AwsIamPolicyFindingDetails,
+    aliases: &IamAliases,
 ) -> String {
     format!(
-        "{}: {} in policy [redacted IAM policy]",
+        "{}: {} in policy {}",
         source_rule.unwrap_or("AWS IAM policy finding"),
-        iam.finding_identity
+        iam.finding_identity,
+        aliases.policy(&iam.policy_name)
     )
 }
 
@@ -1748,6 +1833,7 @@ fn redact_legacy_cloudsplaining_prose(title: &mut String, action: &mut String) {
 fn redact_scanner_finding_details(
     details: &mut ScannerFindingDetails,
     replacements: &[(String, String)],
+    aliases: &IamAliases,
 ) {
     if details.description.is_some() {
         details.description = Some("[redacted scanner-provided description]".into());
@@ -1762,15 +1848,15 @@ fn redact_scanner_finding_details(
         redact_known_literals(fixed_version, replacements);
     }
     if let Some(iam) = &mut details.aws_iam_policy {
-        iam.policy_name = "[redacted IAM policy]".into();
+        iam.policy_name = aliases.policy(&iam.policy_name);
         for role in &mut iam.attached_to.roles {
-            *role = "[redacted IAM role]".into();
+            *role = aliases.role(role);
         }
         for group in &mut iam.attached_to.groups {
-            *group = "[redacted IAM group]".into();
+            *group = aliases.group(group);
         }
         for user in &mut iam.attached_to.users {
-            *user = "[redacted IAM user]".into();
+            *user = aliases.user(user);
         }
     }
 }
@@ -3075,7 +3161,7 @@ mod tests {
         let redacted_finding = &redacted.findings[0];
         assert_eq!(
             redacted_finding.title,
-            "DataExfiltration: s3:GetObject in policy [redacted IAM policy]"
+            "DataExfiltration: s3:GetObject in policy [redacted IAM policy 1]"
         );
         assert!(
             redacted_finding
@@ -3085,32 +3171,32 @@ mod tests {
         assert!(
             redacted_finding
                 .recommendation
-                .contains("customer-managed policy [redacted IAM policy]")
+                .contains("customer-managed policy [redacted IAM policy 1]")
         );
         assert!(
             redacted_finding
                 .recommendation
-                .contains("role [redacted IAM role]")
+                .contains("role [redacted IAM role 1]")
         );
         let redacted_iam = redacted_finding.evidence[0]
             .scanner_details
             .as_ref()
             .and_then(|details| details.aws_iam_policy.as_ref())
             .expect("typed IAM context remains available");
-        assert_eq!(redacted_iam.policy_name, "[redacted IAM policy]");
-        assert_eq!(redacted_iam.attached_to.roles, ["[redacted IAM role]"]);
+        assert_eq!(redacted_iam.policy_name, "[redacted IAM policy 1]");
+        assert_eq!(redacted_iam.attached_to.roles, ["[redacted IAM role 1]"]);
 
         let report = beginner_report_for_export(&case, "run-1", RedactionProfile::Standard)
             .expect("standard beginner report");
         let report_finding = &report.findings[0];
         assert_eq!(
             report_finding.title,
-            "DataExfiltration: s3:GetObject in policy [redacted IAM policy]"
+            "DataExfiltration: s3:GetObject in policy [redacted IAM policy 1]"
         );
         assert!(
             report_finding
                 .next_step
-                .contains("customer-managed policy [redacted IAM policy]")
+                .contains("customer-managed policy [redacted IAM policy 1]")
         );
         let step = report
             .next_steps
