@@ -14142,6 +14142,71 @@ fn html_severity_profile(report: &BeginnerMasterReport, catalog: HtmlReportCatal
     )
 }
 
+/// One CSS string literal, safe inside the `<style>` element that carries it.
+///
+/// A page margin box can only hold generated content, so text that belongs in
+/// the running header has to be written into the stylesheet rather than the
+/// document. Two things must hold: the quote must not close the string, and
+/// nothing in the text may close the `<style>` element around it.
+fn css_string_literal(value: &str) -> String {
+    let mut literal = String::with_capacity(value.len() + 2);
+    literal.push('"');
+    for character in value.chars() {
+        match character {
+            '"' | '\\' => {
+                literal.push('\\');
+                literal.push(character);
+            }
+            '<' | '>' | '&' => literal.push_str(&format!("\\{:x} ", character as u32)),
+            control if control.is_control() => {
+                literal.push_str(&format!("\\{:x} ", control as u32));
+            }
+            other => literal.push(other),
+        }
+    }
+    literal.push('"');
+    literal
+}
+
+/// The page rule for print and PDF, including the running header and footer.
+///
+/// Paged output is a deliverable here, not a side effect of printing a web
+/// page: this report is what leaves the room. A4 is what the reader's office
+/// prints on, and the margins are sized to hold the running content.
+///
+/// The header and footer are page margin boxes rather than fixed-position
+/// elements. A fixed box does repeat on every page, but it can only be placed
+/// inside the page's content area -- a negative offset does not push it into
+/// the margin, it wraps it to the other end of the page -- so it would sit on
+/// top of the report's own text. Margin boxes cost the report's title having
+/// to be escaped into the stylesheet, which is what `css_string_literal`
+/// handles, and a browser that does not implement them simply prints without
+/// a running header rather than printing a broken one.
+fn html_page_rule(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> String {
+    let running = "font:8.5pt/1.3 sans-serif;color:#667085";
+    format!(
+        concat!(
+            "@page{{size:A4;margin:22mm 15mm 18mm;",
+            "@top-left{{content:{};{};color:#101828;font-weight:600;vertical-align:bottom}}",
+            "@top-right{{content:{};{};vertical-align:bottom}}",
+            "@bottom-left{{content:{};font:7.5pt/1.3 sans-serif;color:#667085;vertical-align:top}}",
+            "@bottom-right{{content:counter(page) \" / \" counter(pages);{};vertical-align:top}}}}",
+            // The cover names the report in full, one line below where the
+            // running header would repeat it.
+            "@page:first{{@top-left{{content:\"\"}}@top-right{{content:\"\"}}}}"
+        ),
+        css_string_literal(&report.project_title),
+        running,
+        css_string_literal(&catalog.format_time(&report.state.last_durable_update)),
+        running,
+        css_string_literal(catalog.text(
+            "Preliminary scanner output. Not an audit, certification, or compliance determination.",
+            "初步的掃描工具輸出。不是稽核、認證或合規判定。",
+        )),
+        running,
+    )
+}
+
 /// The run's headline counts as tiles rather than one run-on sentence.
 ///
 /// These were a single line of bolded labels separated by interpuncts. Seven
@@ -16394,9 +16459,9 @@ fn html_report_bytes(
                 // buried, adjacent cards read as the report printing one
                 // problem twice.
                 "<article><h3>{} <span class=\"finding-asset\">— {}</span></h3>",
-                "<p><span class=\"pill\">{}: {}</span> ",
-                "<span class=\"pill\">{}: {}</span> ",
-                "<span class=\"pill\">{}: {}</span> {} #{}</p>",
+                "<p class=\"finding-meta\"><span class=\"pill pill--{}\">{}: {}</span>",
+                "<span class=\"pill\">{}: {}</span>",
+                "<span class=\"pill\">{}: {}</span><span>{} #{}</span></p>",
                 "<p><strong>{}:</strong> {} · ",
                 "<strong>{}:</strong> <code>{}</code></p>",
                 "<p>{}</p><h4>{}</h4><p>{}</p>",
@@ -16410,6 +16475,7 @@ fn html_report_bytes(
             ),
             html_escape(&finding.title),
             targets,
+            severity_slug(&finding.severity),
             catalog.text("Severity", "嚴重程度"),
             html_escape(&catalog.identifier(&enum_key(&finding.severity))),
             catalog.text("Confidence", "信心程度"),
@@ -16906,6 +16972,11 @@ fn html_report_bytes(
         "details.finding-technical>summary{cursor:pointer;color:var(--muted)}",
         "@media(max-width:760px){body{padding:1.25rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
         ".pill{display:inline-block;border:1px solid currentColor;border-radius:1rem;padding:.08rem .6rem;font-size:.82rem;white-space:nowrap}",
+        ".finding-meta{display:flex;flex-wrap:wrap;gap:.3rem .45rem;align-items:center;color:var(--muted);font-size:.85rem}",
+        ".finding-meta .pill{white-space:normal}",
+        ".pill--critical{color:#7a271a;background:#fbeae7}.pill--high{color:#b42318;background:#fbeae7}",
+        ".pill--medium{color:#b54708;background:#fdf1dc}.pill--low{color:#5c6a70;background:#f2f4f5}",
+        ".pill--informational{color:#667085;background:var(--tint)}.pill--unknown{color:#475467;background:#eceff1}",
         ".executive-summary{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:.6rem;padding:1.1rem 1.35rem;margin:1.5rem 0 2rem;background:var(--tint)}",
         ".executive-summary h2{margin:0 0 .5rem;border:0;padding:0;font-size:1.15rem}",
         ".executive-summary p{margin:.35rem 0;color:var(--ink)}",
@@ -16958,13 +17029,44 @@ fn html_report_bytes(
         ".framework-mix .asset-severity__legend{margin:0;font-size:.75rem}",
         ".framework-source{margin:.75rem 0 0;font-size:.78rem;color:var(--muted);line-height:1.45}",
         ".framework-source__url{overflow-wrap:anywhere}",
-        "@media print{body{max-width:none;padding:0;font-size:11pt;color:#000}",
-        "details{display:block}details>summary{display:none}",
-        "section,article,.asset-result,tr{break-inside:avoid}",
-        "h1,h2{break-after:avoid}.matrix-scroll{overflow:visible}",
-        ".severity-bar__fill,.asset-severity__part,.matrix-cell,.matrix-key",
+    ));
+    document.push_str(&html_page_rule(&report, catalog));
+    document.push_str(concat!(
+        "@media print{",
+        "body{max-width:none;margin:0;padding:0;font-size:10.5pt;color:#000}",
+        // Every major section opens a page. A reader handed the printout should
+        // be able to pull one section out of it without a heading stranded at
+        // the foot of the page before.
+        "h2{break-before:page;break-after:avoid;margin-top:0;font-size:1.15rem}",
+        "h1{break-after:avoid}h3,h4{break-after:avoid}",
+        ".cover h1{font-size:1.9rem}",
+        // The cover carries the title, the counts, and the summary together.
+        ".executive-summary h2,.report-card h2,.kpi-row+*>h2{break-before:auto}",
+        ".executive-summary{break-before:auto;break-inside:avoid}",
+        "p{orphans:3;widows:3}",
+        // Seven tiles reflow to five and two on a page this wide, which leaves
+        // a stranded pair. Four and three is the balanced split.
+        ".kpi-row{grid-template-columns:repeat(4,1fr)}",
+        ".kpi__value{font-size:1.5rem}",
+        "article,.asset-result,.kpi,tr,.severity-row,.matrix-legend{break-inside:avoid}",
+        "thead{display:table-header-group}tfoot{display:table-footer-group}",
+        // A framework block runs longer than a page; keeping its heading with
+        // the first rows is the most that can be promised, and promising the
+        // whole block would only push it and break it anyway.
+        ".framework-block{break-inside:auto}",
+        ".framework-block h3,.framework-block__state{break-after:avoid}",
+        // Collapsed detail is a screen affordance. On paper it is all there is,
+        // so the summary becomes the heading of what follows it.
+        "details{display:block}",
+        "details>summary{display:block;list-style:none;font-weight:600;color:#101828;",
+        "margin:.6rem 0 .2rem;break-after:avoid}",
+        "details>summary::-webkit-details-marker{display:none}",
+        ".matrix-scroll{overflow:visible}",
+        ".severity-bar,.severity-bar__fill,.asset-severity,.asset-severity__part,",
+        ".matrix-cell,.matrix-key,.kpi,.framework-state,thead th,.pill",
         "{-webkit-print-color-adjust:exact;print-color-adjust:exact}",
-        ".coverage-matrix th,.coverage-matrix td{border:1px solid #999}",
+        ".coverage-matrix th,.coverage-matrix td{border:.5pt solid #98a2b3}",
+        "th,td{border-bottom:.5pt solid #98a2b3}",
         "a{text-decoration:none;color:#000}}</style></head><body>"
     ));
     document.push_str(&format!(
@@ -31821,6 +31923,46 @@ mod tests {
         assert!(mixed_html.contains("asset-result--no-problems-completed"));
         assert!(mixed_html.contains("1 completed security check reported no problems"));
         assert!(!mixed_html.contains("2 completed security checks"));
+    }
+
+    /// A case title cannot escape the stylesheet it is printed into.
+    ///
+    /// The running header on every printed page is a page margin box, which
+    /// can only hold generated content, so the title the user typed is written
+    /// into the `<style>` element. That makes the title stylesheet source, and
+    /// a title is not trusted input.
+    #[test]
+    fn a_case_title_cannot_break_out_of_the_page_rule_that_prints_it() {
+        for hostile in [
+            "</style><script>alert(1)</script>",
+            "quote \" backslash \\ ampersand &",
+            "newline \n and \u{0} a null",
+            "</STYLE >",
+        ] {
+            let literal = css_string_literal(hostile);
+            assert!(
+                literal.starts_with('"') && literal.ends_with('"'),
+                "{hostile:?} produced a literal that is not quoted: {literal}"
+            );
+            for forbidden in ['<', '>', '&'] {
+                assert!(
+                    !literal.contains(forbidden),
+                    "{hostile:?} kept {forbidden} raw, so it can reach the parser: {literal}"
+                );
+            }
+            assert!(
+                !literal[1..literal.len() - 1].contains(|character: char| character.is_control()),
+                "{hostile:?} kept a raw control character: {literal}"
+            );
+            // The quote that would close the string early is escaped, not
+            // dropped: the title still reads as the user wrote it.
+            assert_eq!(
+                literal.matches("\\\"").count(),
+                hostile.matches('"').count(),
+                "{hostile:?} lost or gained a quote"
+            );
+        }
+        assert_eq!(css_string_literal("plain title"), "\"plain title\"");
     }
 
     #[test]
