@@ -2514,17 +2514,25 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             }
             // A closed <details> prints its summary and nothing under it, so
             // the printed report carried sixty-two headings that led nowhere.
-            // The style sheet stops printing a closed one at all, and the
-            // terms say what the printed copy therefore leaves behind.
+            // The two groups that cost no pages print regardless; the two that
+            // cost sixty-six between them print only where a reader opened
+            // them, and the terms say which is which.
             for (html, printed) in [
-                (
-                    &ordered_html,
-                    "collapsed technical detail in this HTML report",
-                ),
-                (&zh_html, "是本 HTML 報告中收合的技術細節"),
+                (&ordered_html, "stay collapsed technical detail"),
+                (&zh_html, "仍屬收合的技術細節"),
             ] {
                 assert!(
-                    html.contains("details[open]{display:block}details:not([open]){display:none}"),
+                    html.contains(
+                        ".source-provenance::details-content,.inventory-complete::details-content\
+                         {content-visibility:visible}"
+                    ),
+                    "framework attribution and the inventory would not print"
+                );
+                assert!(
+                    html.contains(
+                        "details:not([open]):not(.source-provenance):not(.inventory-complete)\
+                         {display:none}"
+                    ),
                     "a closed detail would print a heading with nothing under it"
                 );
                 assert_eq!(

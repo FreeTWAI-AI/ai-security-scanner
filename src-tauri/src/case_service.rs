@@ -15984,7 +15984,10 @@ fn html_typed_inventory_section(
             .filter(|item| item.asset_id == *asset_id)
             .map(|item| {
                 format!(
-                    "<li>{}<details><summary>{}</summary><ul>{}</ul></details></li>",
+                    concat!(
+                        "<li>{}<details class=\"source-provenance\"><summary>{}</summary>",
+                        "<ul>{}</ul></details></li>"
+                    ),
                     html_inventory_item_summary(item, catalog),
                     catalog.text("Source provenance", "來源追溯資料"),
                     html_inventory_sources(item, catalog),
@@ -17822,15 +17825,25 @@ fn html_report_bytes(
         ".framework-block h3,.framework-block__state{break-after:avoid}",
         // Collapsed detail is a screen affordance. On paper it is all there is,
         // so the summary becomes the heading of what follows it.
-        // Chrome prints a closed <details> as its summary and nothing else,
-        // so this report was promising "Evidence and framework references"
-        // fifty-one times and printing none of it, plus eleven more headings
-        // that led nowhere. Forcing them all open is not the answer either:
-        // it takes the all-engine report from twenty-seven pages to
-        // eighty-eight. A closed one prints nothing at all now, and the terms
-        // say where that detail is. One a reader opened before printing still
-        // prints, which is the whole reason it opens.
-        "details[open]{display:block}details:not([open]){display:none}",
+        //
+        // Chrome prints a closed <details> as its summary and nothing under
+        // it, so this report was promising sixty-two headings and printing
+        // none of them. What the four groups cost, measured on the all-engine
+        // report against its twenty-one pages: framework attribution 0,
+        // the asset inventory 0, the run's task records +7, and the
+        // fifty-one per-finding evidence blocks +59.
+        //
+        // The two that cost nothing print. They fit in whitespace the layout
+        // already had, and attribution of record is the last thing that should
+        // depend on a reader having clicked something. The two that cost pages
+        // are the technical record the spec keeps as detail: one a reader
+        // opened still prints, and a closed one is not printed as a heading
+        // over nothing.
+        "details[open]{display:block}",
+        ".source-provenance,.inventory-complete{display:block}",
+        ".source-provenance::details-content,.inventory-complete::details-content",
+        "{content-visibility:visible}",
+        "details:not([open]):not(.source-provenance):not(.inventory-complete){display:none}",
         "details>summary{display:block;list-style:none;font-weight:600;color:#101828;",
         "margin:.6rem 0 .2rem;break-after:avoid}",
         "details>summary::-webkit-details-marker{display:none}",
@@ -18077,12 +18090,13 @@ fn html_report_bytes(
         ),
         catalog.text(" ", ""),
         untrusted_evidence_terms,
-        // Said because it is now true of the printed copy. A closed detail
-        // prints nothing, so a reader holding paper should be told what the
-        // file they printed from still has.
+        // Said because it is true of the printed copy, and it has to keep
+        // saying what is true: framework attribution and the asset inventory
+        // print whether or not anyone opened them, and the technical record
+        // prints only if a reader did.
         catalog.text(
-            "Per-finding evidence, source rules and framework coordinates are collapsed technical detail in this HTML report; a printed copy carries only what a reader opened before printing.",
-            "各問題的證據、來源規則與框架座標，是本 HTML 報告中收合的技術細節；列印出來的版本只會包含列印前已展開的內容。",
+            "Framework attribution and the complete asset inventory are collapsed on screen and printed in full. Per-finding evidence, source rules, framework coordinates and the run's task records stay collapsed technical detail; a printed copy carries those only where a reader opened them before printing.",
+            "框架授權陳述與完整資產清單雖然在畫面上收合，列印時會完整輸出。各問題的證據、來源規則、框架座標與本輪工作紀錄仍屬收合的技術細節；列印出來的版本只會包含列印前已展開的部分。",
         ),
     ));
     Ok(document.into_bytes())
