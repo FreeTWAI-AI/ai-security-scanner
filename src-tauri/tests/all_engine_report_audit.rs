@@ -2865,15 +2865,48 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     .find("executive-summary\">")
                     .expect("the executive summary")..];
                 let summary = &summary[..summary.find("</section>").expect("the summary closes")];
-                let named = match tile.chars().next().expect("a tile is labelled") {
-                    first if first.is_ascii_uppercase() => {
-                        format!("{}{}", first.to_ascii_lowercase(), &tile[1..])
-                    }
-                    _ => tile.to_owned(),
-                };
+                let counted = row[..row.rfind("class=\"kpi__label\">").expect("a tile")]
+                    .rsplit_once("class=\"kpi__value\">")
+                    .expect("a tile is counted")
+                    .1;
+                let counted = counted[..counted.find("</span>").expect("a count closes")]
+                    .parse::<usize>()
+                    .expect("a tile counts");
+                assert!(counted > 1, "the audit lost the coverage tile's count");
+                // The sentence stated both totals side by side while the
+                // second contained the first, so five and ten read as
+                // fifteen out of ten. Its parts account for the tile exactly.
+                let last = summary
+                    .rsplit_once("<p>")
+                    .expect("the summary closes with a sentence")
+                    .1;
+                let parts = last
+                    .split(|character: char| !character.is_ascii_digit())
+                    .filter(|part| !part.is_empty())
+                    .map(|part| part.parse::<usize>().expect("a counted part"))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    parts.iter().sum::<usize>(),
+                    counted,
+                    "the summary's parts do not add up to the {counted} the tile counts: {parts:?}"
+                );
                 assert!(
-                    summary.contains(&named),
-                    "the summary calls the tile's list something else: {named}"
+                    parts.len() >= 2,
+                    "the summary stopped saying what the uncovered list holds"
+                );
+                // Cancelled and unavailable were tracked and left off the
+                // cover: two checks a reader stopped and two dimensions the
+                // run could not reach, counted in neither number.
+                let counts = &report.coverage_counts;
+                assert!(counts.cancelled > 0 && counts.unavailable > 0);
+                assert_eq!(
+                    parts[0],
+                    counts.failed
+                        + counts.timed_out
+                        + counts.cancelled
+                        + counts.not_tested
+                        + counts.unavailable,
+                    "the summary drops a state that is short of a completed check"
                 );
                 assert!(
                     !summary.contains("Those areas were not tested")

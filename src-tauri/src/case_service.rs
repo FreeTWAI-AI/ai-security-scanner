@@ -14186,40 +14186,62 @@ fn html_executive_summary(
         }
     });
 
-    let untested = counts.failed + counts.timed_out + counts.not_tested;
+    // Every state this report counts as short of a completed check. Two of
+    // them were tracked and then left off the cover: the run cancelled two
+    // checks and could not reach two dimensions at all, and the sentence that
+    // says what was not covered counted neither.
+    let untested = counts.failed
+        + counts.timed_out
+        + counts.cancelled
+        + counts.not_tested
+        + counts.unavailable;
     // The cover tile over this sentence counts the same list and, where any
     // of it is a check that ran and returned no verdict, says so in its label.
     // The sentence called all of them coverage gaps and then said the areas
     // were not tested -- which is the one thing a no-verdict check is not.
+    //
+    // It also stated both totals side by side while the second contained the
+    // first, so a reader could add five and ten and get fifteen out of ten.
+    // The second clause names what the first did not already cover.
     let gaps = report.coverage_gaps.len();
-    let named_gaps = named_coverage_items(gaps, counts.manual_review, catalog);
-    let not_covered = match (catalog.locale, untested, gaps) {
-        (_, 0, 0) => None,
-        (crate::export::ReportLocale::ZhHant, checks, _) if counts.manual_review > 0 => {
-            Some(format!(
-                "有 {} 項檢查沒有完成，另有 {named_gaps}——這些都沒有得到測試結果，不能視為安全。",
-                catalog.format_number(checks),
-            ))
+    let remainder = gaps.saturating_sub(untested);
+    let named_gaps = named_coverage_items(remainder, counts.manual_review, catalog);
+    let named_checks = match catalog.locale {
+        crate::export::ReportLocale::ZhHant => {
+            format!("{} 項檢查沒有完成", catalog.format_number(untested))
         }
-        (crate::export::ReportLocale::ZhHant, checks, _) => Some(format!(
-            "有 {} 項檢查沒有完成，另有 {named_gaps}——這些範圍未經測試，不能視為安全。",
-            catalog.format_number(checks),
-        )),
-        (_, checks, _) if counts.manual_review > 0 => Some(format!(
-            "{} did not complete and {named_gaps} remain. None of that reached a tested result, so none of it can be read as clear.",
-            if checks == 1 {
-                "1 check".to_owned()
-            } else {
-                format!("{} checks", catalog.format_number(checks))
-            },
-        )),
-        (_, checks, _) => Some(format!(
-            "{} did not complete and {named_gaps} remain. Those areas were not tested and cannot be read as clear.",
-            if checks == 1 {
-                "1 check".to_owned()
-            } else {
-                format!("{} checks", catalog.format_number(checks))
-            },
+        _ if untested == 1 => "1 check did not complete".to_owned(),
+        _ => format!(
+            "{} checks did not complete",
+            catalog.format_number(untested)
+        ),
+    };
+    let remains = match remainder {
+        1 => "remains",
+        _ => "remain",
+    };
+    // A no-verdict check ran, so it is not one of the areas that were not
+    // tested; where the list holds one, the closing sentence says what is
+    // true of all of it instead.
+    let closing = match (catalog.locale, counts.manual_review > 0) {
+        (crate::export::ReportLocale::ZhHant, true) => "這些都沒有得到測試結果，不能視為安全。",
+        (crate::export::ReportLocale::ZhHant, false) => "這些範圍未經測試，不能視為安全。",
+        (_, true) => "None of that reached a tested result, so none of it can be read as clear.",
+        (_, false) => "Those areas were not tested and cannot be read as clear.",
+    };
+    let not_covered = match (catalog.locale, untested, remainder) {
+        (_, 0, 0) => None,
+        (crate::export::ReportLocale::ZhHant, 0, _) => Some(format!("有 {named_gaps}——{closing}")),
+        (crate::export::ReportLocale::ZhHant, _, 0) => {
+            Some(format!("有 {named_checks}——{closing}"))
+        }
+        (crate::export::ReportLocale::ZhHant, _, _) => {
+            Some(format!("有 {named_checks}，另有 {named_gaps}——{closing}"))
+        }
+        (_, 0, _) => Some(format!("{named_gaps} {remains}. {closing}")),
+        (_, _, 0) => Some(format!("{named_checks}. {closing}")),
+        (_, _, _) => Some(format!(
+            "{named_checks} and {named_gaps} {remains}. {closing}"
         )),
     };
 
