@@ -15157,11 +15157,12 @@ fn html_asset_result_section(
             declared,
             format!(
                 concat!(
-                    "<li class=\"asset-result asset-result--{}\">",
-                    "<div class=\"asset-result__identity\"><strong>{}</strong>{}</div>",
-                    "<div class=\"asset-result__signal\">",
-                    "<strong class=\"pill asset-result__status\">{}</strong>{}</div>",
-                    "<p><strong>{}</strong><br>{}</p></li>"
+                    "<tr class=\"asset-result asset-result--{}\">",
+                    "<th scope=\"row\" class=\"asset-result__identity\"><strong>{}</strong>{}</th>",
+                    "<td class=\"asset-result__signal\">",
+                    "<strong class=\"pill asset-result__status\">{}</strong></td>",
+                    "<td class=\"asset-result__mix\">{}</td>",
+                    "<td><strong>{}</strong> {}</td></tr>"
                 ),
                 class_name,
                 html_escape(target_label),
@@ -15182,13 +15183,20 @@ fn html_asset_result_section(
     format!(
         concat!(
             "<section class=\"asset-results\"><h2>{}</h2><p>{}</p>",
-            "<ul class=\"asset-result-list\">{}</ul></section>"
+            "<table class=\"asset-result-table\"><colgroup><col class=\"c-asset\">",
+            "<col class=\"c-state\"><col class=\"c-mix\"><col></colgroup><thead><tr>",
+            "<th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead>",
+            "<tbody>{}</tbody></table></section>"
         ),
         catalog.text("Which assets need attention", "哪些資產需要處理"),
         catalog.text(
             "Every selected asset appears once. A no-problem result applies only to the security checks that completed.",
             "每個已選資產都會列出一次；「未發現問題」只適用於已完成的資安檢查。",
         ),
+        catalog.text("Asset", "資產"),
+        catalog.text("What this run shows", "本輪的情形"),
+        catalog.text("Severity mix", "嚴重程度組成"),
+        catalog.text("What to do next", "下一步怎麼做"),
         rows,
     )
 }
@@ -15990,28 +15998,34 @@ fn html_report_bytes(
                     .to_owned()
             };
             let targets = readable_target_list(&check.target_asset_ids, &target_labels, catalog);
+            // Twenty-four runs at three lines apiece filled two pages with a
+            // label repeated seventy-two times. The labels are the column
+            // headings now and each run is one row, so a reader can compare
+            // what ran against what it ran on. A run that retained detail of
+            // its own keeps it, in a row of its own beneath.
+            let detail = if dimensions.is_empty() {
+                String::new()
+            } else {
+                format!("<tr class=\"tested-detail\"><td colspan=\"5\">{dimensions}</td></tr>")
+            };
             format!(
                 concat!(
-                    "<li><strong>{}</strong> — {}",
-                    "<br><small>{}: {} · {}: {}</small>",
-                    "<br><small>{}: {}</small>{}</li>"
+                    "<tr><th scope=\"row\">{}</th><td class=\"tested-state\">{}</td><td>{}</td>",
+                    "<td class=\"tested-time\">{}</td><td class=\"tested-time\">{}</td></tr>{}"
                 ),
                 html_escape(&readable_dimension(&check.check_id)),
                 html_escape(catalog.coverage_status(&check.status)),
-                catalog.text("Started", "開始"),
-                html_escape(&display_time(check.started_at.as_ref())),
-                catalog.text("Finished", "完成"),
-                html_escape(&display_time(check.finished_at.as_ref())),
-                catalog.text("Targets", "目標"),
                 targets,
-                dimensions,
+                html_escape(&display_time(check.started_at.as_ref())),
+                html_escape(&display_time(check.finished_at.as_ref())),
+                detail,
             )
         })
         .collect::<String>();
     if tested_items.is_empty() {
         tested_items.push_str(catalog.text(
-            "<li>No completed test dimension was saved for this run.</li>",
-            "<li>本輪未保存任何已完成的測試面向。</li>",
+            "<tr><td colspan=\"5\">No completed test dimension was saved for this run.</td></tr>",
+            "<tr><td colspan=\"5\">本輪未保存任何已完成的測試面向。</td></tr>",
         ));
     }
     let network_scope_section = if report.actual.network_scopes.is_empty() {
@@ -17299,21 +17313,44 @@ fn html_report_bytes(
         ".report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}",
         ".report-card{border:1px solid var(--line);border-radius:.6rem;padding:1.15rem;background:#fff}",
         ".report-card h2{margin-top:0;font-size:1.05rem;border:0;padding:0}",
-        ".asset-result-list{list-style:none;padding:0;display:grid;gap:.6rem;margin:.75rem 0 0}",
-        ".asset-result{display:grid;grid-template-columns:minmax(11rem,1.1fr) minmax(9rem,1fr) minmax(15rem,2fr);gap:1.25rem;align-items:start;border:1px solid var(--line);border-left-width:4px;border-radius:.6rem;padding:1rem 1.15rem;background:#fff}",
-        ".asset-result__identity{display:grid;gap:.1rem}",
-        ".asset-result__identity strong{color:var(--ink);overflow-wrap:anywhere}",
+        // Nine assets were nine bordered cards over three pages, each spending
+        // a full-width line on its name, another on its state, another on a
+        // bar as wide as the page, and another on the same sentence of advice.
+        // One row an asset says all of it, and a reader can compare them.
+        ".tested-table{font-size:.84rem}",
+        ".tested-table th,.tested-table td{padding:.3rem .5rem;vertical-align:top}",
+        ".tested-table th[scope=\"row\"]{text-align:left;color:var(--ink)}",
+        // The widest row this table can produce is known: check names come from
+        // the engine catalog and the two time columns are one fixed format. So
+        // nothing here has to wrap, and letting it wrap was expensive - the card
+        // grew past the page, the whole card grid moved to a fresh page, and the
+        // section before it was left half empty. Six pages, for a column break.
+        ".tested-table th{white-space:nowrap}.tested-state{white-space:nowrap}",
+        ".tested-time{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}",
+        ".tested-detail>td{padding-top:0}.tested-detail ul{margin:.15rem 0 .35rem}",
+        ".asset-result-table{table-layout:fixed;font-size:.86rem}",
+        ".asset-result-table col.c-asset{width:22%}.asset-result-table col.c-state{width:7.5rem}",
+        ".asset-result-table col.c-mix{width:10rem}",
+        ".asset-result-table th,.asset-result-table td{padding:.4rem .5rem;vertical-align:top}",
+        ".asset-result__mix .asset-severity{display:inline-flex;width:3rem;",
+        "vertical-align:middle;margin:0 .4rem 0 0}",
+        ".asset-result__mix .asset-severity__legend{display:inline;margin:0;font-size:.75rem}",
+        ".asset-result__identity{text-align:left;font-weight:400}",
+        ".asset-result__identity strong{display:block;color:var(--ink);overflow-wrap:anywhere}",
         ".asset-result__identity small{color:var(--muted);font-size:.82rem}",
-        ".asset-result__signal{display:grid;gap:.35rem}",
-        ".asset-result__signal .pill{justify-self:start}",
-        ".asset-result__status{white-space:nowrap}.asset-result p{margin:0}",
-        ".asset-result--problems-found{border-left-color:#b42318}.asset-result--no-problems-completed{border-left-color:#027a48}",
-        ".asset-result--incomplete-failed{border-left-color:#b54708}.asset-result--not-tested{border-left-color:#667085}",
+        ".asset-result__status{white-space:normal;font-weight:600}",
+        // The state used to be a coloured rule down the left of a card. In a
+        // row it is the pill's own border, so the colour still names the state
+        // without a card to hang it on.
+        ".asset-result--problems-found .asset-result__status{color:#b42318;border-color:#f0b4ac}",
+        ".asset-result--no-problems-completed .asset-result__status{color:#027a48;border-color:#a6dcc0}",
+        ".asset-result--incomplete-failed .asset-result__status{color:#b54708;border-color:#f0c9a0}",
+        ".asset-result--not-tested .asset-result__status{color:#667085;border-color:var(--line)}",
         "details.technical{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}",
         ".finding-asset{font-weight:400;color:var(--muted)}",
         "details.finding-technical{margin-top:.55rem;padding-top:.35rem}",
         "details.finding-technical>summary{cursor:pointer;color:var(--muted)}",
-        "@media(max-width:760px){body{padding:1.25rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
+        "@media(max-width:760px){body{padding:1.25rem}.report-grid{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
         ".pill{display:inline-block;border:1px solid currentColor;border-radius:1rem;padding:.08rem .6rem;font-size:.82rem;white-space:nowrap}",
         ".finding-meta{display:flex;flex-wrap:wrap;gap:.3rem .45rem;align-items:center;color:var(--muted);font-size:.85rem}",
         ".finding-index{font-size:.85rem;table-layout:fixed}",
@@ -17526,7 +17563,9 @@ fn html_report_bytes(
             "<h3>{}</h3><ul>{}</ul><h3>{}</h3><ul>{}</ul>",
             "<h3>{}</h3><ul>{}</ul></div>",
             "<div class=\"report-card\"><h2>{}</h2>",
-            "<p><strong>{}:</strong> {}</p><ul>{}</ul>{}</div>",
+            "<p><strong>{}:</strong> {}</p>",
+            "<table class=\"tested-table\"><thead><tr><th>{}</th><th>{}</th><th>{}</th>",
+            "<th>{}</th><th>{}</th></tr></thead><tbody>{}</tbody></table>{}</div>",
             "<div class=\"report-card\"><h2>{}</h2><ul>{}</ul></div></section>",
             "<section><h2>{}</h2>{}<ol>{}</ol></section>",
             "<h2>{}</h2>",
@@ -17544,6 +17583,11 @@ fn html_report_bytes(
         catalog.text("What was actually tested", "實際測試的內容"),
         catalog.text("Observed window", "觀察時間範圍"),
         html_escape(&actual_window),
+        catalog.text("Check", "檢查"),
+        catalog.text("State", "狀態"),
+        catalog.text("Targets", "目標"),
+        catalog.text("Started", "開始"),
+        catalog.text("Finished", "完成"),
         tested_items,
         network_scope_section,
         coverage_items_title,
@@ -31838,8 +31882,10 @@ mod tests {
         ] {
             assert!(html.contains(&expected), "HTML omitted {expected}");
         }
+        // The window used to be a labelled sentence on every row. It is two
+        // columns now, so the label is said once in the heading.
         assert!(html.contains(&format!(
-            "Started: {} · Finished: {}",
+            "<td class=\"tested-time\">{}</td><td class=\"tested-time\">{}</td>",
             readable_report_time(&started),
             readable_report_time(&finished)
         )));

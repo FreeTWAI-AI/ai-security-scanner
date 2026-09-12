@@ -1818,14 +1818,16 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 .and_then(|target| target.label.clone())
                 .expect("the report's first problem is on a requested asset");
             let first_row = asset_board
-                .find("<li class=\"asset-result")
+                .find("<tr class=\"asset-result")
                 .expect("at least one asset row");
             assert!(
-            asset_board[first_row..].starts_with(&format!(
-                "<li class=\"asset-result asset-result--problems-found\"><div class=\"asset-result__identity\"><strong>{leading_asset}</strong>"
-            )),
-            "the asset carrying the report's first problem leads the board"
-        );
+                asset_board[first_row..].starts_with(&format!(
+                    "<tr class=\"asset-result asset-result--problems-found\">\
+                     <th scope=\"row\" class=\"asset-result__identity\">\
+                     <strong>{leading_asset}</strong>"
+                )),
+                "the asset carrying the report's first problem leads the board"
+            );
             let last_problem = asset_board
                 .rfind("asset-result--problems-found")
                 .expect("a problems row");
@@ -1908,9 +1910,19 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     "a completed check restates its header: {restated}"
                 );
             }
-            // The header still carries every completed check, its window, and its
-            // target, and Nuclei's partial run still shows the dimensions it proved.
-            assert!(tested.contains("<strong>Syft</strong> — Completed"));
+            // Each run is one row now: the check names itself, the state and the
+            // targets sit in their own columns, and the window is the last two.
+            // A run that retained dimension detail keeps it in a row beneath.
+            assert!(
+                tested.contains(
+                    "<tr><th scope=\"row\">Syft</th><td class=\"tested-state\">Completed</td>"
+                ),
+                "a completed run lost its row"
+            );
+            assert!(
+                tested.contains("<tr class=\"tested-detail\"><td colspan=\"5\">"),
+                "a run that proved dimensions of its own lost them"
+            );
 
             // The same rule, in the one other place the report composes a name
             // around an identifier. This list named six scanners differently
