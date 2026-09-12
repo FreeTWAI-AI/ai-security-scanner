@@ -16215,6 +16215,8 @@ fn html_report_bytes(
 
     let mut findings = String::new();
     let mut index_rows = String::new();
+    let mut confidence_bases_used: Vec<crate::domain::ConfidenceBasisCode> = Vec::new();
+    let mut confidence_basis_counts: Vec<(crate::domain::ConfidenceBasisCode, usize)> = Vec::new();
     let mut observations = String::new();
     let mut problem_count = 0usize;
     for (index, finding) in report.findings.iter().enumerate() {
@@ -16553,14 +16555,32 @@ fn html_report_bytes(
                 )
             })
             .unwrap_or((confidence_presentation.as_str(), ""));
-        let confidence_note = if confidence_basis.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "<span class=\"finding-meta__note\">{}</span>",
-                html_escape(confidence_basis)
-            )
-        };
+        // A basis this product derived is one of six fixed sentences, and it
+        // printed under all fifty-one cards: thirty-six of them the same
+        // words. Those are a definition, so they are defined once beneath the
+        // index. A basis the engine reported is that finding's own fact and
+        // stays on that finding's card.
+        if let Some(code) = finding.confidence_basis_code {
+            if !confidence_bases_used.contains(&code) {
+                confidence_bases_used.push(code);
+            }
+            match confidence_basis_counts
+                .iter_mut()
+                .find(|(used, _)| *used == code)
+            {
+                Some((_, count)) => *count += 1,
+                None => confidence_basis_counts.push((code, 1usize)),
+            }
+        }
+        let confidence_note =
+            if finding.confidence_basis_code.is_some() || confidence_basis.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "<span class=\"finding-meta__note\">{}</span>",
+                    html_escape(confidence_basis)
+                )
+            };
         let next_step_inline = html_escape(&next_step);
         // A handful of URLs. As a list they cost a line each plus the list's
         // own margins; inline they cost part of one line.
@@ -16596,16 +16616,16 @@ fn html_report_bytes(
                 "<article id=\"f{}\"><h3>{} <span class=\"finding-asset\">— {}</span></h3>",
                 "<p class=\"finding-meta\"><span class=\"pill pill--{}\">{}: {}</span>",
                 "<span class=\"pill\">{}: {}</span>{}",
-                "<span class=\"pill\">{}: {}</span><span>{} #{}</span></p>",
+                "<span class=\"pill\">{}: {}</span><span>{} #{}</span>",
+                "<span>{}: {}</span></p>",
                 // Run-in labels, not headings. Each of these carries one
                 // sentence, and a heading line plus a margin above and below
                 // it cost more vertical space than the sentence did. Six of
                 // them per card, fifty-one cards.
-                "<p>{}</p><p><strong>{}:</strong> {}</p>",
+                "<p>{} <strong>{}:</strong> {}</p>",
                 "<p class=\"finding-action\"><strong>{}:</strong> {}</p>",
                 "{}{}",
-                "<p><strong>{}:</strong> {}</p>",
-                "<p><strong>{}:</strong> {}</p>",
+                "<p class=\"finding-references\"><strong>{}:</strong> {}</p>",
                 "<details class=\"technical finding-technical\"><summary><strong>{}</strong></summary>",
                 "<p><strong>{}:</strong> {} · ",
                 "<strong>{}:</strong> <code>{}</code></p>",
@@ -16626,6 +16646,8 @@ fn html_report_bytes(
             html_escape(&priority),
             catalog.text("Report order", "報告順序"),
             catalog.format_number(index + 1),
+            catalog.text("Suggested expert", "建議諮詢的專家"),
+            html_escape(&expert_type),
             html_escape(&plain_language_risk),
             catalog.text("Possible impact", "可能影響"),
             html_escape(&possible_impact),
@@ -16633,8 +16655,6 @@ fn html_report_bytes(
             next_step_inline,
             safety_block,
             verification_block,
-            catalog.text("Suggested expert", "建議諮詢的專家"),
-            html_escape(&expert_type),
             // The upstream advisory stays in the open: it is where a reader
             // goes to understand the problem, not a record of how this
             // product handled it.
@@ -16696,6 +16716,46 @@ fn html_report_bytes(
     // Fifty-one cards is fifty-one pages, and a reader who wants "what did
     // this find" has to read all of them and hold the answer in their head.
     // The index answers it in one table and gives the card number to turn to.
+    // The definition the cards no longer repeat, given once where a reader
+    // meets the ratings. Ordered by how much of this report each basis
+    // actually accounts for, so the sentence opens with the one behind most
+    // of the numbers rather than with whichever finding happened to sort
+    // first.
+    let confidence_legend = if confidence_bases_used.is_empty() {
+        String::new()
+    } else {
+        let mut bases = confidence_bases_used.clone();
+        bases.sort_by_key(|code| {
+            std::cmp::Reverse(
+                confidence_basis_counts
+                    .iter()
+                    .find_map(|(used, count)| (used == code).then_some(*count))
+                    .unwrap_or(0),
+            )
+        });
+        format!(
+            "<p class=\"finding-legend\"><strong>{}{}</strong>{}{}{}</p>",
+            catalog.text("Confidence", "信心程度"),
+            catalog.text(":", "："),
+            catalog.text(
+                " where a scanner reported no confidence of its own, this product's rating comes from ",
+                "當掃描工具未提供自己的信心程度時，本產品依下列基準評定：",
+            ),
+            bases
+                .iter()
+                .map(|code| html_escape(match catalog.locale {
+                    crate::export::ReportLocale::En => {
+                        crate::finding_narrative::confidence_basis_english(*code)
+                    }
+                    crate::export::ReportLocale::ZhHant => {
+                        crate::finding_narrative::confidence_basis_zh_hant(*code)
+                    }
+                }))
+                .collect::<Vec<_>>()
+                .join(catalog.text("; ", "；")),
+            catalog.text(".", "。"),
+        )
+    };
     let finding_index = if index_rows.is_empty() {
         String::new()
     } else {
@@ -16714,6 +16774,10 @@ fn html_report_bytes(
             index_rows,
         )
     };
+    // Before the table, not after it. The paragraph above already tells a
+    // reader that confidence describes evidence strength; this is the rest of
+    // that sentence, and the table itself has no confidence column to explain.
+    let finding_index = confidence_legend + finding_index.as_str();
 
     let mut technical_tasks = String::new();
     for task in &report.technical_details.tasks {
@@ -17142,7 +17206,7 @@ fn html_report_bytes(
         ".asset-result--incomplete-failed{border-left-color:#b54708}.asset-result--not-tested{border-left-color:#667085}",
         "details.technical{margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}",
         ".finding-asset{font-weight:400;color:var(--muted)}",
-        "details.finding-technical{margin-top:1rem;padding-top:0.5rem}",
+        "details.finding-technical{margin-top:.55rem;padding-top:.35rem}",
         "details.finding-technical>summary{cursor:pointer;color:var(--muted)}",
         "@media(max-width:760px){body{padding:1.25rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
         ".pill{display:inline-block;border:1px solid currentColor;border-radius:1rem;padding:.08rem .6rem;font-size:.82rem;white-space:nowrap}",
@@ -17155,7 +17219,12 @@ fn html_report_bytes(
         ".finding-index td:nth-child(4),.finding-index td:nth-child(5){color:var(--muted)}",
         ".finding-index .pill{font-size:.75rem;padding:.02rem .45rem}",
         ".finding-index a{color:var(--accent)}",
-        ".finding-meta__note{flex-basis:100%;font-size:.8rem;line-height:1.35}",
+        // An engine's own rating is two or three words. Given a row of its
+        // own it broke the identifier line into three.
+        ".finding-meta__note{font-size:.8rem;line-height:1.35}",
+        ".finding-references{font-size:.78rem;line-height:1.35;color:var(--muted)}",
+        ".finding-legend{font-size:.82rem;color:var(--muted);margin:-.4rem 0 .9rem}",
+        ".finding-references code{font-size:.92em;background:none;padding:0}",
         ".finding-action{margin-top:.5rem}",
         ".finding-meta .pill{white-space:normal}",
         ".pill--critical{color:#7a271a;background:#fbeae7}.pill--high{color:#b42318;background:#fbeae7}",
@@ -17247,6 +17316,10 @@ fn html_report_bytes(
         "details>summary{display:block;list-style:none;font-weight:600;color:#101828;",
         "margin:.6rem 0 .2rem;break-after:avoid}",
         "details>summary::-webkit-details-marker{display:none}",
+        // On paper the card's summary is a heading for the evidence that
+        // follows it, not a control a reader clicks, and it was carrying a
+        // control's worth of margin above and below one line of text.
+        "article details.finding-technical>summary{margin:.15rem 0 .1rem;font-weight:500}",
         ".matrix-scroll{overflow:visible}",
         ".severity-bar,.severity-bar__fill,.asset-severity,.asset-severity__part,",
         ".matrix-cell,.matrix-key,.kpi,.framework-state,thead th,.pill",
@@ -31605,11 +31678,11 @@ mod tests {
             "Frozen selected-run secret exposure".into(),
             "Finding details unavailable for this legacy run".into(),
             "Severity: High".into(),
-            // The rating and the basis for it are separate elements now: the
-            // chip carries the rating, the line under it carries where the
-            // rating came from. Both still print, in that order.
+            // The chip carries the rating. Where a rating this product
+            // derived came from is a definition, defined once under the
+            // index rather than under every card; an engine's own rating
+            // stays beside the chip because it belongs to that finding.
             "Confidence: Low</span>".into(),
-            "this product&#39;s rating from a pattern or detector match".into(),
             "Priority: 73".into(),
             "Revoke and rotate the exposed credential, then remove it from the source and every retained history entry.".into(),
             evidence_sha256.clone(),
@@ -31685,6 +31758,27 @@ mod tests {
                 "HTML omitted {inventory_text}"
             );
         }
+        // Moving the basis off the cards has to move it somewhere, and the
+        // legend is the somewhere. A card carries the chip; the sentence
+        // behind it is stated once, under the index a reader reads first.
+        let legend = html
+            .split("<p class=\"finding-legend\">")
+            .nth(1)
+            .and_then(|rest| rest.split("</p>").next())
+            .expect("a confidence legend");
+        assert!(
+            legend.contains("a pattern or detector match"),
+            "the legend did not define the basis the cards stopped repeating: {legend}"
+        );
+        let problem_cards = html
+            .split("<h2>Problems found</h2>")
+            .nth(1)
+            .expect("a problems section");
+        assert!(
+            !problem_cards.contains("finding-meta__note"),
+            "a derived basis was still printed on a card instead of in the legend"
+        );
+
         assert_eq!(html.matches("class=\"inventory-sample-item\"").count(), 3);
         assert!(!html.contains("Observed services (not vulnerabilities)"));
         assert!(!html.contains("reachable-service-html"));
