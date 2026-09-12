@@ -17676,15 +17676,16 @@ fn html_report_bytes(
         "body{max-width:none;margin:0;padding:0;font-size:9.5pt;line-height:1.45;color:#000}",
         "article{padding:.6rem .75rem;margin:.45rem 0}article p{margin:.22rem 0}",
         ".finding-index{font-size:8.5pt}",
-        // Every major section opens a page. A reader handed the printout should
-        // be able to pull one section out of it without a heading stranded at
-        // the foot of the page before.
-        "h2{break-before:page;break-after:avoid;margin-top:0;font-size:1.15rem}",
+        // Sections flow. Opening every one on a fresh page cost three pages of
+        // half-empty front matter - severity, coverage and the asset board are
+        // each well under a page and each had one to itself - and six pages
+        // over the whole report. break-after:avoid is what actually keeps a
+        // heading with its section; break-before:page only guaranteed the
+        // whitespace above it.
+        "h2{break-after:avoid;margin-top:0;font-size:1.15rem}",
         "h1{break-after:avoid}h3,h4{break-after:avoid}",
         ".cover h1{font-size:1.9rem}",
-        // The cover carries the title, the counts, and the summary together.
-        ".executive-summary h2,.report-card h2,.kpi-row+*>h2{break-before:auto}",
-        ".executive-summary{break-before:auto;break-inside:avoid}",
+        ".executive-summary{break-inside:avoid}",
         "p{orphans:3;widows:3}",
         // Seven tiles reflow to five and two on a page this wide, which leaves
         // a stranded pair. Four and three is the balanced split.

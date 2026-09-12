@@ -2518,6 +2518,17 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     1,
                     "the terms do not say what a printed copy leaves behind"
                 );
+                // Severity, coverage and the asset board are each well under a
+                // page. Giving each one a page of its own printed three of them
+                // on three pages and cost six over the report.
+                assert!(
+                    !html.contains("h2{break-before:page"),
+                    "a page per section leaves the short ones mostly blank"
+                );
+                assert!(
+                    html.contains("h2{break-after:avoid"),
+                    "nothing keeps a section heading with its section"
+                );
             }
 
             // One embedded catalog produced every coordinate in this run, so
