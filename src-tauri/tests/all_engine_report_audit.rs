@@ -2143,6 +2143,78 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 }
             }
 
+            // Two kinds of name sit in the same column. The NIST and ISO rows
+            // carry this project's own short names for a coordinate, not the
+            // standards' wording, and those were printing in English beside
+            // Chinese counts. The owners' published names, and the titles
+            // kube-bench itself reports, stay as they were written.
+            for translated in ["弱點的辨識與記錄", "技術性弱點的處理"] {
+                assert!(
+                    zh_html.contains(translated),
+                    "the Chinese report kept a project-authored control name in English: \
+                     {translated}"
+                );
+            }
+            for owner_named in [
+                "Vulnerable and Outdated Components",
+                "Ensure that the --anonymous-auth argument is set to false",
+            ] {
+                assert!(
+                    zh_html.contains(owner_named),
+                    "the Chinese report translated a name its owner published: {owner_named}"
+                );
+            }
+
+            // Attribution is four sentences per framework and they are not one
+            // kind of sentence. The citation, the copyright line and the
+            // licence name are the attribution of record and stay as the
+            // licensor wrote them. What this product selected, changed, and is
+            // not endorsed by are its own sentences, and a Chinese reader had
+            // been getting all four in English.
+            let zh_sources = zh_html
+                .split("class=\"framework-block framework-sources\"")
+                .nth(1)
+                .and_then(|rest| rest.split("</article>").next())
+                .expect("the Chinese framework sources block");
+            for product_sentence in [
+                "has not reviewed or endorsed this report or integration",
+                "project-authored navigation metadata",
+                "are referenced nominatively",
+                "remains subject to",
+                "is not affiliated with, approved, certified, sponsored, or endorsed",
+                "as the pinned kube-bench image reports them",
+                "publishes in its own CIS 3.0 compliance file",
+            ] {
+                assert!(
+                    !zh_sources.contains(product_sentence),
+                    "the Chinese attribution kept this product's own sentence in English: \
+                     {product_sentence}"
+                );
+            }
+            for of_record in [
+                "NIST Cybersecurity Framework (CSF) 2.0, National Institute of Standards",
+                "AIDEFEND AI Defense Framework, created by Edward Lee",
+                "Creative Commons Attribution 4.0 International",
+                "Creative Commons Attribution-ShareAlike 4.0 International",
+                "Copyright (c) 2003-2025 The OWASP Foundation, Inc.",
+            ] {
+                assert!(
+                    zh_sources.contains(of_record),
+                    "the Chinese attribution translated the attribution of record: {of_record}"
+                );
+            }
+            for translated in [
+                "未審閱或背書本報告與本整合",
+                "屬於導覽用的中繼資料",
+                "以指名方式引用",
+                "本報告不是該基準的複本",
+            ] {
+                assert!(
+                    zh_sources.contains(translated),
+                    "the Chinese attribution lost: {translated}"
+                );
+            }
+
             // A Chinese clause does not end with an ASCII full stop, comma or
             // semicolon. The footer set "遮蔽設定: 無." that way and joined the
             // next Chinese sentence with a space, beside a sibling clause

@@ -14327,12 +14327,13 @@ fn source_line(
 ) -> String {
     format!(
         concat!(
-            "<p class=\"framework-source\"><strong>{} {} {}</strong> \u{2014} {} ",
+            "<p class=\"framework-source\"><strong>{} {} {}</strong>{}{} ",
             "<span class=\"framework-source__url\">{}</span></p>"
         ),
         html_escape(&framework.framework),
         catalog.text("version", "版本"),
         html_escape(&framework.expected_version),
+        catalog.text(" \u{2014} ", "："),
         attribution,
         html_escape(&framework.source.source_url),
     )
@@ -14409,6 +14410,128 @@ fn framework_explanation_text(state: &str, exported: &str, catalog: HtmlReportCa
     .to_owned()
 }
 
+/// The Chinese rendering of one framework source notice.
+///
+/// Four notices make up a framework's attribution and they are not one kind of
+/// sentence. A citation, a copyright line and a licence name are the
+/// attribution of record: they identify the work and the terms it is used
+/// under, and translating them would state something the licensor did not, so
+/// they print as the exporter wrote them in every locale. The sentences around
+/// them are this product's own - what it selected, what it changed, and who
+/// has not endorsed it - and a reader is owed those in the language the rest
+/// of the report is written in. A notice with no entry here is one of the
+/// first kind.
+fn framework_source_notice_zh_hant(notice: &str) -> Option<&'static str> {
+    Some(match notice {
+        "Use of NIST source material remains subject to the source publication's notices." => {
+            "NIST 原始素材的使用仍受該出版品自身的聲明規範。"
+        }
+        "ISO/IEC 27001:2022 control coordinates are referenced nominatively." => {
+            "ISO/IEC 27001:2022 的控制項座標以指名方式引用。"
+        }
+        "ISO/IEC standard content remains subject to ISO's terms; this report is not a copy of the standard." => {
+            "ISO/IEC 標準內容仍受 ISO 的條款規範；本報告不是該標準的複本。"
+        }
+        "Framework relationships and rationales in this report are project-authored navigation metadata." => {
+            "本報告中的框架關聯與理由由本專案撰寫，屬於導覽用的中繼資料。"
+        }
+        "NIST has not reviewed or endorsed this report or integration." => {
+            "NIST 未審閱或背書本報告與本整合。"
+        }
+        "ISO and IEC have not reviewed or endorsed this report or integration." => {
+            "ISO 與 IEC 未審閱或背書本報告與本整合。"
+        }
+        "ai-security-scanner uses a modified, project-authored six-record metadata selection from AIDEFEND 1.20260805 at pinned commit e10c1678ee49f03f8fb0c97d446ba3fbc3543655." => {
+            "ai-security-scanner 使用經改作、由本專案撰寫的六筆中繼資料選集，取自 AIDEFEND 1.20260805 的固定提交 e10c1678ee49f03f8fb0c97d446ba3fbc3543655。"
+        }
+        "This independent integration is not affiliated with, approved, certified, sponsored, or endorsed by AIDEFEND or its owner." => {
+            "本整合為獨立進行，未與 AIDEFEND 或其擁有者有從屬關係，也未獲其核准、認證、贊助或背書。"
+        }
+        "Category membership is read from the CWE sets OWASP publishes for each 2021 category; the rationales beside them are project-authored navigation metadata." => {
+            "類別歸屬讀自 OWASP 為 2021 各類別公布的 CWE 集合；旁邊的理由由本專案撰寫，屬於導覽用的中繼資料。"
+        }
+        "The OWASP Foundation has not reviewed or endorsed this report or integration." => {
+            "OWASP Foundation 未審閱或背書本報告與本整合。"
+        }
+        "This report references three of the ten 2025 categories, the only ones the packaged engines produce evidence for; the rationales are project-authored navigation metadata." => {
+            "本報告引用 2025 年十個類別中的三個，也就是內建引擎唯一能產出證據的那幾個；理由由本專案撰寫，屬於導覽用的中繼資料。"
+        }
+        "The OWASP Foundation and the OWASP GenAI Security Project have not reviewed or endorsed this report or integration." => {
+            "OWASP Foundation 與 OWASP GenAI Security Project 未審閱或背書本報告與本整合。"
+        }
+        "CIS Kubernetes Benchmark v1.11 recommendation numbers and titles are referenced nominatively; they are the coordinates kube-bench itself reports against." => {
+            "CIS Kubernetes Benchmark v1.11 的建議編號與標題以指名方式引用；那正是 kube-bench 自己回報時所依據的座標。"
+        }
+        "CIS Benchmark content remains subject to the Center for Internet Security's terms of use; this report is not a copy of the benchmark." => {
+            "CIS Benchmark 內容仍受 Center for Internet Security 的使用條款規範；本報告不是該基準的複本。"
+        }
+        "Recommendation titles are reproduced as the pinned kube-bench image reports them." => {
+            "建議項目的標題，照固定版本的 kube-bench 映像回報的原樣重現。"
+        }
+        "The Center for Internet Security has not reviewed or endorsed this report or integration." => {
+            "Center for Internet Security 未審閱或背書本報告與本整合。"
+        }
+        "CIS Amazon Web Services Foundations Benchmark v3.0.0 recommendation numbers and titles are referenced nominatively." => {
+            "CIS Amazon Web Services Foundations Benchmark v3.0.0 的建議編號與標題以指名方式引用。"
+        }
+        "The recommendation-to-check relationship is the one Prowler publishes in its own CIS 3.0 compliance file." => {
+            "建議項目與檢查之間的對應，採用 Prowler 在自家 CIS 3.0 合規檔中公布的版本。"
+        }
+        _ => return None,
+    })
+}
+/// The Chinese rendering of a mapped control's name.
+///
+/// The names in the packaged catalog are two different things. AIDEFEND, both
+/// OWASP lists and both CIS benchmarks are carried under the names their
+/// owners publish, and kube-bench's recommendation titles are reproduced
+/// exactly as the pinned image reports them, so those print as written in
+/// every locale. The NIST CSF and ISO/IEC 27001 names are not the standards'
+/// own wording: they are this project's short names for the coordinate, which
+/// is why the attribution calls the relationships project-authored. A short
+/// name this product wrote is a sentence this product owes a reader in their
+/// own language. A name with no entry here is one of the owners'.
+fn control_title_zh_hant(title: &str) -> Option<&'static str> {
+    Some(match title {
+        // NIST CSF 2.0
+        "Vulnerability identification and recording" => "弱點的辨識與記錄",
+        "Identity and credential lifecycle management" => "身分與憑證的生命週期管理",
+        "Authentication of users, services, and hardware" => "使用者、服務與硬體的身分驗證",
+        "Least-privilege access governance" => "最小權限的存取治理",
+        "Protection of data at rest" => "靜態資料的保護",
+        "Configuration management practices" => "組態管理實務",
+        "Security log availability" => "資安紀錄的可用性",
+        "Secure software development practices" => "安全的軟體開發實務",
+        "Protection of networks and environments from unauthorized access" => {
+            "網路與環境防止未經授權存取的保護"
+        }
+        "Resource capacity for availability" => "維持可用性的資源容量",
+        // ISO/IEC 27001:2022
+        "Policy-governed access" => "依政策管理的存取控制",
+        "Authentication information safeguards" => "驗證資訊的保護措施",
+        "Access entitlement governance" => "存取權限的治理",
+        "Cloud service security responsibilities" => "雲端服務的資安責任",
+        "Privileged access safeguards" => "特權存取的保護措施",
+        "Capacity management" => "容量管理",
+        "Technical vulnerability handling" => "技術性弱點的處理",
+        "Configuration management" => "組態管理",
+        "Security-relevant audit records" => "與資安有關的稽核紀錄",
+        "Networks security" => "網路安全",
+        "Cryptographic safeguards" => "密碼學保護措施",
+        "Secure coding practices" => "安全程式撰寫實務",
+        "Security testing before acceptance" => "驗收前的資安測試",
+        _ => return None,
+    })
+}
+
+/// A mapped control's name in the locale the report is written in.
+fn control_title_text(title: &str, catalog: HtmlReportCatalog) -> String {
+    match catalog.locale {
+        crate::export::ReportLocale::ZhHant => control_title_zh_hant(title).unwrap_or(title),
+        crate::export::ReportLocale::En => title,
+    }
+    .to_owned()
+}
 /// Where the report's framework coordinates come from and what they cover.
 ///
 /// The consolidated mapping already existed, but only as a separate JSON
@@ -14495,9 +14618,7 @@ fn html_framework_section(
                     "<td class=\"numeric\">{}</td><td class=\"framework-mix\">{}</td></tr>"
                 ),
                 html_escape(&control.control_id),
-                // Control titles are the framework owner's official names and
-                // stay verbatim in every report locale.
-                html_escape(&control.title),
+                html_escape(&control_title_text(&control.title, catalog)),
                 catalog.format_number(findings.len()),
                 html_asset_severity_strip(&mix, catalog),
             ));
@@ -14512,9 +14633,25 @@ fn html_framework_section(
         ]
         .into_iter()
         .filter(|notice| !notice.is_empty())
+        .map(|notice| match catalog.locale {
+            crate::export::ReportLocale::ZhHant => {
+                framework_source_notice_zh_hant(notice).unwrap_or(notice)
+            }
+            crate::export::ReportLocale::En => notice,
+        })
         .map(html_escape)
-        .collect::<Vec<_>>()
-        .join(" ");
+        // Four notices run together as one paragraph, and in Chinese the
+        // sentence terminator already closes the gap: a space after "。" is
+        // an English habit. One is still needed after a citation that ends
+        // in a full stop or a licence URL, so the join asks what came before
+        // rather than assuming one language.
+        .fold(String::new(), |mut paragraph, notice| {
+            if !paragraph.is_empty() && paragraph.ends_with(|last: char| last.is_ascii()) {
+                paragraph.push(' ');
+            }
+            paragraph.push_str(&notice);
+            paragraph
+        });
 
         // A framework the run reached nothing in does not need a card. Its
         // row in the overview above already gives its name, its state and its
@@ -16553,9 +16690,7 @@ fn html_report_bytes(
                     html_escape(&reference.framework),
                     html_escape(&reference.framework_version),
                     html_escape(&reference.control_id),
-                    // Framework control titles are official names and stay
-                    // verbatim in every report locale.
-                    html_escape(&reference.title),
+                    html_escape(&control_title_text(&reference.title, catalog)),
                     catalog.text("Relationship", "關係"),
                     html_escape(relationship),
                     catalog.text("Why related", "關聯原因"),
@@ -32445,6 +32580,45 @@ mod tests {
         }
     }
 
+    #[test]
+    fn every_control_name_this_project_wrote_itself_has_a_chinese_form() {
+        // The packaged catalog carries two kinds of name. Reading it here,
+        // rather than restating a list, is what makes this a guard: a control
+        // added to NIST CSF or ISO/IEC 27001 without a Chinese short name
+        // fails, instead of quietly printing English in a Chinese report.
+        const CATALOG: &str = include_str!("../../mappings/control-mappings.json");
+        let catalog: serde_json::Value = serde_json::from_str(CATALOG).expect("packaged catalog");
+        let controls = catalog["controls"].as_array().expect("controls");
+        assert!(!controls.is_empty());
+
+        let mut project_authored = 0usize;
+        let mut owner_named = 0usize;
+        for control in controls {
+            let framework = control["framework"].as_str().expect("framework");
+            let title = control["title"].as_str().expect("title");
+            match framework {
+                "NIST CSF" | "ISO/IEC 27001" => {
+                    project_authored += 1;
+                    assert!(
+                        control_title_zh_hant(title).is_some(),
+                        "{framework} {} has no Chinese short name: {title}",
+                        control["control_id"],
+                    );
+                }
+                // The owners' own names, and kube-bench's own recommendation
+                // titles. Translating these would put words in their mouths.
+                _ => {
+                    owner_named += 1;
+                    assert!(
+                        control_title_zh_hant(title).is_none(),
+                        "{framework} {} translated a name its owner published: {title}",
+                        control["control_id"],
+                    );
+                }
+            }
+        }
+        assert!(project_authored > 0 && owner_named > 0);
+    }
     #[test]
     fn a_long_title_is_abbreviated_rather_than_allowed_to_flood_the_running_head() {
         // Short titles are the user's own words, untouched.
