@@ -2545,6 +2545,33 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 );
             }
 
+            // Whether this run's scanner log can be read back is one fact
+            // about the run's export. Written into each task record it was
+            // four identical lines twenty-four times over, and the records
+            // stopped being about the tasks.
+            for (html, availability, explanation, footnote) in [
+                (
+                    &ordered_html,
+                    "Every task in this run recorded the same state.",
+                    "Run-bound diagnostic log: unavailable.",
+                    "Scanner messages are not included in this readable HTML report.",
+                ),
+                (
+                    &zh_html,
+                    "本輪每個工作記錄的狀態都相同。",
+                    "本輪的診斷紀錄無法取得",
+                    "這份好讀的 HTML 報告不包含掃描器訊息。",
+                ),
+            ] {
+                assert_eq!(html.matches(availability).count(), 1);
+                assert_eq!(
+                    html.matches(explanation).count(),
+                    1,
+                    "the diagnostic-log state is restated per task"
+                );
+                assert_eq!(html.matches(footnote).count(), 1);
+            }
+
             // One embedded catalog produced every coordinate in this run, so
             // its version and digest are one fact about the report, not a
             // hundred and forty-nine facts about individual references. The

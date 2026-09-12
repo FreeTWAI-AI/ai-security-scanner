@@ -17189,7 +17189,13 @@ fn html_report_bytes(
     // that sentence, and the table itself has no confidence column to explain.
     let finding_index = confidence_legend + finding_index.as_str();
 
-    let mut technical_tasks = String::new();
+    // Twenty-four task records carried the same four lines about the same
+    // diagnostic log. Whether a run's scanner log can be read back is a
+    // property of the run's export, not of one task inside it, so when every
+    // task agrees the section says it once and the records stay about the
+    // tasks.
+    let mut rendered_tasks: Vec<(String, String)> = Vec::new();
+    let diagnostics_heading = catalog.text("Redacted diagnostic log", "已遮蔽的診斷紀錄");
     for task in &report.technical_details.tasks {
         let execution = match &task.execution {
             crate::beginner_report::TechnicalExecution::CatalogEngine {
@@ -17346,7 +17352,7 @@ fn html_report_bytes(
                 )
             })
             .unwrap_or_else(|| catalog.text("not recorded", "未記錄").into());
-        technical_tasks.push_str(&format!(
+        let body = format!(
             concat!(
                 "<article><h3>{} <code>{}</code></h3>",
                 "<p><strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
@@ -17356,11 +17362,7 @@ fn html_report_bytes(
                 "<p><strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
                 "<strong>{}:</strong> {}</p>",
                 "<p><strong>{}:</strong> {}</p>",
-                "<h4>{}</h4><ul>{}</ul>",
-                "<h4>{}</h4>",
-                "<p><strong>{}:</strong> {}{}<br>{}</p>",
-                "<p><small>{}</small></p>",
-                "</article>"
+                "<h4>{}</h4><ul>{}</ul>"
             ),
             catalog.text("Task", "工作"),
             html_escape(&task.task_id),
@@ -17392,16 +17394,52 @@ fn html_report_bytes(
             html_escape(&execution),
             catalog.text("Evidence SHA-256", "證據 SHA-256"),
             evidence,
-            catalog.text("Redacted diagnostic log", "已遮蔽的診斷紀錄"),
-            catalog.text("Availability", "可用狀態"),
-            html_escape(&catalog.identifier(&enum_key(&task.redacted_diagnostic_log.availability))),
-            diagnostic_value,
-            html_escape(diagnostic_explanation),
-            catalog.text(
-                "Scanner messages are not included in this readable HTML report.",
-                "這份好讀的 HTML 報告不包含掃描器訊息。",
+        );
+        rendered_tasks.push((
+            body,
+            format!(
+                concat!(
+                    "<p><strong>{}:</strong> {}{}<br>{}</p>",
+                    "<p><small>{}</small></p>"
+                ),
+                catalog.text("Availability", "可用狀態"),
+                html_escape(
+                    &catalog.identifier(&enum_key(&task.redacted_diagnostic_log.availability))
+                ),
+                diagnostic_value,
+                html_escape(diagnostic_explanation),
+                catalog.text(
+                    "Scanner messages are not included in this readable HTML report.",
+                    "這份好讀的 HTML 報告不包含掃描器訊息。",
+                ),
             ),
         ));
+    }
+    let shared_diagnostics = match rendered_tasks.split_first() {
+        Some(((_, first), rest)) if !rest.is_empty() => rest
+            .iter()
+            .all(|(_, block)| block == first)
+            .then(|| first.clone()),
+        _ => None,
+    };
+    let mut technical_tasks = match &shared_diagnostics {
+        Some(shared) => format!(
+            "<article><h4>{}</h4><p>{}</p>{}</article>",
+            diagnostics_heading,
+            catalog.text(
+                "Every task in this run recorded the same state.",
+                "本輪每個工作記錄的狀態都相同。",
+            ),
+            shared,
+        ),
+        None => String::new(),
+    };
+    for (body, block) in rendered_tasks {
+        technical_tasks.push_str(&body);
+        if shared_diagnostics.is_none() {
+            technical_tasks.push_str(&format!("<h4>{diagnostics_heading}</h4>{block}"));
+        }
+        technical_tasks.push_str("</article>");
     }
     if technical_tasks.is_empty() {
         technical_tasks.push_str(catalog.text(
