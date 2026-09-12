@@ -15521,10 +15521,23 @@ fn html_evidence_reference(
     let engine_run_id = reference.engine_run_id.as_deref().unwrap_or(unavailable);
     let artifact_id = reference.artifact_id.as_deref().unwrap_or(unavailable);
     let location = reference.location.as_deref().unwrap_or(unavailable);
+    // Redaction is worth a row where it happened. Forty-eight of fifty-one
+    // evidence records said "Redacted: No", which is this report's default and
+    // is already stated once in the terms as the run's redaction profile. A
+    // record that does not know stays on the page, because that is not the
+    // same as knowing nothing was redacted.
     let redacted = match reference.redacted {
-        Some(true) => catalog.text("Yes", "是"),
-        Some(false) => catalog.text("No", "否"),
-        None => unavailable,
+        Some(true) => format!(
+            "<dt>{}</dt><dd>{}</dd>",
+            catalog.text("Redacted", "已遮蔽"),
+            catalog.text("Yes", "是"),
+        ),
+        Some(false) => String::new(),
+        None => format!(
+            "<dt>{}</dt><dd>{}</dd>",
+            catalog.text("Redacted", "已遮蔽"),
+            unavailable,
+        ),
     };
 
     let scanner_details = match &reference.scanner_details {
@@ -15656,26 +15669,44 @@ fn html_evidence_reference(
                         iam.finding_identity.clone(),
                     ),
                     (action_label, action_label, value(&iam.actions)),
-                    (
-                        "Attached roles",
-                        "附加的角色",
-                        value(&iam.attached_to.roles),
-                    ),
-                    (
-                        "Attached groups",
-                        "附加的群組",
-                        value(&iam.attached_to.groups),
-                    ),
-                    (
-                        "Attached users",
-                        "附加的使用者",
-                        value(&iam.attached_to.users),
-                    ),
                 ] {
                     rows.push_str(&format!(
                         "<dt>{}</dt><dd>{}</dd>",
                         catalog.text(label_en, label_zh),
                         html_escape(&value),
+                    ));
+                }
+                // An empty attachment list in a complete record is not a
+                // missing value: the scanner said no principal of that kind is
+                // attached. Written as "not provided" it claimed the opposite
+                // on thirty-six of fifty-four rows, and every policy in that
+                // run was attached to exactly one kind of principal. An
+                // incomplete record keeps its row, because there the value
+                // really is unknown, and the note below says so.
+                let mut attachment_rows = 0usize;
+                for (label_en, label_zh, items) in [
+                    ("Attached roles", "附加的角色", &iam.attached_to.roles),
+                    ("Attached groups", "附加的群組", &iam.attached_to.groups),
+                    ("Attached users", "附加的使用者", &iam.attached_to.users),
+                ] {
+                    if items.is_empty() && iam.attached_to.complete {
+                        continue;
+                    }
+                    attachment_rows += 1;
+                    rows.push_str(&format!(
+                        "<dt>{}</dt><dd>{}</dd>",
+                        catalog.text(label_en, label_zh),
+                        html_escape(&value(items)),
+                    ));
+                }
+                if attachment_rows == 0 && iam.attached_to.complete {
+                    rows.push_str(&format!(
+                        "<dt>{}</dt><dd>{}</dd>",
+                        catalog.text("Attached to", "附加對象"),
+                        catalog.text(
+                            "No role, group or user is attached.",
+                            "未附加任何角色、群組或使用者。",
+                        ),
                     ));
                 }
                 if !iam.actions_complete {
@@ -15734,7 +15765,7 @@ fn html_evidence_reference(
             "<dt>{}</dt><dd>{}</dd>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
-            "<dt>{}</dt><dd>{}</dd>",
+            "{}",
             "<dt>{}</dt><dd>{}</dd>",
             "</dl>{}</li>"
         ),
@@ -15749,7 +15780,6 @@ fn html_evidence_reference(
         html_escape(engine_run_id),
         catalog.text("Artifact ID", "成品 ID"),
         html_escape(artifact_id),
-        catalog.text("Redacted", "已遮蔽"),
         redacted,
         catalog.text("Evidence location", "證據位置"),
         html_escape(location),
@@ -32600,6 +32630,83 @@ mod tests {
         assert!(!zh_html.contains("<img src="));
         assert!(!zh_html.contains("<script>"));
         assert!(!zh_html.contains("href=\"https://docs.example"));
+    }
+
+    #[test]
+    fn an_empty_attachment_list_says_nothing_is_attached_only_when_the_record_is_complete() {
+        let policy = |roles: &[&str], complete: bool| crate::domain::AwsIamPolicyFindingDetails {
+            policy_source: crate::domain::AwsIamPolicySource::Inline,
+            policy_name: "InsecurePolicy".into(),
+            finding_identity: "ResourceExposure".into(),
+            actions: vec!["s3:PutObjectAcl".into()],
+            actions_complete: true,
+            attached_to: crate::domain::AwsIamAttachedTo {
+                roles: roles.iter().map(|role| (*role).to_owned()).collect(),
+                groups: Vec::new(),
+                users: Vec::new(),
+                complete,
+            },
+        };
+        let reference = |policy| crate::beginner_report::FindingEvidenceReference {
+            evidence_id: "evidence-1".into(),
+            engine_id: "cloudsplaining".into(),
+            details_frozen: true,
+            source_rule: Some("rule".into()),
+            scanner_details: Some(crate::domain::ScannerFindingDetails {
+                description: None,
+                remediation: None,
+                installed_version: None,
+                fixed_version: None,
+                aws_iam_policy: Some(policy),
+                cwe_ids: Vec::new(),
+                cvss: Vec::new(),
+            }),
+            summary: Some("summary".into()),
+            kind: Some(EvidenceKind::Configuration),
+            engine_run_id: Some("run".into()),
+            artifact_id: Some("artifact".into()),
+            redacted: Some(false),
+            artifact_sha256: "a".repeat(64),
+            observed_at: Utc::now(),
+            location: Some("policy".into()),
+        };
+        let render = |policy| {
+            html_evidence_reference(
+                &reference(policy),
+                HtmlReportCatalog::new(crate::export::ReportLocale::En),
+            )
+        };
+
+        // A complete record with nothing attached knows that nothing is
+        // attached, and says so once instead of denying it three times.
+        let complete_and_empty = render(policy(&[], true));
+        assert!(complete_and_empty.contains("No role, group or user is attached."));
+        for denied in ["Attached roles", "Attached groups", "Attached users"] {
+            assert!(!complete_and_empty.contains(denied));
+        }
+        assert!(!complete_and_empty.contains("not provided"));
+
+        // An incomplete record does not know, and an unknown value is not the
+        // same fact as an empty one.
+        let incomplete = render(policy(&[], false));
+        assert!(incomplete.contains("<dt>Attached roles</dt><dd>not provided</dd>"));
+        assert!(!incomplete.contains("No role, group or user is attached."));
+
+        // A list with something in it is unchanged.
+        let attached = render(policy(&["deploy-role"], true));
+        assert!(attached.contains("<dt>Attached roles</dt><dd>deploy-role</dd>"));
+        assert!(!attached.contains("Attached groups"));
+        assert!(!attached.contains("No role, group or user is attached."));
+
+        // Redaction earns a row where it happened, and where it is unknown.
+        assert!(!attached.contains("<dt>Redacted</dt>"));
+        let mut unknown = reference(policy(&[], true));
+        unknown.redacted = None;
+        let unknown = html_evidence_reference(
+            &unknown,
+            HtmlReportCatalog::new(crate::export::ReportLocale::En),
+        );
+        assert!(unknown.contains("<dt>Redacted</dt><dd>not provided</dd>"));
     }
 
     #[test]

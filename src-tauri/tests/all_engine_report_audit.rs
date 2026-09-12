@@ -2553,6 +2553,52 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 );
             }
 
+            // An evidence record answers with what the scanner reported. Two
+            // fields answered with the report's own defaults instead:
+            // "Redacted: No" on forty-eight of fifty-one records, and
+            // "not provided" on thirty-six attachment rows the scanner had in
+            // fact reported as empty.
+            for (html, records, redacted, unknown, roles, groups) in [
+                (
+                    &ordered_html,
+                    "<dt>Evidence summary</dt>",
+                    "<dt>Redacted</dt>",
+                    "not provided",
+                    "<dt>Attached roles</dt>",
+                    "<dt>Attached groups</dt>",
+                ),
+                (
+                    &zh_html,
+                    "<dt>證據摘要</dt>",
+                    "<dt>已遮蔽</dt>",
+                    "未提供",
+                    "<dt>附加的角色</dt>",
+                    "<dt>附加的群組</dt>",
+                ),
+            ] {
+                let evidence_records = html.matches(records).count();
+                assert!(evidence_records > 20, "the audit lost the evidence records");
+                let redaction_rows = html.matches(redacted).count();
+                assert!(
+                    (1..evidence_records / 4).contains(&redaction_rows),
+                    "redaction reported on records where it did not happen: {redaction_rows} rows over {evidence_records} records"
+                );
+                assert_eq!(
+                    html.matches(&format!("<dd>{unknown}</dd>")).count(),
+                    0,
+                    "an evidence field answers with a placeholder"
+                );
+                assert_eq!(
+                    html.matches(roles).count(),
+                    0,
+                    "an empty attachment list is printed as a missing one"
+                );
+                assert!(
+                    html.matches(groups).count() > 0,
+                    "an attachment the scanner did report was dropped with the empty ones"
+                );
+            }
+
             // Every evidence summary this build's adapters write ends with the
             // same sentence about how raw target text is kept. That is one
             // statement about the report, and it was stapled to fifty-one
