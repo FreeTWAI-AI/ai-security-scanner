@@ -2070,6 +2070,11 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "Pull Pinned Image",
                 "Partially Completed",
                 "Run-bound diagnostic log",
+                // The reason a framework reported nothing. The exporter pairs
+                // this sentence with the state identifier and writes both to
+                // the canonical JSON in English; the report has to translate
+                // it like any other sentence it shows a reader.
+                "so coordinates from frameworks that only describe AI systems",
             ] {
                 assert!(
                     !zh_html.contains(stored_english),
@@ -2087,6 +2092,43 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     ordered_html.contains(kept),
                     "the English report lost: {kept}"
                 );
+            }
+
+            // Two frameworks put out of scope for the same reason share one
+            // line. Given a bordered block each they printed the same sentence
+            // twice in a row, under two headings that the overview table one
+            // screen above had already named and scored.
+            for html in [&ordered_html, &zh_html] {
+                assert_eq!(
+                    html.matches("class=\"framework-quiet\"").count(),
+                    1,
+                    "frameworks skipped for one reason did not share one line"
+                );
+            }
+            for (html, both) in [
+                (
+                    &ordered_html,
+                    [
+                        "AIDEFEND version",
+                        "OWASP Top 10 for LLM Applications version",
+                    ],
+                ),
+                (
+                    &zh_html,
+                    ["AIDEFEND 版本", "OWASP Top 10 for LLM Applications 版本"],
+                ),
+            ] {
+                let line = html
+                    .split("class=\"framework-quiet\">")
+                    .nth(1)
+                    .and_then(|rest| rest.split("</p>").next())
+                    .expect("a shared out-of-scope line");
+                for named in both {
+                    assert!(
+                        line.contains(named),
+                        "the shared line dropped {named}: {line}"
+                    );
+                }
             }
 
             // A Chinese clause does not end with an ASCII full stop, comma or

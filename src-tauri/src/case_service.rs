@@ -14314,6 +14314,30 @@ fn html_kpi_tiles(tiles: &[(&str, usize, &str)], catalog: HtmlReportCatalog) -> 
         .collect()
 }
 
+/// One framework owner's notice, kept whole and labelled with whose it is.
+///
+/// Set between one framework's controls and the next, these were four to
+/// seven lines of licence a reader had to cross to reach the next table,
+/// seven times over. Gathered under one heading they are still on the page,
+/// still verbatim, and still attached to the framework they belong to.
+fn source_line(
+    framework: &crate::exporters::framework_report::FrameworkSummary,
+    attribution: &str,
+    catalog: HtmlReportCatalog,
+) -> String {
+    format!(
+        concat!(
+            "<p class=\"framework-source\"><strong>{} {} {}</strong> \u{2014} {} ",
+            "<span class=\"framework-source__url\">{}</span></p>"
+        ),
+        html_escape(&framework.framework),
+        catalog.text("version", "版本"),
+        html_escape(&framework.expected_version),
+        attribution,
+        html_escape(&framework.source.source_url),
+    )
+}
+
 /// The plain-language name of a framework summary's state.
 ///
 /// The wire value is a stable identifier for a machine to branch on. A reader
@@ -14349,6 +14373,42 @@ fn framework_state_text(state: &str, catalog: HtmlReportCatalog) -> String {
     }
 }
 
+/// Why a framework's state is what it is, in the report's language.
+///
+/// The exporter pairs one sentence with each state identifier and writes both
+/// into the canonical JSON in English, where they belong: that file is a wire
+/// format. The reader-facing sentence is presentation, so it is translated
+/// here, keyed on the same identifier the state text uses. A state this
+/// function does not know falls back to the exporter's own sentence rather
+/// than to silence -- an untranslated explanation still explains, a missing
+/// one leaves a framework reporting nothing with no reason given.
+fn framework_explanation_text(state: &str, exported: &str, catalog: HtmlReportCatalog) -> String {
+    match state {
+        "related_coordinates_observed" => catalog.text(
+            "One or more preliminary findings carry an evidence-bound relationship to this framework. The relationship is a navigation aid, not a control result.",
+            "本輪至少有一筆初步問題與這個框架存在證據綁定的關聯。這項關聯是導覽用途，不是控制項的評定結果。",
+        ),
+        "not_applicable_to_declared_context" => catalog.text(
+            "The frozen answers explicitly identify a non-AI assessment and a non-AI-generated artifact, so coordinates from frameworks that only describe AI systems were not inferred.",
+            "已凍結的回答明確指出這不是 AI 評估、產出也不是 AI 生成，因此不會推導只描述 AI 系統的框架座標。",
+        ),
+        "unknown_due_to_unanswered_context" => catalog.text(
+            "No coordinate from this AI-specific framework was inferred because at least one required AI-context answer is legacy or unanswered. This remains unknown, not not-applicable.",
+            "因為至少有一項必要的 AI 情境問題屬於舊版或尚未作答，所以沒有推導這個 AI 專用框架的任何座標。這屬於未知，不是不適用。",
+        ),
+        "unknown_due_to_incomplete_coverage" => catalog.text(
+            "No related coordinate was observed, but coverage is incomplete or unknown. This cannot be interpreted as a passed or implemented control.",
+            "沒有觀察到相關座標，但涵蓋範圍不完整或未知。這不能解讀為控制項已通過或已實作。",
+        ),
+        "no_related_coordinate_observed" => catalog.text(
+            "No selected-run finding carried an evidence-bound relationship to this framework. This is not a pass, implementation claim, or compliance conclusion.",
+            "本輪沒有任何問題與這個框架存在證據綁定的關聯。這不是通過、實作聲明或合規結論。",
+        ),
+        _ => exported,
+    }
+    .to_owned()
+}
+
 /// Where the report's framework coordinates come from and what they cover.
 ///
 /// The consolidated mapping already existed, but only as a separate JSON
@@ -14379,8 +14439,12 @@ fn html_framework_section(
 
     let mut overview = String::new();
     let mut blocks = String::new();
+    let mut sources = String::new();
+    let mut not_applicable: Vec<(Vec<String>, String)> = Vec::new();
     for framework in &framework_report.frameworks {
         let state = framework_state_text(&framework.state, catalog);
+        let explanation =
+            framework_explanation_text(&framework.state, &framework.explanation, catalog);
         let populated = framework.control_count > 0;
         overview.push_str(&format!(
             concat!(
@@ -14452,9 +14516,33 @@ fn html_framework_section(
         .collect::<Vec<_>>()
         .join(" ");
 
-        let body = if rows.is_empty() {
-            format!("<p>{}</p>", html_escape(&framework.explanation))
-        } else {
+        // A framework the run reached nothing in does not need a card. Its
+        // row in the overview above already gives its name, its state and its
+        // two zeroes; a bordered block repeating them, plus one sentence of
+        // why, was six lines to say what the table said in one. The sentence
+        // is the part the table cannot carry, so that is what is kept.
+        if rows.is_empty() {
+            let label = format!(
+                "{} {} {}",
+                html_escape(&framework.framework),
+                catalog.text("version", "版本"),
+                html_escape(&framework.expected_version),
+            );
+            // Two frameworks skipped for the same reason get one sentence.
+            // Both of this run's are skipped because the case declared a
+            // non-AI assessment, and printing that sentence once per
+            // framework reads as the report having lost its place.
+            match not_applicable
+                .iter_mut()
+                .find(|(_, reason): &&mut (Vec<String>, String)| *reason == explanation)
+            {
+                Some((labels, _)) => labels.push(label),
+                None => not_applicable.push((vec![label], explanation.clone())),
+            }
+            sources.push_str(&source_line(framework, &attribution, catalog));
+            continue;
+        }
+        let body = {
             format!(
                 concat!(
                     "<table class=\"framework-controls\"><thead><tr>",
@@ -14473,7 +14561,6 @@ fn html_framework_section(
                 "<article class=\"framework-block\">",
                 "<h3>{} <small>{} {}</small></h3>",
                 "<p class=\"framework-block__state\">{}</p>{}",
-                "<p class=\"framework-source\">{} <span class=\"framework-source__url\">{}</span></p>",
                 "</article>"
             ),
             html_escape(&framework.framework),
@@ -14481,8 +14568,25 @@ fn html_framework_section(
             html_escape(&framework.expected_version),
             html_escape(&state),
             body,
-            attribution,
-            html_escape(&source.source_url),
+        ));
+        sources.push_str(&source_line(framework, &attribution, catalog));
+    }
+    let not_applicable = not_applicable
+        .into_iter()
+        .map(|(labels, reason)| {
+            format!(
+                "<p class=\"framework-quiet\"><strong>{}</strong>{}{}</p>",
+                labels.join(catalog.text(", ", "、")),
+                catalog.text(" \u{2014} ", "："),
+                html_escape(&reason),
+            )
+        })
+        .collect::<String>();
+    if !sources.is_empty() {
+        blocks.push_str(&format!(
+            "<article class=\"framework-block framework-sources\"><h3>{}</h3>{}</article>",
+            catalog.text("Framework sources and attribution", "框架來源與出處聲明"),
+            sources,
         ));
     }
 
@@ -14491,7 +14595,7 @@ fn html_framework_section(
             "<section class=\"framework-coverage\"><h2>{}</h2><p>{}</p>",
             "<table class=\"framework-overview\"><thead><tr>",
             "<th>{}</th><th>{}</th><th class=\"numeric\">{}</th><th class=\"numeric\">{}</th>",
-            "</tr></thead><tbody>{}</tbody></table>{}</section>"
+            "</tr></thead><tbody>{}</tbody></table>{}{}</section>"
         ),
         catalog.text("Where this lands in each framework", "對應到各框架的位置"),
         catalog.text(
@@ -14503,6 +14607,7 @@ fn html_framework_section(
         catalog.text("Controls", "控制項"),
         catalog.text("Findings", "問題"),
         overview,
+        not_applicable,
         blocks,
     )
 }
@@ -17277,10 +17382,25 @@ fn html_report_bytes(
         ".framework-block__state{margin:0;color:var(--muted);font-size:.88rem}",
         ".framework-controls{font-size:.92rem}",
         ".framework-controls td:first-child{white-space:nowrap}",
-        ".framework-mix{width:13.5rem}",
-        ".framework-mix .asset-severity{margin:.1rem 0 .1rem}",
-        ".framework-mix .asset-severity__legend{margin:0;font-size:.75rem}",
-        ".framework-source{margin:.75rem 0 0;font-size:.78rem;color:var(--muted);line-height:1.45}",
+        // Bar beside its counts, not above them. Stacked, the two encodings of
+        // one number cost thirty-two control rows an extra line each; side by
+        // side the row is as tall as its title. The counts stay: a bar alone
+        // is a colour, and this report prints in black and white.
+        // Bar beside its counts, not above them. Stacked, the two encodings of
+        // one number cost thirty-two control rows an extra line each. Both
+        // stay inline-level so the cell remains a table cell: making the cell
+        // itself a flex container took it out of the row and left every rule
+        // in the table at a different height. The counts stay too -- a bar on
+        // its own is a colour, and this report prints in black and white.
+        ".framework-mix{width:16.5rem}",
+        ".framework-mix .asset-severity{display:inline-flex;width:3.5rem;",
+        "vertical-align:middle;margin:0 .45rem 0 0}",
+        ".framework-mix .asset-severity__legend{display:inline;margin:0;font-size:.75rem}",
+        ".framework-source{margin:.55rem 0 0;font-size:.78rem;color:var(--muted);line-height:1.4}",
+        ".framework-sources h3{margin-bottom:.2rem;font-size:1rem}",
+        ".framework-quiet{margin:.45rem 0 0;font-size:.85rem;color:var(--muted)}",
+        ".framework-quiet strong{color:var(--body)}",
+        ".framework-sources .framework-source strong{color:var(--body)}",
         ".framework-source__url{overflow-wrap:anywhere}",
     ));
     document.push_str(&html_page_rule(&report, catalog));
@@ -32248,6 +32368,35 @@ mod tests {
             );
         }
         assert_eq!(css_string_literal("plain title"), "\"plain title\"");
+    }
+
+    #[test]
+    fn a_framework_state_this_report_does_not_know_still_explains_itself() {
+        use crate::export::ReportLocale;
+        let english = HtmlReportCatalog::new(ReportLocale::En);
+        let chinese = HtmlReportCatalog::new(ReportLocale::ZhHant);
+        let exported = "The frozen answers explicitly identify a non-AI assessment and a non-AI-generated artifact, so coordinates from frameworks that only describe AI systems were not inferred.";
+
+        // A state this report knows is translated, and the English report is
+        // still the exporter's own sentence.
+        assert_eq!(
+            framework_explanation_text("not_applicable_to_declared_context", exported, english),
+            exported
+        );
+        let translated =
+            framework_explanation_text("not_applicable_to_declared_context", exported, chinese);
+        assert_ne!(translated, exported);
+        assert!(translated.contains("AI"));
+
+        // A state added upstream without a translation here prints the
+        // exporter's sentence rather than nothing. A framework that reports
+        // no coordinates has to say why in either case.
+        for catalog in [english, chinese] {
+            assert_eq!(
+                framework_explanation_text("a_state_added_later", exported, catalog),
+                exported
+            );
+        }
     }
 
     #[test]
