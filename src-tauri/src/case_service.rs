@@ -13767,6 +13767,26 @@ fn readable_limit_name(name: &str, labels: &BTreeMap<Id, String>) -> String {
     readable_identifier(&replace_target_ids(name, labels))
 }
 
+/// Who a limit was written against, and the limit it sets.
+///
+/// Most limit names are composed as "<holder> <what>", where the holder is a
+/// built-in engine or an approved target. Three are whole names with no holder
+/// at all -- "endpoint", "connection timeout", "application payload" -- and
+/// splitting those on their first space would invent one, so a head that names
+/// neither an engine nor a target gives `None` and the limit stays whole.
+fn limit_holder_and_subject(name: &str, labels: &BTreeMap<Id, String>) -> Option<(String, String)> {
+    let (head, rest) = name.split_once(' ')?;
+    if rest.is_empty() {
+        return None;
+    }
+    if let Some(engine) = crate::registry::builtin_display_name(head) {
+        return Some((engine.to_owned(), rest.to_owned()));
+    }
+    labels
+        .get(head)
+        .map(|label| (label.clone(), rest.to_owned()))
+}
+
 /// The coverage name one gap row leads with, as the reader sees it.
 ///
 /// Chinese keeps the stored text as composed; English names the engine and
@@ -16081,36 +16101,79 @@ fn html_report_bytes(
             "<li>已保存的掃描未保留精確的要求目標說明。</li>",
         ));
     }
-    let mut requested_limits = report
-        .requested
-        .limits
-        .iter()
-        .map(|limit| {
-            // Same rule as the coverage rows below: the identifier the name is
-            // composed around is the only part telling one grant's limits from
-            // another's, so it is carried through rather than prettified away.
-            let name = replace_target_ids(&limit.name, &target_labels);
-            let value = replace_target_ids(&limit.value, &target_labels);
-            let display_value = match catalog.locale {
-                crate::export::ReportLocale::ZhHant => {
-                    crate::finding_narrative::requested_limit_value_zh_hant(&name, &value)
-                }
-                _ => value,
-            };
+    // A limit is a policy and the assets it covers. Written one line per
+    // holder, twenty-one engines sharing one execution timeout printed that
+    // timeout twenty-one times and two targets sharing a port list printed it
+    // twice: forty lines for eleven distinct policies. Holders that share a
+    // policy now share its line.
+    let mut grouped_limits: Vec<(String, String, Vec<String>)> = Vec::new();
+    for limit in &report.requested.limits {
+        // Same rule as the coverage rows below: the identifier the name is
+        // composed around is the only part telling one grant's limits from
+        // another's, so it is carried through rather than prettified away.
+        let name = replace_target_ids(&limit.name, &target_labels);
+        let value = replace_target_ids(&limit.value, &target_labels);
+        let display_value = match catalog.locale {
+            crate::export::ReportLocale::ZhHant => {
+                crate::finding_narrative::requested_limit_value_zh_hant(&name, &value)
+            }
+            _ => value,
+        };
+        // The source is a parenthetical in a Chinese sentence too, and the
+        // half-width pair was the only ASCII bracket left in the Chinese
+        // report.
+        let rendered = format!(
+            "{}{}{}{}",
+            display_value,
+            catalog.text(" (", "（"),
+            catalog.limit_source(&limit.source),
+            catalog.text(")", "）"),
+        );
+        let Some((holder, subject)) = limit_holder_and_subject(&limit.name, &target_labels) else {
             let display_name = match catalog.locale {
                 crate::export::ReportLocale::ZhHant => {
                     crate::finding_narrative::requested_limit_name_zh_hant(&engine_named(&name))
                 }
                 _ => readable_limit_name(&limit.name, &target_labels),
             };
+            grouped_limits.push((display_name, rendered, Vec::new()));
+            continue;
+        };
+        let display_subject = match catalog.locale {
+            crate::export::ReportLocale::ZhHant => {
+                crate::finding_narrative::requested_limit_name_zh_hant(&subject)
+            }
+            _ => readable_identifier(&subject),
+        };
+        match grouped_limits
+            .iter_mut()
+            .find(|(candidate, existing, holders)| {
+                !holders.is_empty() && *candidate == display_subject && *existing == rendered
+            }) {
+            Some((_, _, holders)) => holders.push(holder),
+            None => grouped_limits.push((display_subject, rendered, vec![holder])),
+        }
+    }
+    let mut requested_limits = grouped_limits
+        .into_iter()
+        .map(|(subject, value, holders)| {
+            // An authorized network target names itself: "203.0.113.11 --
+            // 203.0.113.11" is one fact printed twice.
+            let named_itself =
+                matches!(holders.as_slice(), [only] if value.starts_with(only.as_str()));
+            let covered = match holders.is_empty() || named_itself {
+                true => String::new(),
+                false => format!(
+                    "{}{}",
+                    catalog.text(" \u{2014} ", "；適用於 "),
+                    holders.join(catalog.text(", ", "、")),
+                ),
+            };
             format!(
-                "<li><strong>{}:</strong> {}</li>",
-                html_escape(&display_name),
-                html_escape(&format!(
-                    "{} ({})",
-                    display_value,
-                    catalog.limit_source(&limit.source)
-                )),
+                "<li><strong>{}:</strong> {}{}</li>",
+                html_escape(&subject),
+                html_escape(&value),
+                html_escape(&covered),
             )
         })
         .collect::<String>();
@@ -32324,8 +32387,7 @@ mod tests {
             // actually tested, and why a finding-derived next step is listed.
             // All three were printed as stored English under translated
             // headings, the last one as Rust variant names.
-            "檢查逾時限制（Gitleaks）",
-            "3600 秒",
+            "檢查逾時限制:</strong> 3600 秒（已保存的工作設定）；適用於 Gitleaks",
             "Frozen selected-run secret exposure — 嚴重程度：高；信心程度：低 — 本產品依據樣式或偵測器比對結果評定",
             "某個身分未登記多重要素驗證裝置的證據，與驗證使用者及保護驗證資訊有關。",
             "<br>關係: 相關",

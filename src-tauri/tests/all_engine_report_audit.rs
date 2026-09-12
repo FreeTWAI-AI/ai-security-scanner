@@ -1964,19 +1964,34 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     "the limits list humanized an identifier: {wrong}"
                 );
             }
+            // Twenty-one engines shared one execution timeout and the list
+            // printed it once per engine. A limit is a policy and who it
+            // covers: forty lines carried eleven distinct policies.
             for right in [
-                "httpx execution timeout",
-                "KICS execution timeout",
-                "kube-bench execution timeout",
-                "ScoutSuite execution timeout",
-                "ScubaGear execution timeout",
-                "TruffleHog execution timeout",
-                "CloudQuery execution timeout",
-                "Greenbone Community Edition execution timeout",
-                "https://portal.example.test:443 approved ports",
+                "<strong>Execution timeout:</strong> 3600 seconds (saved task settings)",
+                "Checkov, CloudQuery, Cloudsplaining, Gitleaks, Grype, KICS, kube-bench",
+                "<strong>Execution timeout:</strong> 7200 seconds (saved task settings)",
+                "Greenbone Community Edition, httpx, Nuclei",
+                "<strong>Execution timeout:</strong> 14461 seconds (saved task settings)",
+                "<strong>Approved ports:</strong> 443,8443 (saved scope approval)",
+                "<strong>Approved ports:</strong> 443 (saved scope approval)",
             ] {
                 assert!(limits.contains(right), "the limits list lost: {right}");
             }
+            assert_eq!(
+                limits.matches("Execution timeout:").count(),
+                3,
+                "one execution timeout per distinct value, not per engine"
+            );
+            assert!(
+                limits.matches("<li>").count() <= 12,
+                "the limits list is repeating a policy per holder"
+            );
+            // A limit that names itself needs no holder after it.
+            assert!(
+                !limits.contains("203.0.113.11 (saved scope approval) &#8212; 203.0.113.11"),
+                "an authorized network target printed its own name twice"
+            );
 
             // Every remediable finding carries the same product-authored safety
             // sentence, so the report printed the same 115 characters forty-five
@@ -2054,12 +2069,11 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             let zh_html = fs::read_to_string(&zh_path).unwrap();
             assert_paragraphs_are_well_formed(&zh_html, "the Chinese report");
             for named in [
-                "檢查逾時限制（Checkov）",
-                "檢查逾時限制（CloudQuery）",
-                "檢查逾時限制（Greenbone Community Edition）",
-                "檢查逾時限制（KICS）",
-                "檢查逾時限制（ScoutSuite）",
-                "檢查逾時限制（TruffleHog）",
+                "<strong>檢查逾時限制:</strong> 3600 秒（已保存的工作設定）；適用於 Checkov、CloudQuery",
+                "<strong>檢查逾時限制:</strong> 7200 秒（已保存的工作設定）；適用於 Greenbone Community Edition、httpx、Nuclei",
+                "KICS、kube-bench",
+                "ScoutSuite、ScubaGear",
+                "Trivy、TruffleHog",
                 "Checkov 的失敗的檢查項目",
                 "Greenbone Community Edition 的目標回應",
                 "KICS 的逾時的檢查項目",
