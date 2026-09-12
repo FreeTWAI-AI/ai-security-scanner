@@ -1587,6 +1587,153 @@ export const testedObservationProse = (
   );
 };
 
+/**
+ * A slot this build fills with a number. Requiring the digits keeps a value
+ * composed by some other build from being read as one of these shapes and
+ * rearranged into a sentence that says something it does not.
+ */
+const counted = (value: string): string | undefined =>
+  /^\d+$/u.test(value) ? value : undefined;
+
+/**
+ * What a coverage row measured, in Traditional Chinese.
+ *
+ * The third field of a tested row is composed the same way its name is: a
+ * fixed phrase the backend authors, wrapped around a count, a port, or the
+ * identifier of the asset the row is about. So the phrase is translated and
+ * every number and identifier is carried through untouched. Dispatch is on the
+ * row's name because that vocabulary is already closed; matching the composed
+ * value itself would mean guessing at its shape.
+ *
+ * `undefined` for a row name this build does not author.
+ */
+export const testedValueZhHant = (
+  dimension: string,
+  value: string,
+): string | undefined => {
+  // Every Greenbone profile row counts its own frozen checks and names the
+  // asset. Only the noun differs, so they share one shape.
+  const countedProfile = (noun: string, translated: string): string | undefined => {
+    const frozenAt = value.indexOf(" frozen ");
+    if (frozenAt <= 0) return undefined;
+    const count = counted(value.slice(0, frozenAt));
+    const rest = value.slice(frozenAt + " frozen ".length);
+    const onAsset = `${noun} on asset `;
+    if (count === undefined || !rest.startsWith(onAsset)) return undefined;
+    const asset = rest.slice(onAsset.length);
+    return asset ? `對資產 ${asset} 的 ${count} 項已凍結 ${translated}` : undefined;
+  };
+  const suffixed = (text: string, suffix: string): string | undefined =>
+    text.endsWith(suffix) ? text.slice(0, -suffix.length) : undefined;
+  const split = (text: string, separator: string): [string, string] | undefined => {
+    const at = text.indexOf(separator);
+    return at < 0 ? undefined : [text.slice(0, at), text.slice(at + separator.length)];
+  };
+
+  switch (dimension) {
+    // An endpoint and a port carry no words to translate.
+    case "TCP reachability":
+      return value;
+    case "bounded connection contract": {
+      // The attempt count is the spelled-out word this build writes, not a
+      // number, so it is translated rather than carried through.
+      const prefix = "one connection attempt; ";
+      if (!value.startsWith(prefix)) return undefined;
+      const parts = split(value.slice(prefix.length), "; ");
+      if (!parts) return undefined;
+      const timeoutText = suffixed(parts[0], " ms timeout");
+      const payloadText = suffixed(parts[1], " application-payload bytes");
+      if (timeoutText === undefined || payloadText === undefined) return undefined;
+      const timeout = counted(timeoutText);
+      const payload = counted(payloadText);
+      if (timeout === undefined || payload === undefined) return undefined;
+      return `一次連線嘗試；逾時 ${timeout} 毫秒；應用層酬載 ${payload} 位元組`;
+    }
+    case "completed check-to-target coordinate": {
+      const parts = split(value, " on asset ");
+      return parts && parts[0] && parts[1] ? `${parts[0]} 對資產 ${parts[1]}` : undefined;
+    }
+    case "completed planned work units":
+    case "partly completed planned work units": {
+      const parts = split(value, " of ");
+      if (!parts) return undefined;
+      const done = counted(parts[0]);
+      const total = counted(parts[1]);
+      return done !== undefined && total !== undefined
+        ? `${total} 個中的 ${done} 個`
+        : undefined;
+    }
+    case "internal-device TLS vulnerability checks":
+      return countedProfile("Greenbone TLS tests", "Greenbone TLS 檢查");
+    case "SSH service vulnerability checks":
+      return countedProfile("upstream Greenbone SSH tests", "上游 Greenbone SSH 檢查");
+    case "RDP transport security checks":
+      return countedProfile(
+        "upstream Greenbone RDP transport tests",
+        "上游 Greenbone RDP 傳輸檢查",
+      );
+    case "VNC transport security check":
+      return countedProfile(
+        "upstream Greenbone VNC transport test",
+        "上游 Greenbone VNC 傳輸檢查",
+      );
+    case "Telnet cleartext-login security check":
+      return countedProfile("upstream Greenbone Telnet check", "上游 Greenbone Telnet 檢查");
+    case "Nuclei upstream website scan": {
+      const prefix = "technology-aware upstream profile on exact website origin for asset ";
+      if (!value.startsWith(prefix)) return undefined;
+      const asset = value.slice(prefix.length);
+      return asset
+        ? `依技術偵測選擇的上游設定檔，套用於資產 ${asset} 的確切網站來源`
+        : undefined;
+    }
+    case "Greenbone remote vulnerability scan": {
+      const prefix = "applicability-driven upstream profile on asset ";
+      if (!value.startsWith(prefix)) return undefined;
+      const parts = split(value.slice(prefix.length), " across ");
+      if (!parts || !parts[0]) return undefined;
+      const portsText = suffixed(parts[1], " approved TCP ports");
+      const ports = portsText === undefined ? undefined : counted(portsText);
+      return ports === undefined
+        ? undefined
+        : `依適用性選擇的上游設定檔，套用於資產 ${parts[0]} 的 ${ports} 個已核准 TCP 連接埠`;
+    }
+    case "SMTP fixed security profile attempt": {
+      const prefix = "exact ";
+      if (!value.startsWith(prefix)) return undefined;
+      const parts = split(
+        value.slice(prefix.length),
+        "-check upstream Greenbone SMTP profile on asset ",
+      );
+      if (!parts || !parts[1]) return undefined;
+      const count = counted(parts[0]);
+      return count === undefined
+        ? undefined
+        : `對資產 ${parts[1]} 的確切上游 Greenbone SMTP 設定檔，共 ${count} 項檢查`;
+    }
+    case "SMTP TLS checks with selected-run evidence": {
+      const first = split(value, " of ");
+      if (!first) return undefined;
+      const evidenced = counted(first[0]);
+      const second = split(first[1], " selected TLS checks on asset ");
+      if (!second || !second[1]) return undefined;
+      const total = counted(second[0]);
+      return evidenced === undefined || total === undefined
+        ? undefined
+        : `對資產 ${second[1]} 已選取的 ${total} 項 TLS 檢查中的 ${evidenced} 項`;
+    }
+    default:
+      return undefined;
+  }
+};
+
+/** A tested-dimension value in the reader's language. */
+export const localizedTestedValue = (
+  locale: "en" | "zh-TW",
+  dimension: string,
+  value: string,
+): string => (locale === "en" ? value : testedValueZhHant(dimension, value) ?? value);
+
 /** Fixed coverage-ledger explanations shared by the screen and case export. */
 const COVERAGE_RECORD_DETAIL_PROSE: ReadonlyArray<readonly [string, string]> = [
   [

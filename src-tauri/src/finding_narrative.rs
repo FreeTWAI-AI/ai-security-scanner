@@ -1060,6 +1060,113 @@ pub fn tested_observation_zh_hant(english: &str) -> Option<String> {
         .map(|(_, chinese)| (*chinese).to_owned())
 }
 
+/// What a coverage row measured, in Traditional Chinese.
+///
+/// The third field of a tested row is composed the same way its name is: a
+/// fixed phrase this build authors, wrapped around a count, a port, or the
+/// identifier of the asset the row is about. So the phrase is translated and
+/// every number and identifier is carried through untouched. Dispatch is on
+/// the row's name because that vocabulary is already closed and censused;
+/// matching the composed value itself would mean guessing at its shape.
+///
+/// `None` for a row name this build does not author, which
+/// [`crate::beginner_report`] asserts on in debug builds.
+pub fn tested_value_zh_hant(dimension: &str, value: &str) -> Option<String> {
+    /// A slot this build fills with a number. Requiring the digits keeps a
+    /// value composed by some other build from being read as this shape and
+    /// rearranged into a sentence that says something it does not.
+    fn counted(value: &str) -> Option<&str> {
+        (!value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())).then_some(value)
+    }
+
+    // Every Greenbone profile row counts its own frozen checks and names the
+    // asset. Only the noun differs, so they share one shape.
+    let counted_profile = |noun: &str| {
+        let (count, asset) = value.split_once(" frozen ")?;
+        let count = counted(count)?;
+        let asset = asset.strip_prefix(noun)?.strip_prefix(" on asset ")?;
+        Some(format!(
+            "對資產 {asset} 的 {count} 項已凍結 {}",
+            match noun {
+                "Greenbone TLS tests" => "Greenbone TLS 檢查",
+                "upstream Greenbone SSH tests" => "上游 Greenbone SSH 檢查",
+                "upstream Greenbone RDP transport tests" => "上游 Greenbone RDP 傳輸檢查",
+                "upstream Greenbone VNC transport test" => "上游 Greenbone VNC 傳輸檢查",
+                "upstream Greenbone Telnet check" => "上游 Greenbone Telnet 檢查",
+                _ => return None,
+            }
+        ))
+    };
+
+    match dimension {
+        // An endpoint and a port carry no words to translate.
+        "TCP reachability" => Some(value.to_owned()),
+        "bounded connection contract" => {
+            // The attempt count is the spelled-out word this build writes, not
+            // a number, so it is translated rather than carried through.
+            let rest = value.strip_prefix("one connection attempt; ")?;
+            let (timeout, payload) = rest.split_once("; ")?;
+            Some(format!(
+                "一次連線嘗試；逾時 {} 毫秒；應用層酬載 {} 位元組",
+                counted(timeout.strip_suffix(" ms timeout")?)?,
+                counted(payload.strip_suffix(" application-payload bytes")?)?,
+            ))
+        }
+        "completed check-to-target coordinate" => {
+            let (engine, asset) = value.split_once(" on asset ")?;
+            Some(format!("{engine} 對資產 {asset}"))
+        }
+        "completed planned work units" | "partly completed planned work units" => {
+            let (done, total) = value.split_once(" of ")?;
+            Some(format!("{} 個中的 {} 個", counted(total)?, counted(done)?))
+        }
+        "internal-device TLS vulnerability checks" => counted_profile("Greenbone TLS tests"),
+        "SSH service vulnerability checks" => counted_profile("upstream Greenbone SSH tests"),
+        "RDP transport security checks" => {
+            counted_profile("upstream Greenbone RDP transport tests")
+        }
+        "VNC transport security check" => counted_profile("upstream Greenbone VNC transport test"),
+        "Telnet cleartext-login security check" => {
+            counted_profile("upstream Greenbone Telnet check")
+        }
+        "Nuclei upstream website scan" => {
+            let asset = value.strip_prefix(
+                "technology-aware upstream profile on exact website origin for asset ",
+            )?;
+            Some(format!(
+                "依技術偵測選擇的上游設定檔，套用於資產 {asset} 的確切網站來源"
+            ))
+        }
+        "Greenbone remote vulnerability scan" => {
+            let rest = value.strip_prefix("applicability-driven upstream profile on asset ")?;
+            let (asset, ports) = rest.split_once(" across ")?;
+            let ports = counted(ports.strip_suffix(" approved TCP ports")?)?;
+            Some(format!(
+                "依適用性選擇的上游設定檔，套用於資產 {asset} 的 {ports} 個已核准 TCP 連接埠"
+            ))
+        }
+        "SMTP fixed security profile attempt" => {
+            let rest = value.strip_prefix("exact ")?;
+            let (count, asset) =
+                rest.split_once("-check upstream Greenbone SMTP profile on asset ")?;
+            let count = counted(count)?;
+            Some(format!(
+                "對資產 {asset} 的確切上游 Greenbone SMTP 設定檔，共 {count} 項檢查"
+            ))
+        }
+        "SMTP TLS checks with selected-run evidence" => {
+            let (evidenced, rest) = value.split_once(" of ")?;
+            let evidenced = counted(evidenced)?;
+            let (total, asset) = rest.split_once(" selected TLS checks on asset ")?;
+            let total = counted(total)?;
+            Some(format!(
+                "對資產 {asset} 已選取的 {total} 項 TLS 檢查中的 {evidenced} 項"
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// Reviewed catalog rationales presented in Traditional Chinese. The English
 /// catalog remains the canonical source, and an unknown sentence from another
 /// build deliberately has no translation here.
@@ -2579,6 +2686,62 @@ mod tests {
         );
         assert_eq!(
             tested_observation_zh_hant("A later build recorded a different observation."),
+            None
+        );
+    }
+
+    #[test]
+    fn a_measured_value_is_translated_around_its_own_counts_and_identifiers() {
+        // Every number, port, and asset identifier is the reader's own data
+        // and survives the translation byte for byte.
+        assert_eq!(
+            tested_value_zh_hant("TCP reachability", "127.0.0.1:8443"),
+            Some("127.0.0.1:8443".to_owned())
+        );
+        assert_eq!(
+            tested_value_zh_hant(
+                "bounded connection contract",
+                "one connection attempt; 1500 ms timeout; 0 application-payload bytes"
+            ),
+            Some("一次連線嘗試；逾時 1500 毫秒；應用層酬載 0 位元組".to_owned())
+        );
+        assert_eq!(
+            tested_value_zh_hant(
+                "completed check-to-target coordinate",
+                "syft on asset host-10"
+            ),
+            Some("syft 對資產 host-10".to_owned())
+        );
+        assert_eq!(
+            tested_value_zh_hant("completed planned work units", "3 of 12"),
+            Some("12 個中的 3 個".to_owned())
+        );
+        assert_eq!(
+            tested_value_zh_hant(
+                "SSH service vulnerability checks",
+                "9 frozen upstream Greenbone SSH tests on asset host-1"
+            ),
+            Some("對資產 host-1 的 9 項已凍結 上游 Greenbone SSH 檢查".to_owned())
+        );
+        assert_eq!(
+            tested_value_zh_hant(
+                "SMTP fixed security profile attempt",
+                "exact 11-check upstream Greenbone SMTP profile on asset host-1"
+            ),
+            Some("對資產 host-1 的確切上游 Greenbone SMTP 設定檔，共 11 項檢查".to_owned())
+        );
+        assert_eq!(
+            tested_value_zh_hant(
+                "SMTP TLS checks with selected-run evidence",
+                "2 of 10 selected TLS checks on asset host-1"
+            ),
+            Some("對資產 host-1 已選取的 10 項 TLS 檢查中的 2 項".to_owned())
+        );
+        // A row name from another build, and a name this build authors whose
+        // value was composed somewhere else.
+        assert_eq!(tested_value_zh_hant("a later measurement", "4 of 5"), None);
+        assert_eq!(
+            tested_value_zh_hant("completed planned work units", "all of them"),
             None
         );
     }

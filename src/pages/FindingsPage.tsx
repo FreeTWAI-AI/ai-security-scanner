@@ -35,6 +35,7 @@ import {
   localizedExpertType,
   localizedDataQualityWarning,
   localizedRequestedLimitValue,
+  localizedTestedValue,
   testedObservationProse,
 } from "../findingNarrative.ts";
 import {
@@ -770,6 +771,24 @@ const localizedCheckName = (
   return checkId;
 };
 
+/**
+ * What one coverage row measured, in the reader's language.
+ *
+ * The local connection check keeps its own richer sentence, which says how
+ * many attempts and how much payload the boundary allowed. Every other row's
+ * value is composed by the backend around counts and identifiers, and is
+ * translated the same way the shared report translates it.
+ */
+const testedValueText = (
+  engine: ScanRun["engineRuns"][number] | undefined,
+  dimension: string,
+  value: string,
+  locale: "en" | "zh-TW",
+): string => {
+  const localhost = localhostTestedDimensionValue(engine, dimension, value, locale);
+  return localhost === value ? localizedTestedValue(locale, dimension, value) : localhost;
+};
+
 const localizedAssetKind = (kind: string, locale: "en" | "zh-TW"): string => {
   if (locale === "en") return kind.replaceAll("_", " ");
   return ({
@@ -1253,7 +1272,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
           { check: checkLabel, targets: resolvedTarget ?? "" },
         ) + ` · ${text(testedStatusCopy(check.status))}`;
       }
-      return `${checkPrefix} · ${localizedCoverageDimension(dimension.dimension, locale)}: ${localhostTestedDimensionValue(
+      return `${checkPrefix} · ${localizedCoverageDimension(dimension.dimension, locale)}: ${testedValueText(
         engine,
         dimension.dimension,
         dimension.value,
@@ -1475,7 +1494,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
                   {check.testedDimensions.map((dimension, index) => (
                     <span key={`${dimension.dimension}-${dimension.value}-${index}`}>
                       <span>
-                        {localizedCoverageDimension(dimension.dimension, locale)}: {localhostTestedDimensionValue(
+                        {localizedCoverageDimension(dimension.dimension, locale)}: {testedValueText(
                           engine,
                           dimension.dimension,
                           dimension.value,

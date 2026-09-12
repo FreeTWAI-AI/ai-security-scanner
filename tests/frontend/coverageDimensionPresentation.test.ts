@@ -9,6 +9,7 @@ import {
 import {
   coverageGapProse,
   localizedRequestedLimitValue,
+  localizedTestedValue,
   testedObservationProse,
 } from "../../src/findingNarrative.ts";
 
@@ -691,5 +692,70 @@ test("an unrecognized limit name keeps its text instead of being replaced", () =
   assert.match(
     localizedRequestedLimitName("prowler concurrency ceiling", "zh-TW"),
     /prowler concurrency ceiling/u,
+  );
+});
+
+/**
+ * Every tested-dimension value frame the backend writes, beside the row name
+ * that decides how it is read.
+ *
+ * A coverage row's third field is composed the same way its name is, and was
+ * the one field the screen and the report both printed in English: a Chinese
+ * reader was shown "2 of 2" and "applicability-driven upstream profile on
+ * asset ... across 2 approved TCP ports". Censusing the producer keeps a new
+ * frame from being added there and going untranslated here.
+ */
+const testedDimensionValues = Array.from(
+  production.matchAll(
+    /TestedDimension\s*\{([\s\S]*?)observation:/gu,
+  ),
+  (match) => match[1] ?? "",
+).flatMap((body) => {
+  const name = body.match(/\bdimension:\s*"([^"]+)"\.into\(\)/u)?.[1];
+  const frame =
+    body.match(/\bvalue:\s*format!\(\s*\n?\s*"([^"]+)"/u)?.[1];
+  if (!name || !frame) return [];
+  let filled = frame
+    .replaceAll("{asset_id}", "asset-primary")
+    .replaceAll("{port}", "8443")
+    .replaceAll("{timeout_ms}", "250")
+    .replaceAll("{payload_bytes}", "64")
+    .replaceAll("{total}", "7");
+  // Positional holes are all counts in these frames.
+  filled = filled.replaceAll(FORMAT_HOLE, "3");
+  return [{ name, frame, value: filled }];
+});
+
+test("every tested-dimension value frame in the backend is translated", () => {
+  assert.ok(
+    testedDimensionValues.length >= 12,
+    `found only ${testedDimensionValues.length} value frames: ${testedDimensionValues
+      .map(({ frame }) => frame)
+      .join(" / ")}`,
+  );
+  for (const { name, value } of testedDimensionValues) {
+    const translated = localizedTestedValue("zh-TW", name, value);
+    // An endpoint and a port are the reader's own data with no words in them.
+    if (name !== "TCP reachability") {
+      assert.match(translated, /\p{Script=Han}/u, `${name}: ${value}`);
+    }
+    for (const kept of value.match(/asset-primary|\d+/gu) ?? []) {
+      assert.ok(
+        translated.includes(kept),
+        `${name} lost ${kept} from its value: ${translated}`,
+      );
+    }
+    assert.equal(localizedTestedValue("en", name, value), value);
+  }
+});
+
+test("a value composed by another build keeps its own words", () => {
+  assert.equal(
+    localizedTestedValue("zh-TW", "completed planned work units", "all of them"),
+    "all of them",
+  );
+  assert.equal(
+    localizedTestedValue("zh-TW", "a later measurement", "4 of 5"),
+    "4 of 5",
   );
 });

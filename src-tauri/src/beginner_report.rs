@@ -2569,6 +2569,16 @@ fn debug_assert_tested_dimensions_are_translatable(dimensions: &[TestedDimension
                 "no Traditional Chinese for the tested dimension observation: {}",
                 dimension.observation
             );
+            debug_assert!(
+                crate::finding_narrative::tested_value_zh_hant(
+                    &dimension.dimension,
+                    &dimension.value
+                )
+                .is_some(),
+                "no Traditional Chinese for the tested dimension value: {} = {}",
+                dimension.dimension,
+                dimension.value
+            );
         }
     }
 }

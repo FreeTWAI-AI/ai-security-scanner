@@ -14950,7 +14950,19 @@ fn html_report_bytes(
                             }
                             _ => readable_dimension(&dimension.dimension),
                         }),
-                        html_escape(&replace_target_ids(&dimension.value, &target_labels)),
+                        html_escape(&replace_target_ids(
+                            &match catalog.locale {
+                                crate::export::ReportLocale::ZhHant => {
+                                    crate::finding_narrative::tested_value_zh_hant(
+                                        &engine_named(&dimension.dimension),
+                                        &dimension.value,
+                                    )
+                                    .unwrap_or_else(|| dimension.value.clone())
+                                }
+                                _ => dimension.value.clone(),
+                            },
+                            &target_labels,
+                        )),
                         html_escape(&match catalog.locale {
                             crate::export::ReportLocale::ZhHant => {
                                 crate::finding_narrative::tested_observation_zh_hant(
