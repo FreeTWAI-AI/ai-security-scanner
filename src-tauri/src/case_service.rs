@@ -16223,6 +16223,25 @@ fn html_report_bytes(
             None => grouped_limits.push((display_subject, rendered, vec![holder])),
         }
     }
+    // Grouping by policy left the subjects interleaved: one asset's four
+    // limits, then a second asset's, and a third asset's authorized target
+    // stranded past the request rates because its value first appeared late.
+    // Ordered by subject the list reads as what it is - two port policies,
+    // three authorized targets, two network timeouts, two request rates, three
+    // execution timeouts - and the sort is stable, so values stay in the order
+    // the run recorded them.
+    let mut subject_order: Vec<String> = Vec::new();
+    for (subject, _, _) in &grouped_limits {
+        if !subject_order.contains(subject) {
+            subject_order.push(subject.clone());
+        }
+    }
+    grouped_limits.sort_by_key(|(subject, _, _)| {
+        subject_order
+            .iter()
+            .position(|known| known == subject)
+            .unwrap_or(usize::MAX)
+    });
     let mut requested_limits = grouped_limits
         .into_iter()
         .map(|(subject, value, holders)| {

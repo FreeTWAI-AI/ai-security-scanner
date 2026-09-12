@@ -1983,6 +1983,29 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 3,
                 "one execution timeout per distinct value, not per engine"
             );
+            // Grouped by policy but ordered by arrival, one asset's authorized
+            // target sat past the request rates. Like policies read together.
+            let subjects = limits
+                .match_indices("</strong>")
+                .map(|(at, _)| limits[..at].rfind("<strong>").expect("a label opens"))
+                .map(|at| {
+                    limits[at..]
+                        .split_once("</strong>")
+                        .expect("a label closes")
+                        .0
+                })
+                .collect::<Vec<_>>();
+            let mut seen: Vec<&str> = Vec::new();
+            for subject in &subjects {
+                if seen.last() != Some(subject) {
+                    assert!(
+                        !seen.contains(subject),
+                        "the limits list returns to {subject} after leaving it"
+                    );
+                    seen.push(subject);
+                }
+            }
+            assert!(seen.len() >= 5, "the audit lost the limit subjects");
             assert!(
                 limits.matches("<li>").count() <= 12,
                 "the limits list is repeating a policy per holder"
