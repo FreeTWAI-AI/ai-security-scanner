@@ -1871,6 +1871,14 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             let tested = &tested[..tested
                 .find(">What needs attention</h2>")
                 .expect("gaps follow")];
+            // Scoped to this section only for the coordinate wording. The
+            // names themselves are checked across the whole report below,
+            // because the coverage grid was title-casing its column headings
+            // long after this section stopped.
+            assert!(
+                !tested.contains("Completed check To Target"),
+                "the report humanized a coordinate identifier"
+            );
             for wrong in [
                 "Httpx",
                 "Kics",
@@ -1879,10 +1887,9 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "Scubagear",
                 "Trufflehog",
                 "Cloudquery",
-                "Completed check To Target",
             ] {
                 assert!(
-                    !tested.contains(wrong),
+                    !ordered_html.contains(wrong),
                     "the report printed a humanized identifier: {wrong}"
                 );
             }
@@ -2141,6 +2148,31 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                         "the shared line dropped {named}: {line}"
                     );
                 }
+            }
+
+            // A scanner's name is the same string in both reports. The
+            // coverage grid title-cased its column headings, so the Chinese
+            // report named seven engines one way in the grid and another way
+            // three sections later.
+            for wrong in [
+                "Httpx",
+                "Kics",
+                "Kube Bench",
+                "Scoutsuite",
+                "Scubagear",
+                "Trufflehog",
+                "Cloudquery",
+            ] {
+                assert!(
+                    !zh_html.contains(wrong),
+                    "the Chinese report printed a humanized identifier: {wrong}"
+                );
+            }
+            for right in ["httpx", "KICS", "kube-bench", "ScoutSuite", "TruffleHog"] {
+                assert!(
+                    zh_html.contains(right),
+                    "the Chinese report lost a scanner name: {right}"
+                );
             }
 
             // Two kinds of name sit in the same column. The NIST and ISO rows

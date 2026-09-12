@@ -14905,9 +14905,14 @@ fn html_coverage_matrix(
 
     let mut header = String::new();
     for engine in &engines {
+        // The same name the run list and the finding cards use. Title-casing
+        // the identifier instead spelled seven of these scanners in a way
+        // their own documentation does not - "Kube Bench", "Trufflehog",
+        // "Httpx" - so the grid disagreed with every other place the report
+        // names the thing that produced a column.
         header.push_str(&format!(
             "<th scope=\"col\"><span class=\"matrix-engine\">{}</span></th>",
-            html_escape(&catalog.identifier(engine)),
+            html_escape(&readable_dimension(engine)),
         ));
     }
 
