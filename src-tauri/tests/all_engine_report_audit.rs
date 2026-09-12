@@ -2488,7 +2488,6 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             for retained in [
                 "Evidence SHA-256",
                 "Related framework coordinates",
-                "Mapping version",
                 "ISO/IEC 27001",
             ] {
                 let at = first_card
@@ -2497,6 +2496,58 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert!(
                     at > collapsed_at,
                     "{retained} must stay available, collapsed"
+                );
+            }
+            // A closed <details> prints its summary and nothing under it, so
+            // the printed report carried sixty-two headings that led nowhere.
+            // The style sheet stops printing a closed one at all, and the
+            // terms say what the printed copy therefore leaves behind.
+            for (html, printed) in [
+                (
+                    &ordered_html,
+                    "collapsed technical detail in this HTML report",
+                ),
+                (&zh_html, "是本 HTML 報告中收合的技術細節"),
+            ] {
+                assert!(
+                    html.contains("details[open]{display:block}details:not([open]){display:none}"),
+                    "a closed detail would print a heading with nothing under it"
+                );
+                assert_eq!(
+                    html.matches(printed).count(),
+                    1,
+                    "the terms do not say what a printed copy leaves behind"
+                );
+            }
+
+            // One embedded catalog produced every coordinate in this run, so
+            // its version and digest are one fact about the report, not a
+            // hundred and forty-nine facts about individual references. The
+            // report's terms carry it; the cards carry the coordinate.
+            for (html, catalogued, digest) in [
+                (
+                    &ordered_html,
+                    "Framework coordinates come from mapping catalog ",
+                    "Catalog SHA-256",
+                ),
+                (&zh_html, "框架座標來自對照目錄 ", "目錄 SHA-256"),
+            ] {
+                assert_eq!(
+                    html.matches(catalogued).count(),
+                    1,
+                    "the mapping catalog is stated once, in the report's terms"
+                );
+                let terms = html
+                    .rfind("<footer>")
+                    .expect("the report terms close the report");
+                assert!(
+                    html[terms..].contains(catalogued),
+                    "the mapping catalog left the report's terms"
+                );
+                assert_eq!(
+                    html.matches(digest).count(),
+                    1,
+                    "a card repeated the catalog digest the terms already give"
                 );
             }
 

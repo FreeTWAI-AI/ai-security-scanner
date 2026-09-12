@@ -14022,6 +14022,32 @@ fn html_asset_state_steps(states: &[HtmlAssetResultStatus], catalog: HtmlReportC
         catalog.text(".", "。"),
     )
 }
+/// One framework reference's mapping identity: which catalog said so.
+///
+/// The version and the digest beside it are the same string for every
+/// coordinate a run produces, because one embedded catalog produces them all.
+/// Rendered here so the report can compare identities before deciding whether
+/// to print one of them once or all of them where they sit.
+fn html_mapping_identity(
+    reference: &crate::beginner_report::FrameworkReference,
+    catalog: HtmlReportCatalog,
+) -> String {
+    format!(
+        "{}{}",
+        reference.mapping_version,
+        reference
+            .mapping_provenance
+            .as_ref()
+            .map(|provenance| catalog.format_mapping_provenance(
+                &provenance.catalog_sha256,
+                &provenance.reviewed_at,
+                &provenance.review_process,
+            ))
+            .unwrap_or_else(|| catalog
+                .text(" · Mapping provenance unavailable", " · 對照來源無法取得")
+                .to_owned()),
+    )
+}
 /// The four sentences a reader who reads nothing else should get.
 ///
 /// Deliberately composed from counts this report already establishes rather
@@ -16523,6 +16549,27 @@ fn html_report_bytes(
         &display_time(report.actual.observed_until.as_ref()),
     );
 
+    // A hundred and forty-nine copies of one sentence. Every coordinate in a
+    // run comes from the same embedded catalog, so the version and digest
+    // beside each reference were the same hundred-odd characters repeated
+    // once per reference, inside the cards a reader opens to see a
+    // coordinate. Compared rather than assumed: a run that really did draw on
+    // more than one catalog keeps the identity where a reader can tell them
+    // apart, and only a run with exactly one moves it to the report's terms.
+    let mut mapping_identities: Vec<String> = Vec::new();
+    for finding in &report.findings {
+        for reference in &finding.framework_references {
+            let identity = html_mapping_identity(reference, catalog);
+            if !mapping_identities.contains(&identity) {
+                mapping_identities.push(identity);
+            }
+        }
+    }
+    let shared_mapping = match mapping_identities.len() {
+        1 => mapping_identities.pop(),
+        _ => None,
+    };
+
     let mut findings = String::new();
     let mut index_rows = String::new();
     let mut confidence_bases_used: Vec<crate::domain::ConfidenceBasisCode> = Vec::new();
@@ -16719,25 +16766,19 @@ fn html_report_bytes(
                     }
                     _ => reference.rationale.clone(),
                 };
-                let provenance = reference
-                    .mapping_provenance
-                    .as_ref()
-                    .map(|provenance| {
-                        catalog.format_mapping_provenance(
-                            &provenance.catalog_sha256,
-                            &provenance.reviewed_at,
-                            &provenance.review_process,
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        catalog
-                            .text(" · Mapping provenance unavailable", " · 對照來源無法取得")
-                            .into()
-                    });
+                // Said once in the report's terms when every reference says
+                // the same thing, and here when they do not.
+                let mapping = match shared_mapping {
+                    Some(_) => String::new(),
+                    None => format!(
+                        "<br>{}: {}",
+                        catalog.text("Mapping version", "對照版本"),
+                        html_escape(&html_mapping_identity(reference, catalog)),
+                    ),
+                };
                 format!(
                     concat!(
                         "<li><strong>{} {} / {}</strong> — {}",
-                        "<br>{}: {}",
                         "<br>{}: {}",
                         "<br>{}: {}{}</li>"
                     ),
@@ -16749,9 +16790,7 @@ fn html_report_bytes(
                     html_escape(relationship),
                     catalog.text("Why related", "關聯原因"),
                     html_escape(&rationale),
-                    catalog.text("Mapping version", "對照版本"),
-                    html_escape(&reference.mapping_version),
-                    html_escape(&provenance),
+                    mapping,
                 )
             })
             .collect::<String>();
@@ -17660,7 +17699,15 @@ fn html_report_bytes(
         ".framework-block h3,.framework-block__state{break-after:avoid}",
         // Collapsed detail is a screen affordance. On paper it is all there is,
         // so the summary becomes the heading of what follows it.
-        "details{display:block}",
+        // Chrome prints a closed <details> as its summary and nothing else,
+        // so this report was promising "Evidence and framework references"
+        // fifty-one times and printing none of it, plus eleven more headings
+        // that led nowhere. Forcing them all open is not the answer either:
+        // it takes the all-engine report from twenty-seven pages to
+        // eighty-eight. A closed one prints nothing at all now, and the terms
+        // say where that detail is. One a reader opened before printing still
+        // prints, which is the whole reason it opens.
+        "details[open]{display:block}details:not([open]){display:none}",
         "details>summary{display:block;list-style:none;font-weight:600;color:#101828;",
         "margin:.6rem 0 .2rem;break-after:avoid}",
         "details>summary::-webkit-details-marker{display:none}",
@@ -17838,9 +17885,26 @@ fn html_report_bytes(
         catalog.text("Actor", "操作者"),
         grouping_history_rows,
     ));
+    // Where the coordinates came from, once, at the end. It is a formal term
+    // about this report rather than anything to do next, and it used to be
+    // repeated beside every coordinate in every card.
+    let mapping_terms = shared_mapping
+        .map(|identity| {
+            format!(
+                "{}{}{}{}",
+                catalog.text(
+                    "Framework coordinates come from mapping catalog ",
+                    "框架座標來自對照目錄 ",
+                ),
+                html_escape(&identity),
+                catalog.text(".", "。"),
+                catalog.text(" ", ""),
+            )
+        })
+        .unwrap_or_default();
     document.push_str(&format!(
         concat!(
-            "<footer><h2>{}</h2><p>{}</p><p>{}{}{}{}{}{}</p></footer>",
+            "<footer><h2>{}</h2><p>{}</p><p>{}{}{}{}{}{}{}{}{}</p></footer>",
             "</body></html>"
         ),
         catalog.text("Report terms", "報告條款"),
@@ -17848,6 +17912,7 @@ fn html_report_bytes(
             "Framework references are informational navigation. AIDEFEND references are an independent, unofficial mapping unless the framework owner states otherwise. This report is not an audit, certification, compliance decision, security guarantee, or automatic remediation.",
             "框架參照只供資訊導航。除非框架擁有者另有聲明，AIDEFEND 參照屬於獨立、非官方的對照。本報告不是稽核、認證、合規判定、資安保證或自動修復。",
         ),
+        mapping_terms,
         // This one line is the report's own sentence rather than a label and
         // its value, and it was punctuated as English in both languages: the
         // Chinese footer ended a clause with "." and joined the next with a
@@ -17872,6 +17937,14 @@ fn html_report_bytes(
         catalog.text(
             "Raw evidence is excluded. No scripts, forms, remote resources, scanner messages, or executable remediation are included.",
             "不包含原始證據，也不包含指令碼、表單、遠端資源、掃描器訊息或可執行的修復動作。",
+        ),
+        catalog.text(" ", ""),
+        // Said because it is now true of the printed copy. A closed detail
+        // prints nothing, so a reader holding paper should be told what the
+        // file they printed from still has.
+        catalog.text(
+            "Per-finding evidence, source rules and framework coordinates are collapsed technical detail in this HTML report; a printed copy carries only what a reader opened before printing.",
+            "各問題的證據、來源規則與框架座標，是本 HTML 報告中收合的技術細節；列印出來的版本只會包含列印前已展開的內容。",
         ),
     ));
     Ok(document.into_bytes())
