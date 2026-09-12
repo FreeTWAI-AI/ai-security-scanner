@@ -13955,6 +13955,73 @@ fn html_asset_result_rank(status: HtmlAssetResultStatus) -> u8 {
     }
 }
 
+/// The step a state implies, written once for the whole table.
+///
+/// Every asset in a state takes the same step from it, so a column carrying
+/// that step was one sentence written once per row - nine times, in a run
+/// with nine assets, under a heading promising something to do. What stays in
+/// a row is the part that is the asset's own: the step its coverage gap calls
+/// for, and the note that some of its checks did not finish. Only the states
+/// that actually fell back to their own step are named, in the order the
+/// table puts them.
+fn html_asset_state_steps(states: &[HtmlAssetResultStatus], catalog: HtmlReportCatalog) -> String {
+    if states.is_empty() {
+        return String::new();
+    }
+    let mut ordered = states.to_vec();
+    ordered.sort_by_key(|state| html_asset_result_rank(*state));
+    let steps = ordered
+        .iter()
+        .map(|state| {
+            let (label, step) = match state {
+                HtmlAssetResultStatus::ProblemsFound => (
+                    catalog.text("Problems found", "發現問題"),
+                    catalog.text(
+                        "review this asset's highest-priority problem first",
+                        "先檢視這個資產最高優先的問題",
+                    ),
+                ),
+                HtmlAssetResultStatus::NoProblemsInCompletedChecks => (
+                    catalog.text("No problems in completed checks", "已完成檢查未發現問題"),
+                    catalog.text(
+                        "open the completed-check scope and any missing checks",
+                        "查看已完成檢查的範圍與缺少的檢查",
+                    ),
+                ),
+                HtmlAssetResultStatus::IncompleteOrFailed => (
+                    catalog.text("Incomplete or failed", "未完成或失敗"),
+                    catalog.text(
+                        "finish or retry this asset's remaining checks from Progress",
+                        "到進度頁完成或重試這個資產的其餘檢查",
+                    ),
+                ),
+                HtmlAssetResultStatus::NotTested => (
+                    catalog.text("Not tested", "尚未測試"),
+                    catalog.text(
+                        "choose an applicable security check for this asset, then scan it",
+                        "為這個資產選擇適用的資安檢查，然後開始掃描",
+                    ),
+                ),
+            };
+            format!(
+                "<strong>{}</strong>{}{}",
+                html_escape(label),
+                catalog.text(" \u{2014} ", "："),
+                html_escape(step),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(catalog.text("; ", "；"));
+    format!(
+        "<p class=\"asset-result-steps\">{}{}{}</p>",
+        catalog.text(
+            "Where a row gives no step of its own, its state is the step. ",
+            "沒有列出自己步驟的列，依其情形處理。",
+        ),
+        steps,
+        catalog.text(".", "。"),
+    )
+}
 /// The four sentences a reader who reads nothing else should get.
 ///
 /// Deliberately composed from counts this report already establishes rather
@@ -14853,8 +14920,12 @@ fn html_asset_severity_strip(
     let mut segments = String::new();
     let mut named = Vec::new();
     for (severity, count) in counts {
+        // A rating and its count are one word. Separated by a plain space
+        // they broke across lines in the narrow columns this legend sits in,
+        // leaving "High" at the end of one line and "1 . Medium 2" at the
+        // start of the next.
         let name = format!(
-            "{} {}",
+            "{}\u{a0}{}",
             html_escape(&catalog.identifier(&enum_key(severity))),
             catalog.format_number(*count),
         );
@@ -15079,6 +15150,7 @@ fn html_asset_result_section(
     // problem tier is the report's own finding order, so this section and the
     // problems section agree on what to read first.
     let mut ranked = Vec::new();
+    let mut states_taking_their_own_step: Vec<HtmlAssetResultStatus> = Vec::new();
     for (declared, target) in report.requested.targets.iter().enumerate() {
         let checks = report
             .actual
@@ -15171,105 +15243,65 @@ fn html_asset_result_section(
                 .find(|gap| gap.kind == CoverageGapKind::ManualReview),
             _ => None,
         };
-        let (class_name, status_label, summary, mut action) = match status {
+        // The pill names the state. It used to be followed by a sentence
+        // that named it again - "Problems found" beside "Problems found: 4",
+        // "Not tested" beside "No completed security check is recorded for
+        // this asset" - and the only thing those sentences added was a
+        // number the severity mix beside them already spells out. The one
+        // count a row cannot show any other way is how many completed checks
+        // came back clean, so that count moved into the pill.
+        let (class_name, status_label) = match status {
             HtmlAssetResultStatus::ProblemsFound => (
                 "problems-found",
-                catalog.text("Problems found", "發現問題"),
-                match catalog.locale {
-                    crate::export::ReportLocale::En if finding_count == 1 => {
-                        "1 problem was found.".to_owned()
-                    }
-                    crate::export::ReportLocale::En => {
-                        format!("Problems found: {}.", catalog.format_number(finding_count))
-                    }
-                    crate::export::ReportLocale::ZhHant => {
-                        format!("發現 {} 個問題。", catalog.format_number(finding_count))
-                    }
-                },
-                catalog
-                    .text(
-                        "Review this asset's highest-priority problem first.",
-                        "先檢視這個資產最高優先的問題。",
-                    )
-                    .to_owned(),
+                catalog.text("Problems found", "發現問題").to_owned(),
             ),
             HtmlAssetResultStatus::NoProblemsInCompletedChecks => (
                 "no-problems-completed",
-                catalog.text("No problems in completed checks", "已完成檢查未發現問題"),
                 match catalog.locale {
                     crate::export::ReportLocale::En if completed_security_checks == 1 => {
-                        "1 completed security check reported no problems.".to_owned()
+                        "No problems in 1 completed check".to_owned()
                     }
                     crate::export::ReportLocale::En => format!(
-                        "Completed security checks reporting no problems: {}.",
+                        "No problems in {} completed checks",
                         catalog.format_number(completed_security_checks)
                     ),
                     crate::export::ReportLocale::ZhHant => format!(
-                        "{} 項已完成的資安檢查未回報問題。",
+                        "{} 項已完成檢查未發現問題",
                         catalog.format_number(completed_security_checks)
                     ),
                 },
-                preferred_gap.map_or_else(
-                    || {
-                        catalog
-                            .text(
-                                "Open the completed-check scope and any missing checks.",
-                                "查看已完成檢查的範圍與缺少的檢查。",
-                            )
-                            .to_owned()
-                    },
-                    |gap| html_gap_next_action(gap, catalog),
-                ),
             ),
             HtmlAssetResultStatus::IncompleteOrFailed => (
                 "incomplete-failed",
-                catalog.text("Incomplete or failed", "未完成或失敗"),
                 catalog
-                    .text(
-                        "At least one requested check did not produce a complete result.",
-                        "至少一項要求的檢查沒有產生完整結果。",
-                    )
+                    .text("Incomplete or failed", "未完成或失敗")
                     .to_owned(),
-                preferred_gap.map_or_else(
-                    || {
-                        catalog
-                            .text(
-                                "Finish or retry this asset's remaining checks from Progress.",
-                                "到進度頁完成或重試這個資產的其餘檢查。",
-                            )
-                            .to_owned()
-                    },
-                    |gap| html_gap_next_action(gap, catalog),
-                ),
             ),
             HtmlAssetResultStatus::NotTested => (
                 "not-tested",
-                catalog.text("Not tested", "尚未測試"),
-                catalog
-                    .text(
-                        "No completed security check is recorded for this asset.",
-                        "這個資產沒有已完成的資安檢查紀錄。",
-                    )
-                    .to_owned(),
-                preferred_gap.map_or_else(
-                    || {
-                        catalog
-                            .text(
-                                "Choose an applicable security check for this asset, then scan it.",
-                                "為這個資產選擇適用的資安檢查，然後開始掃描。",
-                            )
-                            .to_owned()
-                    },
-                    |gap| html_gap_next_action(gap, catalog),
-                ),
+                catalog.text("Not tested", "尚未測試").to_owned(),
             ),
         };
+        // What to do next was two different things under one heading. A step
+        // that follows from the state alone is the same step on every row in
+        // that state, and printing it nine times said one thing nine times.
+        // A step that follows from this asset's own coverage gap belongs to
+        // the row, and it was being read as more of the same. The row keeps
+        // what is its own; the state's step is said once, under the table.
+        let mut action = preferred_gap
+            .map(|gap| html_gap_next_action(gap, catalog))
+            .unwrap_or_default();
         if status == HtmlAssetResultStatus::ProblemsFound && has_incomplete_evidence {
-            action.push(' ');
+            if !action.is_empty() {
+                action.push(' ');
+            }
             action.push_str(catalog.text(
                 "Some checks are incomplete. Finish or retry them from Progress.",
                 "另有檢查尚未完成；請到進度頁完成或重試。",
             ));
+        }
+        if action.is_empty() && !states_taking_their_own_step.contains(&status) {
+            states_taking_their_own_step.push(status);
         }
         let target_label = labels
             .get(&target.asset_id)
@@ -15303,43 +15335,60 @@ fn html_asset_result_section(
                     "<th scope=\"row\" class=\"asset-result__identity\"><strong>{}</strong>{}</th>",
                     "<td class=\"asset-result__signal\">",
                     "<strong class=\"pill asset-result__status\">{}</strong></td>",
-                    "<td class=\"asset-result__mix\">{}</td>",
-                    "<td><strong>{}</strong> {}</td></tr>"
+                    "<td class=\"asset-result__mix\">{}</td>"
                 ),
                 class_name,
                 html_escape(target_label),
                 target_kind,
-                html_escape(status_label),
+                html_escape(&status_label),
                 html_asset_severity_strip(&severity_counts, catalog),
-                html_escape(&summary),
-                html_escape(&action),
             ),
+            action,
         ));
     }
-    ranked.sort_by_key(|(rank, first_problem, declared, _)| (*rank, *first_problem, *declared));
+    ranked.sort_by_key(|(rank, first_problem, declared, _, _)| (*rank, *first_problem, *declared));
+    // A column of blanks is worse than no column. It only exists on a run
+    // where some asset has a step of its own to give.
+    let asset_specific = ranked.iter().any(|(_, _, _, _, action)| !action.is_empty());
     let rows = ranked
         .into_iter()
-        .map(|(_, _, _, row)| row)
+        .map(|(_, _, _, row, action)| match asset_specific {
+            true => format!("{row}<td>{}</td></tr>", html_escape(&action)),
+            false => format!("{row}</tr>"),
+        })
         .collect::<String>();
+    let (action_column, action_heading) = match asset_specific {
+        true => (
+            "<col>",
+            format!(
+                "<th>{}</th>",
+                catalog.text("What to do next", "下一步怎麼做")
+            ),
+        ),
+        false => ("", String::new()),
+    };
+    let own_step = html_asset_state_steps(&states_taking_their_own_step, catalog);
 
     format!(
         concat!(
             "<section class=\"asset-results\"><h2>{}</h2><p>{}</p>",
             "<table class=\"asset-result-table\"><colgroup><col class=\"c-asset\">",
-            "<col class=\"c-state\"><col class=\"c-mix\"><col></colgroup><thead><tr>",
-            "<th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead>",
-            "<tbody>{}</tbody></table></section>"
+            "<col class=\"c-state\"><col class=\"c-mix\">{}</colgroup><thead><tr>",
+            "<th>{}</th><th>{}</th><th>{}</th>{}</tr></thead>",
+            "<tbody>{}</tbody></table>{}</section>"
         ),
         catalog.text("Which assets need attention", "哪些資產需要處理"),
         catalog.text(
             "Every selected asset appears once. A no-problem result applies only to the security checks that completed.",
             "每個已選資產都會列出一次；「未發現問題」只適用於已完成的資安檢查。",
         ),
+        action_column,
         catalog.text("Asset", "資產"),
         catalog.text("What this run shows", "本輪的情形"),
         catalog.text("Severity mix", "嚴重程度組成"),
-        catalog.text("What to do next", "下一步怎麼做"),
+        action_heading,
         rows,
+        own_step,
     )
 }
 
@@ -17469,12 +17518,14 @@ fn html_report_bytes(
         ".tested-time{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}",
         ".tested-detail>td{padding-top:0}.tested-detail ul{margin:.15rem 0 .35rem}",
         ".asset-result-table{table-layout:fixed;font-size:.86rem}",
-        ".asset-result-table col.c-asset{width:22%}.asset-result-table col.c-state{width:7.5rem}",
-        ".asset-result-table col.c-mix{width:10rem}",
+        ".asset-result-table col.c-asset{width:20%}.asset-result-table col.c-state{width:8rem}",
+        ".asset-result-table col.c-mix{width:11.5rem}",
         ".asset-result-table th,.asset-result-table td{padding:.4rem .5rem;vertical-align:top}",
         ".asset-result__mix .asset-severity{display:inline-flex;width:3rem;",
         "vertical-align:middle;margin:0 .4rem 0 0}",
         ".asset-result__mix .asset-severity__legend{display:inline;margin:0;font-size:.75rem}",
+        ".asset-result-steps{margin:.55rem 0 0;font-size:.82rem;color:var(--muted);line-height:1.45}",
+        ".asset-result-steps strong{color:var(--body)}",
         ".asset-result__identity{text-align:left;font-weight:400}",
         ".asset-result__identity strong{display:block;color:var(--ink);overflow-wrap:anywhere}",
         ".asset-result__identity small{color:var(--muted);font-size:.82rem}",
@@ -32096,7 +32147,6 @@ mod tests {
             "Which assets need attention",
             "Every selected asset appears once",
             "Problems found",
-            "Problems found: 2.",
         ] {
             assert!(
                 html.contains(asset_result_text),
@@ -32502,7 +32552,7 @@ mod tests {
             report.actual.checks[0].check_id = check_id.into();
             let html = html_asset_result_section(&report, &labels, catalog);
             assert!(html.contains("asset-result--not-tested"));
-            assert!(!html.contains("completed security check reported no problems"));
+            assert!(!html.contains("No problems in"));
         }
 
         let mut trivy = report.actual.checks[0].clone();
@@ -32512,8 +32562,11 @@ mod tests {
         report.actual.checks.push(trivy);
         let mixed_html = html_asset_result_section(&report, &labels, catalog);
         assert!(mixed_html.contains("asset-result--no-problems-completed"));
-        assert!(mixed_html.contains("1 completed security check reported no problems"));
-        assert!(!mixed_html.contains("2 completed security checks"));
+        // The count of clean completed checks is the one number a row cannot
+        // show any other way, so it is in the pill rather than in a sentence
+        // beside it.
+        assert!(mixed_html.contains("No problems in 1 completed check"));
+        assert!(!mixed_html.contains("2 completed checks"));
     }
 
     /// A case title cannot escape the stylesheet it is printed into.
@@ -32776,7 +32829,10 @@ mod tests {
         assert!(problems_position < terms_position);
         assert!(html.contains("Which assets need attention"));
         assert!(html.contains("asset-result--not-tested"));
-        assert!(html.contains("No completed security check is recorded for this asset."));
+        // The pill names the state and the step it implies is said once,
+        // under the table, rather than on the row that already said it.
+        assert!(html.contains("Not tested"));
+        assert!(html.contains("choose an applicable security check for this asset"));
 
         let zh_options = ExportOptions {
             redaction: RedactionProfile::None,
@@ -32819,7 +32875,8 @@ mod tests {
             "<html lang=\"zh-Hant\">",
             "哪些資產需要處理",
             "asset-result--not-tested",
-            "這個資產沒有已完成的資安檢查紀錄。",
+            "尚未測試",
+            "為這個資產選擇適用的資安檢查，然後開始掃描",
             "實際測試的內容",
             "已完成",
             "框架參照只供資訊導航。",

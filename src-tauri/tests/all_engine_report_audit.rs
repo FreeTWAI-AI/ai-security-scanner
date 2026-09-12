@@ -1462,6 +1462,18 @@ fn every_detector_places_its_finding_on_its_mapped_control() {
             assert!(english.contains("What needs attention"));
             assert!(english.contains("What to do next"));
 
+            // Every asset in this run takes its state's step, so no row has
+            // one of its own and the column is not there to be blank.
+            let board = &english[english
+                .find("<table class=\"asset-result-table\"")
+                .expect("the asset board")..];
+            let board = &board[..board.find("</section>").expect("the board ends")];
+            assert!(
+                !board.contains("<th>What to do next</th>"),
+                "a column of blanks was printed anyway"
+            );
+            assert!(board.contains("class=\"asset-result-steps\""), "{board}");
+
             // A coverage row's third field is composed the same way its name
             // is, and was the one field left in English: a Chinese reader saw
             // the launcher's "2 of 2" and Greenbone's
@@ -2112,6 +2124,51 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     "the English report lost: {kept}"
                 );
             }
+
+            // The state pill used to be followed by a sentence naming the
+            // state again, and the only thing the sentence added was a count
+            // the severity mix beside it already spells out.
+            let board = &ordered_html[ordered_html
+                .find("<table class=\"asset-result-table\"")
+                .expect("the asset board")..];
+            let board = &board[..board.find("</section>").expect("the board ends")];
+            for twin in [
+                "Problems found: ",
+                "1 problem was found.",
+                "No completed security check",
+            ] {
+                assert!(
+                    !board.contains(twin),
+                    "the asset board restated a pill it had already printed: {twin}"
+                );
+            }
+
+            // The step a state implies is the same step on every row in that
+            // state. It is said once, under the table, and only for the
+            // states whose rows actually fell back to it: this run's failed
+            // asset has a step of its own, so its state is not named here.
+            let steps = board
+                .split("class=\"asset-result-steps\">")
+                .nth(1)
+                .and_then(|rest| rest.split("</p>").next())
+                .expect("the state steps");
+            assert!(steps.contains("Problems found"), "{steps}");
+            assert!(
+                !steps.contains("Incomplete or failed"),
+                "a state whose rows all had their own step was named anyway: {steps}"
+            );
+            assert_eq!(
+                board.matches("highest-priority problem first").count(),
+                1,
+                "the step a state implies was printed more than once"
+            );
+
+            // A row keeps what is its own: the step its coverage gap calls
+            // for, and the note that some of its checks did not finish. The
+            // column exists because those rows exist.
+            assert!(board.contains("<th>What to do next</th>"), "{board}");
+            assert!(board.contains("Retry this check."));
+            assert!(board.contains("Some checks are incomplete."));
 
             // Two frameworks put out of scope for the same reason share one
             // line. Given a bordered block each they printed the same sentence
