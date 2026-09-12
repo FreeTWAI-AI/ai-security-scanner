@@ -15568,6 +15568,24 @@ fn html_evidence_reference(
     let engine_run_id = reference.engine_run_id.as_deref().unwrap_or(unavailable);
     let artifact_id = reference.artifact_id.as_deref().unwrap_or(unavailable);
     let location = reference.location.as_deref().unwrap_or(unavailable);
+    // A line that glues together the three rows beside it is not a summary.
+    // This build's adapters write "<engine> reported rule <rule> at
+    // <location>.", and the block already labels the check, the source rule
+    // and the location; in the Chinese report it was the one English line in
+    // an otherwise translated record. A summary that says anything else --
+    // from another build, or an adapter that writes its own -- is kept.
+    let restates_its_neighbours = format!(
+        "{} reported rule {} at {}.",
+        reference.engine_id, source_rule, location
+    );
+    let summary = match summary == restates_its_neighbours {
+        true => String::new(),
+        false => format!(
+            "<dt>{}</dt><dd>{}</dd>",
+            catalog.text("Evidence summary", "證據摘要"),
+            html_escape(summary),
+        ),
+    };
     // Redaction is worth a row where it happened. Forty-eight of fifty-one
     // evidence records said "Redacted: No", which is this report's default and
     // is already stated once in the terms as the run's redaction profile. A
@@ -15808,7 +15826,7 @@ fn html_evidence_reference(
         concat!(
             "<li>{}<dl>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
-            "<dt>{}</dt><dd>{}</dd>",
+            "{}",
             "<dt>{}</dt><dd>{}</dd>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
@@ -15819,8 +15837,7 @@ fn html_evidence_reference(
         identity,
         catalog.text("Source rule", "來源規則"),
         html_escape(source_rule),
-        catalog.text("Evidence summary", "證據摘要"),
-        html_escape(summary),
+        summary,
         catalog.text("Evidence kind", "證據類型"),
         html_escape(&kind),
         catalog.text("Engine run ID", "掃描工具執行 ID"),
@@ -32866,6 +32883,77 @@ mod tests {
             HtmlReportCatalog::new(crate::export::ReportLocale::En),
         );
         assert!(unknown.contains("<dt>Redacted</dt><dd>not provided</dd>"));
+    }
+
+    /// The adapters compose the evidence summary from the check, the source
+    /// rule and the location. All three are labelled rows in the same block,
+    /// so the sentence carried nothing of its own -- and being English, it was
+    /// the one untranslated line in a Chinese evidence record. It is dropped
+    /// only when it is exactly that restatement.
+    #[test]
+    fn an_evidence_summary_that_only_restates_its_own_rows_is_not_printed() {
+        let reference = |summary: &str| crate::beginner_report::FindingEvidenceReference {
+            evidence_id: "evidence-1".into(),
+            engine_id: "grype".into(),
+            details_frozen: true,
+            source_rule: Some("CVE-2025-0002".into()),
+            scanner_details: None,
+            summary: Some(summary.into()),
+            kind: Some(EvidenceKind::PackageInventory),
+            engine_run_id: Some("run".into()),
+            artifact_id: Some("artifact".into()),
+            redacted: Some(false),
+            artifact_sha256: "a".repeat(64),
+            observed_at: Utc::now(),
+            location: Some("/usr/lib/example".into()),
+        };
+        let render = |summary: &str, locale| {
+            html_evidence_reference(&reference(summary), HtmlReportCatalog::new(locale))
+        };
+        let restated = "grype reported rule CVE-2025-0002 at /usr/lib/example.";
+
+        for (locale, label, rule, location) in [
+            (
+                crate::export::ReportLocale::En,
+                "<dt>Evidence summary</dt>",
+                "<dt>Source rule</dt><dd><code>CVE-2025-0002</code></dd>",
+                "<dt>Evidence location</dt><dd>/usr/lib/example</dd>",
+            ),
+            (
+                crate::export::ReportLocale::ZhHant,
+                "<dt>證據摘要</dt>",
+                "<dt>來源規則</dt><dd><code>CVE-2025-0002</code></dd>",
+                "<dt>證據位置</dt><dd>/usr/lib/example</dd>",
+            ),
+        ] {
+            // The restatement goes, and every value it repeated stays.
+            let dropped = render(restated, locale);
+            assert!(!dropped.contains(label), "the restated summary survived");
+            assert!(!dropped.contains("reported rule"));
+            assert!(dropped.contains(rule));
+            assert!(dropped.contains(location));
+            assert!(dropped.contains("grype"));
+
+            // The caveat this build appends is stripped before the comparison,
+            // so a summary carrying it is still recognized as the restatement.
+            let with_caveat = format!("{restated}{UNTRUSTED_EVIDENCE_CAVEAT}");
+            assert!(!render(&with_caveat, locale).contains(label));
+
+            // Anything else is the record speaking for itself, and is kept.
+            let spoken = render("Upstream flagged this package during a rebuild.", locale);
+            assert!(spoken.contains(label), "a real summary was dropped");
+            assert!(spoken.contains("Upstream flagged this package during a rebuild."));
+
+            // Including the same sentence about a different record.
+            let other = render(
+                "grype reported rule CVE-2025-0002 at /usr/lib/other.",
+                locale,
+            );
+            assert!(
+                other.contains(label),
+                "a summary about elsewhere was dropped"
+            );
+        }
     }
 
     #[test]

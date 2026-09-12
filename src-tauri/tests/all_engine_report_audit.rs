@@ -2696,10 +2696,31 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // "Redacted: No" on forty-eight of fifty-one records, and
             // "not provided" on thirty-six attachment rows the scanner had in
             // fact reported as empty.
+            //
+            // The summary row went the same way. This build's adapters compose
+            // it from the check, the source rule and the location, and all
+            // three are labelled rows in the same block -- so fifty-one
+            // records restated themselves, in English, inside the Chinese
+            // report.
+            for (html, summary) in [
+                (&ordered_html, "<dt>Evidence summary</dt>"),
+                (&zh_html, "<dt>證據摘要</dt>"),
+            ] {
+                assert_eq!(
+                    html.matches(summary).count(),
+                    0,
+                    "an evidence summary restates the rows beside it"
+                );
+                assert_eq!(
+                    html.matches(" reported rule ").count(),
+                    0,
+                    "an adapter-composed sentence reached the report untranslated"
+                );
+            }
             for (html, records, redacted, unknown, roles, groups) in [
                 (
                     &ordered_html,
-                    "<dt>Evidence summary</dt>",
+                    "<dt>Source rule</dt>",
                     "<dt>Redacted</dt>",
                     "not provided",
                     "<dt>Attached roles</dt>",
@@ -2707,7 +2728,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 ),
                 (
                     &zh_html,
-                    "<dt>證據摘要</dt>",
+                    "<dt>來源規則</dt>",
                     "<dt>已遮蔽</dt>",
                     "未提供",
                     "<dt>附加的角色</dt>",
