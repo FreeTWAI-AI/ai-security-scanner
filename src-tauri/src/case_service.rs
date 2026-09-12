@@ -14182,29 +14182,111 @@ fn css_string_literal(value: &str) -> String {
 /// to be escaped into the stylesheet, which is what `css_string_literal`
 /// handles, and a browser that does not implement them simply prints without
 /// a running header rather than printing a broken one.
+///
+/// A margin row's three boxes are anchored left, centre and right and each is
+/// sized to its own content, so a border on one box stops where that box stops
+/// and the rule ends mid-page. A rule that crosses the whole measure needs the
+/// border on all three boxes, and a box only exists if it has real content:
+/// `content:""` generates nothing, which is why the unused centre of the head
+/// is a no-break space. Declaring widths is not the answer either, because the
+/// boxes then overlap each other instead of sharing the row; padding is how a
+/// box claims room, and the only reason the foot's centre carries any.
 fn html_page_rule(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> String {
-    let running = "font:8.5pt/1.3 sans-serif;color:#667085";
-    format!(
+    let head_rule = "border-bottom:.6pt solid #d0d5dd;padding-bottom:2.6mm;vertical-align:bottom";
+    let foot_rule = "border-top:.6pt solid #d0d5dd;padding-top:2.6mm;vertical-align:top";
+    let quiet = "font:7.5pt/1.3 sans-serif;color:#98a2b3";
+    let mut rule = String::from("@page{size:A4;margin:24mm 15mm 20mm;");
+
+    // The head answers what this document is, when it was produced and which
+    // run produced it. An evidence document that loses its identity on page
+    // two is a stack of loose paper.
+    rule.push_str(&format!(
         concat!(
-            "@page{{size:A4;margin:22mm 15mm 18mm;",
-            "@top-left{{content:{};{};color:#101828;font-weight:600;vertical-align:bottom}}",
-            "@top-right{{content:{};{};vertical-align:bottom}}",
-            "@bottom-left{{content:{};font:7.5pt/1.3 sans-serif;color:#667085;vertical-align:top}}",
-            "@bottom-right{{content:counter(page) \" / \" counter(pages);{};vertical-align:top}}}}",
-            // The cover names the report in full, one line below where the
-            // running header would repeat it.
-            "@page:first{{@top-left{{content:\"\"}}@top-right{{content:\"\"}}}}"
+            "@top-left{{content:{};font:8pt/1.3 sans-serif;font-weight:600;",
+            "color:#344054;letter-spacing:.01em;{}}}"
         ),
-        css_string_literal(&report.project_title),
-        running,
-        css_string_literal(&catalog.format_time(&report.state.last_durable_update)),
-        running,
-        css_string_literal(catalog.text(
-            "Preliminary scanner output. Not an audit, certification, or compliance determination.",
-            "初步的掃描工具輸出。不是稽核、認證或合規判定。",
+        css_string_literal(&running_head_title(&report.project_title)),
+        head_rule,
+    ));
+    rule.push_str(&format!("@top-center{{content:\"\\00a0\";{head_rule}}}"));
+    rule.push_str(&format!(
+        concat!(
+            "@top-right{{content:{};font:7.5pt/1.3 ui-monospace,monospace;",
+            "color:#98a2b3;white-space:nowrap;{}}}"
+        ),
+        css_string_literal(&format!(
+            "{} {}",
+            catalog.text("run", "輪次"),
+            report.run_id
         )),
-        running,
-    )
+        head_rule,
+    ));
+
+    // The foot carries the standing caveat and the one number a reader looks
+    // for. This is the marker that travels with a page torn out of the stack;
+    // the full terms are set out at the end of the report, where there is room
+    // to state them without crowding the page number off its own line.
+    rule.push_str(&format!(
+        "@bottom-left{{content:{};{};{}}}",
+        css_string_literal(catalog.text(
+            "Preliminary scanner output. Not an audit or certification.",
+            "初步的掃描工具輸出。不是稽核或認證。",
+        )),
+        quiet,
+        foot_rule,
+    ));
+    rule.push_str(&format!(
+        concat!(
+            "@bottom-center{{content:{};{};white-space:nowrap;",
+            // A gutter the centre box reserves for itself, so the caveat on
+            // the left cannot run up against the timestamp in a language that
+            // sets either of them wider.
+            "padding-left:5mm;padding-right:5mm;{}}}"
+        ),
+        css_string_literal(&catalog.format_time(&report.state.last_durable_update)),
+        quiet,
+        foot_rule,
+    ));
+    rule.push_str(&format!(
+        concat!(
+            "@bottom-right{{content:counter(page) \" / \" counter(pages);",
+            "font:9pt/1.3 sans-serif;font-weight:650;color:#123a63;",
+            "letter-spacing:.02em;white-space:nowrap;{}}}"
+        ),
+        foot_rule,
+    ));
+    rule.push('}');
+
+    // The cover states all of this at full size, one line below where the
+    // running head would repeat it, and a rule under nothing is a stray line.
+    rule.push_str(concat!(
+        "@page:first{@top-left{content:\"\";border:0}",
+        "@top-center{content:\"\";border:0}",
+        "@top-right{content:\"\";border:0}}"
+    ));
+    rule
+}
+
+/// The project title, clamped to what a running head can hold.
+///
+/// The title is the user's own words and the cover prints all of them. Up here
+/// it shares a 24mm margin with two other boxes, and a title long enough to
+/// wrap past a few lines would grow upward out of the margin and print over
+/// the first paragraph of every page. Clamping ends it with an ellipsis so an
+/// abbreviated head reads as abbreviated rather than as a different title.
+fn running_head_title(title: &str) -> String {
+    const RUNNING_HEAD_CHARACTERS: usize = 64;
+    let mut clamped = title
+        .chars()
+        .take(RUNNING_HEAD_CHARACTERS)
+        .collect::<String>();
+    if title.chars().nth(RUNNING_HEAD_CHARACTERS).is_some() {
+        while clamped.ends_with(char::is_whitespace) {
+            clamped.pop();
+        }
+        clamped.push('\u{2026}');
+    }
+    clamped
 }
 
 /// The run's headline counts as tiles rather than one run-on sentence.
@@ -32072,6 +32154,36 @@ mod tests {
             );
         }
         assert_eq!(css_string_literal("plain title"), "\"plain title\"");
+    }
+
+    #[test]
+    fn a_long_title_is_abbreviated_rather_than_allowed_to_flood_the_running_head() {
+        // Short titles are the user's own words, untouched.
+        assert_eq!(running_head_title("Quarterly scan"), "Quarterly scan");
+
+        // A long one is cut, and the cut is visible. A silently shortened
+        // title reads as a different report on every page after the cover.
+        let long = "A".repeat(200);
+        let clamped = running_head_title(&long);
+        assert!(
+            clamped.ends_with('\u{2026}'),
+            "a clamped title did not say it was clamped: {clamped}"
+        );
+        assert_eq!(clamped.chars().count(), 65);
+
+        // The clamp counts characters, not bytes, so it cannot split a
+        // multi-byte character and emit a title the parser rejects.
+        let chinese = "座".repeat(200);
+        let clamped = running_head_title(&chinese);
+        assert_eq!(clamped.chars().count(), 65);
+        assert!(clamped.starts_with("座座"));
+
+        // An ellipsis hung off a trailing space reads as a typo.
+        let spaced = format!("{} tail", "B".repeat(63));
+        assert_eq!(
+            running_head_title(&spaced),
+            format!("{}\u{2026}", "B".repeat(63))
+        );
     }
 
     #[test]
