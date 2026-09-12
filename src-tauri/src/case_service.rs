@@ -16132,6 +16132,7 @@ fn html_report_bytes(
     );
 
     let mut findings = String::new();
+    let mut index_rows = String::new();
     let mut observations = String::new();
     let mut problem_count = 0usize;
     for (index, finding) in report.findings.iter().enumerate() {
@@ -16260,7 +16261,7 @@ fn html_report_bytes(
         let verification_block = verification
             .map(|text| {
                 format!(
-                    "<h4>{}</h4><p>{}</p>",
+                    "<p><strong>{}:</strong> {}</p>",
                     catalog.text("How to confirm the fix", "如何確認已修正"),
                     html_escape(&text)
                 )
@@ -16416,13 +16417,14 @@ fn html_report_bytes(
             };
             observations.push_str(&format!(
                 concat!(
-                    "<article><h3>{}</h3>",
+                    "<article id=\"f{}\"><h3>{}</h3>",
                     "<p>{}</p>",
                     "<p><strong>{}:</strong> {} · <strong>{}:</strong> {}</p>",
                     "<p><strong>{}:</strong> <code>{}</code></p>",
                     "<h4>{}</h4><ul>{}</ul>",
                     "<h4>{}</h4><ul>{}</ul></article>"
                 ),
+                catalog.format_number(index + 1),
                 observation_kind,
                 catalog.text(
                     "Discovery confirmed that this service responded. Reachability is useful inventory, but it does not by itself establish a vulnerability.",
@@ -16442,14 +16444,65 @@ fn html_report_bytes(
             continue;
         }
         problem_count += 1;
-        // Its own paragraph, because the two blocks after it are a heading
-        // and a paragraph. Nested inside the card's `<p>` slot they closed it
-        // early and left a stray `</p>` on all forty-five cards of every
-        // export.
-        let next_step_html = format!(
-            "<p>{}</p>{safety_block}{verification_block}",
-            html_escape(&next_step)
-        );
+        index_rows.push_str(&format!(
+            concat!(
+                "<tr><td class=\"numeric\"><a href=\"#f{}\">{}</a></td>",
+                "<td><span class=\"pill pill--{}\">{}</span></td>",
+                "<td>{}</td><td>{}</td><td>{}</td></tr>"
+            ),
+            index + 1,
+            catalog.format_number(index + 1),
+            severity_slug(&finding.severity),
+            html_escape(&severity_label),
+            html_escape(&finding.title),
+            targets,
+            html_escape(&next_step),
+        ));
+        // The rating goes in the chip; the sentence explaining where it came
+        // from goes beside it. As one string it drew a rounded pill around a
+        // full sentence, which then wrapped inside its own border.
+        let (confidence_chip, confidence_basis) = confidence_presentation
+            .strip_prefix(confidence_label.as_str())
+            .map(|rest| {
+                (
+                    confidence_label.as_str(),
+                    rest.trim_start_matches([' ', '\u{2014}', '\u{2013}', '-'])
+                        .trim(),
+                )
+            })
+            .unwrap_or((confidence_presentation.as_str(), ""));
+        let confidence_note = if confidence_basis.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<span class=\"finding-meta__note\">{}</span>",
+                html_escape(confidence_basis)
+            )
+        };
+        let next_step_inline = html_escape(&next_step);
+        // A handful of URLs. As a list they cost a line each plus the list's
+        // own margins; inline they cost part of one line.
+        let official_references_inline = match &finding.official_references {
+            Some(references) if !references.is_empty() => references
+                .iter()
+                // Inert text, never a clickable navigation instruction built
+                // from scanner output.
+                .map(|reference| format!("<code>{}</code>", html_escape(reference)))
+                .collect::<Vec<_>>()
+                .join(" · "),
+            Some(_) => catalog
+                .text(
+                    "No official scanner reference was retained for this selected-run finding.",
+                    "本輪保存的問題未保留掃描工具官方參照。",
+                )
+                .to_owned(),
+            None => catalog
+                .text(
+                    "Official references were not frozen for this legacy result; none are inferred from the current finding.",
+                    "這筆舊版結果未凍結官方參照；本報告不會從目前的問題紀錄推測參照。",
+                )
+                .to_owned(),
+        };
         findings.push_str(&format!(
             concat!(
                 // The asset belongs in the heading, not four items into the
@@ -16458,50 +16511,53 @@ fn html_report_bytes(
                 // and the two cards are titled identically; with the asset
                 // buried, adjacent cards read as the report printing one
                 // problem twice.
-                "<article><h3>{} <span class=\"finding-asset\">— {}</span></h3>",
+                "<article id=\"f{}\"><h3>{} <span class=\"finding-asset\">— {}</span></h3>",
                 "<p class=\"finding-meta\"><span class=\"pill pill--{}\">{}: {}</span>",
-                "<span class=\"pill\">{}: {}</span>",
+                "<span class=\"pill\">{}: {}</span>{}",
                 "<span class=\"pill\">{}: {}</span><span>{} #{}</span></p>",
+                // Run-in labels, not headings. Each of these carries one
+                // sentence, and a heading line plus a margin above and below
+                // it cost more vertical space than the sentence did. Six of
+                // them per card, fifty-one cards.
+                "<p>{}</p><p><strong>{}:</strong> {}</p>",
+                "<p class=\"finding-action\"><strong>{}:</strong> {}</p>",
+                "{}{}",
+                "<p><strong>{}:</strong> {}</p>",
+                "<p><strong>{}:</strong> {}</p>",
+                "<details class=\"technical finding-technical\"><summary><strong>{}</strong></summary>",
                 "<p><strong>{}:</strong> {} · ",
                 "<strong>{}:</strong> <code>{}</code></p>",
-                "<p>{}</p><h4>{}</h4><p>{}</p>",
                 "<h4>{}</h4><ul>{}</ul>",
-                "<h4>{}</h4>{}",
-                "<p><strong>{}:</strong> {}</p>",
-                "<h4>{}</h4><ul>{}</ul>",
-                "<details class=\"technical finding-technical\"><summary><strong>{}</strong></summary>",
                 "<h4>{}</h4><ul>{}</ul>",
                 "<h4>{}</h4><ul>{}</ul></details></article>"
             ),
+            catalog.format_number(index + 1),
             html_escape(&finding.title),
             targets,
             severity_slug(&finding.severity),
             catalog.text("Severity", "嚴重程度"),
             html_escape(&catalog.identifier(&enum_key(&finding.severity))),
             catalog.text("Confidence", "信心程度"),
-            html_escape(&confidence_presentation),
+            html_escape(confidence_chip),
+            confidence_note,
             catalog.text("Priority", "優先順序"),
             html_escape(&priority),
             catalog.text("Report order", "報告順序"),
             catalog.format_number(index + 1),
-            catalog.text("Selected-run source", "本輪來源"),
-            html_escape(catalog.finding_source(&finding.snapshot_source)),
-            catalog.text("Finding ID", "問題 ID"),
-            html_escape(&finding.finding_id),
             html_escape(&plain_language_risk),
             catalog.text("Possible impact", "可能影響"),
             html_escape(&possible_impact),
-            catalog.text("Why this priority", "此優先順序的原因"),
-            priority_reasons,
             catalog.text("What to do next", "下一步怎麼做"),
-            next_step_html,
+            next_step_inline,
+            safety_block,
+            verification_block,
             catalog.text("Suggested expert", "建議諮詢的專家"),
             html_escape(&expert_type),
             // The upstream advisory stays in the open: it is where a reader
             // goes to understand the problem, not a record of how this
             // product handled it.
             catalog.text("Official scanner references", "掃描工具官方參照"),
-            official_references,
+            official_references_inline,
             // Everything this product retained about how it knows. On a
             // 21-engine run these two blocks were 57% of everything printed
             // under "Problems found" -- artifact and engine-run identifiers,
@@ -16512,6 +16568,16 @@ fn html_report_bytes(
                 "Evidence and framework references",
                 "證據與框架參照",
             ),
+            // The identity line and the ranking rationale moved in here with
+            // it. A forty-character fingerprint and a restatement of the two
+            // ratings already shown as pills are how the report knows, not
+            // what it found.
+            catalog.text("Selected-run source", "本輪來源"),
+            html_escape(catalog.finding_source(&finding.snapshot_source)),
+            catalog.text("Finding ID", "問題 ID"),
+            html_escape(&finding.finding_id),
+            catalog.text("Why this priority", "此優先順序的原因"),
+            priority_reasons,
             catalog.text("Evidence SHA-256", "證據 SHA-256"),
             evidence,
             catalog.text("Related framework coordinates", "相關框架座標"),
@@ -16540,6 +16606,30 @@ fn html_report_bytes(
                 "這些紀錄與資安問題分開呈現。確認各項預期服務，並執行適用的資安檢查以尋找弱點。",
             ),
             observations,
+        )
+    };
+
+    // Every problem on one page before any of them gets a page of its own.
+    //
+    // Fifty-one cards is fifty-one pages, and a reader who wants "what did
+    // this find" has to read all of them and hold the answer in their head.
+    // The index answers it in one table and gives the card number to turn to.
+    let finding_index = if index_rows.is_empty() {
+        String::new()
+    } else {
+        format!(
+            concat!(
+                "<table class=\"finding-index\">",
+                "<colgroup><col class=\"c-num\"><col class=\"c-sev\"><col class=\"c-name\">",
+                "<col class=\"c-asset\"><col></colgroup><thead><tr>",
+                "<th class=\"numeric\">#</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th>",
+                "</tr></thead><tbody>{}</tbody></table>"
+            ),
+            catalog.text("Severity", "嚴重程度"),
+            catalog.text("Problem", "問題"),
+            catalog.text("Asset", "資產"),
+            catalog.text("What to do next", "下一步怎麼做"),
+            index_rows,
         )
     };
 
@@ -16938,7 +17028,9 @@ fn html_report_bytes(
         "text-transform:uppercase;letter-spacing:.04em}",
         "tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}",
         ".numeric{text-align:right;font-variant-numeric:tabular-nums}",
-        "article{border:1px solid var(--line);border-radius:.6rem;padding:1.15rem 1.25rem;margin:1rem 0;background:#fff}",
+        "article{border:1px solid var(--line);border-radius:.6rem;padding:.9rem 1.1rem;margin:.7rem 0;background:#fff}",
+        "article h3{margin:0 0 .35rem}article p{margin:.3rem 0}article h4{margin:.7rem 0 .25rem;font-size:.92rem}",
+        "article ul{margin:.25rem 0;padding-left:1.2rem}",
         ".cover{border-bottom:3px solid var(--accent);padding-bottom:1.25rem;margin-bottom:1.5rem}",
         ".cover__product{margin:0;font-size:.78rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}",
         ".cover__meta{display:flex;flex-wrap:wrap;gap:.4rem 2.5rem;margin:0}",
@@ -16973,6 +17065,16 @@ fn html_report_bytes(
         "@media(max-width:760px){body{padding:1.25rem}.report-grid,.asset-result{grid-template-columns:1fr}table{display:block;overflow-x:auto}}",
         ".pill{display:inline-block;border:1px solid currentColor;border-radius:1rem;padding:.08rem .6rem;font-size:.82rem;white-space:nowrap}",
         ".finding-meta{display:flex;flex-wrap:wrap;gap:.3rem .45rem;align-items:center;color:var(--muted);font-size:.85rem}",
+        ".finding-index{font-size:.85rem;table-layout:fixed}",
+        ".finding-index th,.finding-index td{padding:.3rem .5rem;overflow-wrap:anywhere}",
+        ".finding-index col.c-num{width:2.6rem}.finding-index col.c-sev{width:5.5rem}",
+        ".finding-index col.c-name{width:30%}.finding-index col.c-asset{width:9rem}",
+        ".finding-index td:nth-child(3){font-weight:600;color:var(--ink)}",
+        ".finding-index td:nth-child(4),.finding-index td:nth-child(5){color:var(--muted)}",
+        ".finding-index .pill{font-size:.75rem;padding:.02rem .45rem}",
+        ".finding-index a{color:var(--accent)}",
+        ".finding-meta__note{flex-basis:100%;font-size:.8rem;line-height:1.35}",
+        ".finding-action{margin-top:.5rem}",
         ".finding-meta .pill{white-space:normal}",
         ".pill--critical{color:#7a271a;background:#fbeae7}.pill--high{color:#b42318;background:#fbeae7}",
         ".pill--medium{color:#b54708;background:#fdf1dc}.pill--low{color:#5c6a70;background:#f2f4f5}",
@@ -17033,7 +17135,9 @@ fn html_report_bytes(
     document.push_str(&html_page_rule(&report, catalog));
     document.push_str(concat!(
         "@media print{",
-        "body{max-width:none;margin:0;padding:0;font-size:10.5pt;color:#000}",
+        "body{max-width:none;margin:0;padding:0;font-size:9.5pt;line-height:1.45;color:#000}",
+        "article{padding:.6rem .75rem;margin:.45rem 0}article p{margin:.22rem 0}",
+        ".finding-index{font-size:8.5pt}",
         // Every major section opens a page. A reader handed the printout should
         // be able to pull one section out of it without a heading stranded at
         // the foot of the page before.
@@ -17151,7 +17255,7 @@ fn html_report_bytes(
             "<div class=\"report-card\"><h2>{}</h2><ul>{}</ul></div></section>",
             "<section><h2>{}</h2>{}<ol>{}</ol></section>",
             "<h2>{}</h2>",
-            "<p>{}</p>{}{}"
+            "<p>{}</p>{}{}{}"
         ),
         catalog.text("What you asked to scan", "你要求掃描的內容"),
         catalog.text("Scan depth", "掃描深度"),
@@ -17177,6 +17281,7 @@ fn html_report_bytes(
             "Problems follow the report order. Severity describes possible impact, confidence describes evidence strength, and priority sets the recommended review order.",
             "問題依報告順序排列。嚴重程度描述可能影響，信心程度描述證據強度，優先順序則是建議的檢視次序。",
         ),
+        finding_index,
         findings,
         observation_section,
     ));
@@ -31418,7 +31523,11 @@ mod tests {
             "Frozen selected-run secret exposure".into(),
             "Finding details unavailable for this legacy run".into(),
             "Severity: High".into(),
-            "Confidence: Low — this product&#39;s rating from a pattern or detector match".into(),
+            // The rating and the basis for it are separate elements now: the
+            // chip carries the rating, the line under it carries where the
+            // rating came from. Both still print, in that order.
+            "Confidence: Low</span>".into(),
+            "this product&#39;s rating from a pattern or detector match".into(),
             "Priority: 73".into(),
             "Revoke and rotate the exposed credential, then remove it from the source and every retained history entry.".into(),
             evidence_sha256.clone(),

@@ -1850,7 +1850,8 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             let problems = &problems[..problems
                 .find("<details class=\"technical\">")
                 .expect("technical details follow the problems")];
-            let cards = problems.match_indices("<article>").count();
+            // Every card is anchored so the index above can point at it.
+            let cards = problems.match_indices("<article id=\"f").count();
             assert_eq!(cards, report.findings.len(), "one card per finding");
             assert_eq!(
                 problems
@@ -2253,7 +2254,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert!(asset.starts_with("— "), "{asset}");
             }
 
-            let first_card = &problems[problems.find("<article>").expect("a card")..];
+            let first_card = &problems[problems.find("<article id=\"f").expect("a card")..];
             let first_card = &first_card[..first_card.find("</article>").expect("card end")];
             let collapsed_at = first_card
                 .find("<details class=\"technical finding-technical\">")
