@@ -1947,8 +1947,25 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // around an identifier. This list named six scanners differently
             // from the "Requested checks" list two headings above it, and
             // title-cased the reader's own target into "Https://...".
+            // To the close that balances the list, not the first </ul>: the
+            // list nests one level now, so the first close is a source
+            // group's, not its own.
             let limits = &ordered_html[ordered_html.find(">Limits</h3>").expect("limits")..];
-            let limits = &limits[..limits.find("</ul>").expect("limits end")];
+            let mut nesting = limits
+                .match_indices("<ul>")
+                .map(|(at, _)| (at, 1i32))
+                .chain(limits.match_indices("</ul>").map(|(at, _)| (at, -1i32)))
+                .collect::<Vec<_>>();
+            nesting.sort_by_key(|(at, _)| *at);
+            let mut depth = 0i32;
+            let limits_end = nesting
+                .into_iter()
+                .find_map(|(at, step)| {
+                    depth += step;
+                    (depth == 0).then_some(at + "</ul>".len())
+                })
+                .expect("the limits list closes");
+            let limits = &limits[..limits_end];
             for wrong in [
                 "Httpx",
                 "Kics",
@@ -1968,13 +1985,13 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // printed it once per engine. A limit is a policy and who it
             // covers: forty lines carried eleven distinct policies.
             for right in [
-                "<strong>Execution timeout:</strong> 3600 seconds (saved task settings)",
+                "<strong>Execution timeout:</strong> 3600 seconds",
                 "Checkov, CloudQuery, Cloudsplaining, Gitleaks, Grype, KICS, kube-bench",
-                "<strong>Execution timeout:</strong> 7200 seconds (saved task settings)",
+                "<strong>Execution timeout:</strong> 7200 seconds",
                 "Greenbone Community Edition, httpx, Nuclei",
-                "<strong>Execution timeout:</strong> 14461 seconds (saved task settings)",
-                "<strong>Approved ports:</strong> 443,8443 (saved scope approval)",
-                "<strong>Approved ports:</strong> 443 (saved scope approval)",
+                "<strong>Execution timeout:</strong> 14461 seconds",
+                "<strong>Approved ports:</strong> 443,8443",
+                "<strong>Approved ports:</strong> 443 \u{2014}",
             ] {
                 assert!(limits.contains(right), "the limits list lost: {right}");
             }
@@ -1983,36 +2000,55 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 3,
                 "one execution timeout per distinct value, not per engine"
             );
-            // Grouped by policy but ordered by arrival, one asset's authorized
-            // target sat past the request rates. Like policies read together.
-            let subjects = limits
-                .match_indices("</strong>")
-                .map(|(at, _)| limits[..at].rfind("<strong>").expect("a label opens"))
-                .map(|at| {
-                    limits[at..]
-                        .split_once("</strong>")
-                        .expect("a label closes")
-                        .0
-                })
-                .collect::<Vec<_>>();
-            let mut seen: Vec<&str> = Vec::new();
-            for subject in &subjects {
-                if seen.last() != Some(subject) {
-                    assert!(
-                        !seen.contains(subject),
-                        "the limits list returns to {subject} after leaving it"
-                    );
-                    seen.push(subject);
-                }
+            // Where a limit came from is a property of the grant, and it was
+            // printed on all twelve lines to say one of two things.
+            for source in ["saved scope approval", "saved task settings"] {
+                assert_eq!(
+                    limits.matches(source).count(),
+                    1,
+                    "the limits list repeats where a limit came from"
+                );
+                assert!(
+                    limits.contains(&format!("<strong>From the {source}</strong><ul>")),
+                    "the limits under {source} are not gathered under it"
+                );
             }
-            assert!(seen.len() >= 5, "the audit lost the limit subjects");
+            // Grouped by policy but ordered by arrival, one asset's authorized
+            // target sat past the request rates. Like policies read together,
+            // inside the source they came from.
+            let mut subjects_seen = 0usize;
+            for group in limits.split("</strong><ul>").skip(1) {
+                let group = &group[..group.find("</ul>").expect("a source group closes")];
+                let subjects = group
+                    .match_indices("</strong>")
+                    .map(|(at, _)| group[..at].rfind("<strong>").expect("a label opens"))
+                    .map(|at| {
+                        group[at..]
+                            .split_once("</strong>")
+                            .expect("a label closes")
+                            .0
+                    })
+                    .collect::<Vec<_>>();
+                let mut seen: Vec<&str> = Vec::new();
+                for subject in &subjects {
+                    if seen.last() != Some(subject) {
+                        assert!(
+                            !seen.contains(subject),
+                            "the limits list returns to {subject} after leaving it"
+                        );
+                        seen.push(subject);
+                    }
+                }
+                subjects_seen += seen.len();
+            }
+            assert!(subjects_seen >= 5, "the audit lost the limit subjects");
             assert!(
-                limits.matches("<li>").count() <= 12,
+                limits.matches("<li>").count() - limits.matches("<strong>From the ").count() <= 12,
                 "the limits list is repeating a policy per holder"
             );
             // A limit that names itself needs no holder after it.
             assert!(
-                !limits.contains("203.0.113.11 (saved scope approval) &#8212; 203.0.113.11"),
+                !limits.contains("203.0.113.11 \u{2014} 203.0.113.11"),
                 "an authorized network target printed its own name twice"
             );
 
@@ -2092,8 +2128,9 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             let zh_html = fs::read_to_string(&zh_path).unwrap();
             assert_paragraphs_are_well_formed(&zh_html, "the Chinese report");
             for named in [
-                "<strong>檢查逾時限制:</strong> 3600 秒（已保存的工作設定）；適用於 Checkov、CloudQuery",
-                "<strong>檢查逾時限制:</strong> 7200 秒（已保存的工作設定）；適用於 Greenbone Community Edition、httpx、Nuclei",
+                "<strong>來自已保存的工作設定</strong><ul>",
+                "<strong>檢查逾時限制:</strong> 3600 秒；適用於 Checkov、CloudQuery",
+                "<strong>檢查逾時限制:</strong> 7200 秒；適用於 Greenbone Community Edition、httpx、Nuclei",
                 "KICS、kube-bench",
                 "ScoutSuite、ScubaGear",
                 "Trivy、TruffleHog",
@@ -2599,6 +2636,30 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                         "a column header does not say which column it heads: {head}"
                     );
                 }
+            }
+
+            // A column header names its column; nothing named the table. Read
+            // out of order -- by a screen reader, or by a reader landing on a
+            // page break -- eleven grids arrived with no idea what they list.
+            for html in [&ordered_html, &zh_html] {
+                let tables = html.match_indices("<table").count();
+                assert!(tables >= 10, "the audit lost the report's tables");
+                let mut captions = 0usize;
+                for (at, _) in html.match_indices("<table") {
+                    let rest = &html[at..];
+                    let opened = rest.find('>').expect("a table tag closes") + 1;
+                    let caption = "<caption class=\"visually-hidden\">";
+                    assert!(
+                        rest[opened..].starts_with(caption),
+                        "a table opens with no caption: {}",
+                        &rest[..opened + 60.min(rest.len() - opened)]
+                    );
+                    let said = &rest[opened + caption.len()..];
+                    let said = &said[..said.find("</caption>").expect("a caption closes")];
+                    assert!(!said.trim().is_empty(), "a table caption says nothing");
+                    captions += 1;
+                }
+                assert_eq!(tables, captions, "a table went uncaptioned");
             }
 
             // The asset column and the index's asset cell are the two narrow

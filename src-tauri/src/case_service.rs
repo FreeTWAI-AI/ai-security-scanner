@@ -14818,10 +14818,16 @@ fn html_framework_section(
         let body = {
             format!(
                 concat!(
-                    "<table class=\"framework-controls\"><thead><tr>",
+                    "<table class=\"framework-controls\">",
+                    "<caption class=\"visually-hidden\">{} {}</caption><thead><tr>",
                     "<th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
                     "<th class=\"numeric\" scope=\"col\">{}</th><th scope=\"col\">{}</th>",
                     "</tr></thead><tbody>{}</tbody></table>"
+                ),
+                html_escape(&framework.framework),
+                catalog.text(
+                    "controls with an observed coordinate",
+                    "中觀察到座標的控制項"
                 ),
                 catalog.text("Control", "控制項"),
                 catalog.text("Title", "名稱"),
@@ -14867,7 +14873,8 @@ fn html_framework_section(
     format!(
         concat!(
             "<section class=\"framework-coverage\"><h2>{}</h2><p>{}</p>",
-            "<table class=\"framework-overview\"><thead><tr>",
+            "<table class=\"framework-overview\">",
+            "<caption class=\"visually-hidden\">{}</caption><thead><tr>",
             "<th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
             "<th class=\"numeric\" scope=\"col\">{}</th>",
             "<th class=\"numeric\" scope=\"col\">{}</th>",
@@ -14877,6 +14884,10 @@ fn html_framework_section(
         catalog.text(
             "Each coordinate below was reached from a finding's own rule or CWE through the packaged mapping catalog. They are navigation aids for finding the relevant control text, not a compliance result: nothing here is an audit, a certification, or a pass.",
             "以下每個座標都是從問題本身的規則或 CWE，透過內建的對照目錄推導出來的。它們是用來找到相關控制項條文的導覽，不是合規結果：這裡沒有任何內容構成稽核、認證或通過與否的判定。",
+        ),
+        catalog.text(
+            "Every framework in this report and what this run shows against it",
+            "本報告涵蓋的每個框架，以及本輪對照後的情形",
         ),
         catalog.text("Framework", "框架"),
         catalog.text("What this run shows", "本輪的情形"),
@@ -15100,6 +15111,7 @@ fn html_coverage_matrix(
         concat!(
             "<section><h2>{}</h2><p>{}</p>",
             "<div class=\"matrix-scroll\"><table class=\"coverage-matrix\">",
+            "<caption class=\"visually-hidden\">{}</caption>",
             "<thead><tr><th scope=\"col\">{}</th>{}</tr></thead>",
             "<tbody>{}</tbody></table></div>{}</section>"
         ),
@@ -15107,6 +15119,10 @@ fn html_coverage_matrix(
         catalog.text(
             "One row per requested asset, one column per check that ran. An empty cell means no check of that kind was planned for that asset, which is not a result.",
             "每一列是一項要求掃描的資產，每一欄是一項執行過的檢查。空白代表該資產沒有安排這類檢查，而不是檢查結果。"
+        ),
+        catalog.text(
+            "One row per selected asset, one column per check that ran",
+            "每個選定資產一列，每項執行過的檢查一欄",
         ),
         catalog.text("Asset", "資產"),
         header,
@@ -15444,7 +15460,8 @@ fn html_asset_result_section(
     format!(
         concat!(
             "<section class=\"asset-results\"><h2>{}</h2><p>{}</p>",
-            "<table class=\"asset-result-table\"><colgroup><col class=\"c-asset\">",
+            "<table class=\"asset-result-table\">",
+            "<caption class=\"visually-hidden\">{}</caption><colgroup><col class=\"c-asset\">",
             "<col class=\"c-state\"><col class=\"c-mix\">{}</colgroup><thead><tr>",
             "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>{}</tr></thead>",
             "<tbody>{}</tbody></table>{}</section>"
@@ -15453,6 +15470,10 @@ fn html_asset_result_section(
         catalog.text(
             "Every selected asset appears once. A no-problem result applies only to the security checks that completed.",
             "每個已選資產都會列出一次；「未發現問題」只適用於已完成的資安檢查。",
+        ),
+        catalog.text(
+            "Assets ordered by what this run found on them",
+            "依本輪在各資產上的發現排序",
         ),
         action_column,
         catalog.text("Asset", "資產"),
@@ -16178,7 +16199,7 @@ fn html_report_bytes(
     // timeout twenty-one times and two targets sharing a port list printed it
     // twice: forty lines for eleven distinct policies. Holders that share a
     // policy now share its line.
-    let mut grouped_limits: Vec<(String, String, Vec<String>)> = Vec::new();
+    let mut grouped_limits: Vec<(String, String, &'static str, Vec<String>)> = Vec::new();
     for limit in &report.requested.limits {
         // Same rule as the coverage rows below: the identifier the name is
         // composed around is the only part telling one grant's limits from
@@ -16194,13 +16215,7 @@ fn html_report_bytes(
         // The source is a parenthetical in a Chinese sentence too, and the
         // half-width pair was the only ASCII bracket left in the Chinese
         // report.
-        let rendered = format!(
-            "{}{}{}{}",
-            display_value,
-            catalog.text(" (", "（"),
-            catalog.limit_source(&limit.source),
-            catalog.text(")", "）"),
-        );
+        let source = catalog.limit_source(&limit.source);
         let Some((holder, subject)) = limit_holder_and_subject(&limit.name, &target_labels) else {
             let display_name = match catalog.locale {
                 crate::export::ReportLocale::ZhHant => {
@@ -16208,7 +16223,7 @@ fn html_report_bytes(
                 }
                 _ => readable_limit_name(&limit.name, &target_labels),
             };
-            grouped_limits.push((display_name, rendered, Vec::new()));
+            grouped_limits.push((display_name, display_value, source, Vec::new()));
             continue;
         };
         let display_subject = match catalog.locale {
@@ -16219,11 +16234,14 @@ fn html_report_bytes(
         };
         match grouped_limits
             .iter_mut()
-            .find(|(candidate, existing, holders)| {
-                !holders.is_empty() && *candidate == display_subject && *existing == rendered
+            .find(|(candidate, existing, known, holders)| {
+                !holders.is_empty()
+                    && *candidate == display_subject
+                    && *existing == display_value
+                    && *known == source
             }) {
-            Some((_, _, holders)) => holders.push(holder),
-            None => grouped_limits.push((display_subject, rendered, vec![holder])),
+            Some((_, _, _, holders)) => holders.push(holder),
+            None => grouped_limits.push((display_subject, display_value, source, vec![holder])),
         }
     }
     // Grouping by policy left the subjects interleaved: one asset's four
@@ -16234,37 +16252,59 @@ fn html_report_bytes(
     // execution timeouts - and the sort is stable, so values stay in the order
     // the run recorded them.
     let mut subject_order: Vec<String> = Vec::new();
-    for (subject, _, _) in &grouped_limits {
+    for (subject, _, _, _) in &grouped_limits {
         if !subject_order.contains(subject) {
             subject_order.push(subject.clone());
         }
     }
-    grouped_limits.sort_by_key(|(subject, _, _)| {
+    grouped_limits.sort_by_key(|(subject, _, _, _)| {
         subject_order
             .iter()
             .position(|known| known == subject)
             .unwrap_or(usize::MAX)
     });
-    let mut requested_limits = grouped_limits
+    // Where a limit came from is a property of the grant it came from, and it
+    // was printed on all twelve lines to say one of two things. The list is
+    // grouped under its sources instead, so a reader sees at once which limits
+    // the scope approval set and which the task settings did.
+    let mut source_order: Vec<&'static str> = Vec::new();
+    for (_, _, source, _) in &grouped_limits {
+        if !source_order.contains(source) {
+            source_order.push(source);
+        }
+    }
+    let mut requested_limits = source_order
         .into_iter()
-        .map(|(subject, value, holders)| {
-            // An authorized network target names itself: "203.0.113.11 --
-            // 203.0.113.11" is one fact printed twice.
-            let named_itself =
-                matches!(holders.as_slice(), [only] if value.starts_with(only.as_str()));
-            let covered = match holders.is_empty() || named_itself {
-                true => String::new(),
-                false => format!(
-                    "{}{}",
-                    catalog.text(" \u{2014} ", "；適用於 "),
-                    holders.join(catalog.text(", ", "、")),
-                ),
-            };
+        .map(|source| {
+            let limits = grouped_limits
+                .iter()
+                .filter(|(_, _, known, _)| *known == source)
+                .map(|(subject, value, _, holders)| {
+                    // An authorized network target names itself:
+                    // "203.0.113.11 -- 203.0.113.11" is one fact printed twice.
+                    let named_itself =
+                        matches!(holders.as_slice(), [only] if value.starts_with(only.as_str()));
+                    let covered = match holders.is_empty() || named_itself {
+                        true => String::new(),
+                        false => format!(
+                            "{}{}",
+                            catalog.text(" \u{2014} ", "；適用於 "),
+                            holders.join(catalog.text(", ", "、")),
+                        ),
+                    };
+                    format!(
+                        "<li><strong>{}:</strong> {}{}</li>",
+                        html_escape(subject),
+                        html_escape(value),
+                        html_escape(&covered),
+                    )
+                })
+                .collect::<String>();
             format!(
-                "<li><strong>{}:</strong> {}{}</li>",
-                html_escape(&subject),
-                html_escape(&value),
-                html_escape(&covered),
+                "<li><strong>{}{}</strong><ul>{}</ul></li>",
+                catalog.text("From the ", "來自"),
+                html_escape(source),
+                limits,
             )
         })
         .collect::<String>();
@@ -17275,11 +17315,16 @@ fn html_report_bytes(
         format!(
             concat!(
                 "<table class=\"finding-index\">",
+                "<caption class=\"visually-hidden\">{}</caption>",
                 "<colgroup><col class=\"c-num\"><col class=\"c-sev\"><col class=\"c-name\">",
                 "<col class=\"c-asset\"><col></colgroup><thead><tr>",
                 "<th class=\"numeric\" scope=\"col\">#</th><th scope=\"col\">{}</th>",
                 "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
                 "</tr></thead><tbody>{}</tbody></table>"
+            ),
+            catalog.text(
+                "Every problem found in this run, in report order",
+                "本輪發現的所有問題，依報告順序排列",
             ),
             catalog.text("Severity", "嚴重程度"),
             catalog.text("Problem", "問題"),
@@ -18018,7 +18063,9 @@ fn html_report_bytes(
             "<h3>{}</h3><ul>{}</ul></div>",
             "<div class=\"report-card\"><h2>{}</h2>",
             "<p><strong>{}:</strong> {}</p>",
-            "<table class=\"tested-table\"><thead><tr><th scope=\"col\">{}</th>",
+            "<table class=\"tested-table\">",
+            "<caption class=\"visually-hidden\">{}</caption>",
+            "<thead><tr><th scope=\"col\">{}</th>",
             "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
             "<th scope=\"col\">{}</th></tr></thead><tbody>{}</tbody></table>{}</div>",
             "<div class=\"report-card\"><h2>{}</h2><ul>{}</ul></div></section>",
@@ -18038,6 +18085,10 @@ fn html_report_bytes(
         catalog.text("What was actually tested", "實際測試的內容"),
         catalog.text("Observed window", "觀察時間範圍"),
         html_escape(&actual_window),
+        catalog.text(
+            "Every check this run started, with the targets it reached and when",
+            "本輪啟動的每項檢查，以及它涵蓋的目標與時間",
+        ),
         catalog.text("Check", "檢查"),
         catalog.text("State", "狀態"),
         catalog.text("Targets", "目標"),
@@ -18069,7 +18120,8 @@ fn html_report_bytes(
             "<h2>{}</h2>",
             "<p>{}</p>{}",
             "<h3>{}</h3>",
-            "<table><thead><tr><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+            "<table><caption class=\"visually-hidden\">{}</caption>",
+            "<thead><tr><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
             "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
             "<th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
             "</tr></thead><tbody>{}</tbody></table></details>"
@@ -18096,6 +18148,10 @@ fn html_report_bytes(
         ),
         active_group_articles,
         catalog.text("Immutable grouping history", "不可變更的群組歷史"),
+        catalog.text(
+            "Every grouping event recorded for this case, oldest first",
+            "本案件記錄的每筆群組事件，由舊到新",
+        ),
         catalog.text("Time", "時間"),
         catalog.text("Action", "動作"),
         catalog.text("Group ID", "群組 ID"),
@@ -32584,7 +32640,7 @@ mod tests {
             // actually tested, and why a finding-derived next step is listed.
             // All three were printed as stored English under translated
             // headings, the last one as Rust variant names.
-            "檢查逾時限制:</strong> 3600 秒（已保存的工作設定）；適用於 Gitleaks",
+            "<strong>來自已保存的工作設定</strong><ul><li><strong>檢查逾時限制:</strong> 3600 秒；適用於 Gitleaks",
             "Frozen selected-run secret exposure — 嚴重程度：高；信心程度：低 — 本產品依據樣式或偵測器比對結果評定",
             "某個身分未登記多重要素驗證裝置的證據，與驗證使用者及保護驗證資訊有關。",
             "<br>關係: 相關",
