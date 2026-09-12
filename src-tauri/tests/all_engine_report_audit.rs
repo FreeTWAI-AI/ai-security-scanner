@@ -3025,6 +3025,66 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 );
             }
 
+            // A redacted case is built before a locale is chosen, so its
+            // markers go in in English. The standard-redacted report is the
+            // one export a reader hands to someone else, and the Chinese one
+            // carried three hundred and fifty-three English brackets under
+            // translated labels.
+            let redacted = |locale, name: &str| {
+                let path = artifact_root.join(name);
+                reopened_service
+                    .export_case(
+                        case_id,
+                        scan_run_id,
+                        CaseExportFormat::Html,
+                        path.clone(),
+                        ExportOptions {
+                            redaction: RedactionProfile::Standard,
+                            include_raw_artifacts: false,
+                            locale,
+                        },
+                    )
+                    .unwrap();
+                fs::read_to_string(&path).unwrap()
+            };
+            let redacted_english = redacted(ReportLocale::En, "redaction-markers-en.html");
+            let redacted_chinese = redacted(ReportLocale::ZhHant, "redaction-markers-zh.html");
+            let marked = redacted_english.matches("[redacted ").count();
+            assert!(
+                marked > 100,
+                "the audit lost the redaction markers: {marked}"
+            );
+            assert_eq!(
+                redacted_chinese.matches("[redacted ").count(),
+                0,
+                "the Chinese redacted report keeps English redaction markers"
+            );
+            // Named, not merely removed: a withheld value still says which
+            // kind of value it was, on the page as much as in the JSON.
+            for (english, chinese) in [
+                (
+                    "[redacted IAM policy]",
+                    "\u{ff08}IAM \u{653f}\u{7b56}\u{ff09}",
+                ),
+                ("[redacted location]", "\u{ff08}\u{4f4d}\u{7f6e}\u{ff09}"),
+                (
+                    "[redacted result pointer]",
+                    "\u{ff08}\u{7d50}\u{679c}\u{6307}\u{6a19}\u{ff09}",
+                ),
+                (
+                    "[redacted evidence summary]",
+                    "\u{ff08}\u{8b49}\u{64da}\u{6458}\u{8981}\u{ff09}",
+                ),
+            ] {
+                let named = redacted_english.matches(english).count();
+                assert!(named > 0, "the audit lost {english}");
+                assert_eq!(
+                    redacted_chinese.matches(chinese).count(),
+                    named,
+                    "{english} lost its Chinese placeholder"
+                );
+            }
+
             if let Some(dump) = std::env::var_os("AI_SCANNER_REPORT_DUMP_DIR").map(PathBuf::from) {
                 fs::create_dir_all(&dump).unwrap();
                 for (name, format, locale, redaction) in [

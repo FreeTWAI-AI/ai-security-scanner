@@ -16218,6 +16218,112 @@ fn html_typed_inventory_section(
     )
 }
 
+/// Every redaction marker this build writes, named in Traditional Chinese.
+///
+/// A redacted case is assembled before a locale is chosen -- the same case is
+/// exported as canonical JSON and rendered in both languages -- so the markers
+/// go in in English. Left that way, a Chinese standard-redacted report carried
+/// three hundred and fifty-three English brackets sitting under translated
+/// labels, in the one export a reader is most likely to hand to someone else.
+const REDACTION_MARKERS: [(&str, &str); 43] = [
+    ("authority assertion", "授權陳述"),
+    ("cleanup detail", "清理細節"),
+    ("comparison completeness reason", "比對完整性原因"),
+    ("comparison detail", "比對細節"),
+    ("comparison reason", "比對原因"),
+    ("control", "控制項"),
+    ("control id", "控制項 ID"),
+    ("coverage detail", "涵蓋細節"),
+    ("data-quality warning", "資料品質警告"),
+    ("display name", "顯示名稱"),
+    ("endpoint", "端點"),
+    ("engine error detail", "掃描工具錯誤細節"),
+    ("engine warning", "掃描工具警告"),
+    ("evidence summary", "證據摘要"),
+    ("executed scope", "已執行的範圍"),
+    ("external target", "外部目標"),
+    ("finding group", "問題群組"),
+    ("finding workflow reason", "問題流程原因"),
+    ("grouping rationale", "群組理由"),
+    ("IAM group", "IAM 群組"),
+    ("IAM policy", "IAM 政策"),
+    ("IAM role", "IAM 角色"),
+    ("IAM user", "IAM 使用者"),
+    ("identifier", "識別碼"),
+    ("inventory pointer", "資料指標"),
+    ("location", "位置"),
+    ("manual-review control", "待人工判定的控制項"),
+    ("manual-review detail", "待人工判定的細節"),
+    ("native ID", "原生 ID"),
+    ("observation detail", "觀察細節"),
+    ("provider", "供應商"),
+    ("purl", "purl"),
+    ("region", "區域"),
+    ("requested scope", "要求的範圍"),
+    ("result pointer", "結果指標"),
+    ("scanner-provided description", "掃描工具提供的說明"),
+    ("scanner-provided remediation", "掃描工具提供的修復資訊"),
+    ("scope limit", "範圍限制"),
+    ("service endpoint", "服務端點"),
+    ("software component", "軟體元件"),
+    ("target", "目標"),
+    ("version", "版本"),
+    ("purl set", "purl 集合"),
+];
+
+/// The three markers the redaction numbers as it assigns them. The number is
+/// what tells one redacted target from another, so it is kept.
+const NUMBERED_REDACTION_MARKERS: [(&str, &str); 3] = [
+    ("address set", "位址集合"),
+    ("network target", "網路目標"),
+    ("port set", "連接埠集合"),
+];
+
+fn localized_redaction_marker(named: &str) -> Option<String> {
+    if let Some((_, chinese)) = REDACTION_MARKERS
+        .iter()
+        .find(|(english, _)| *english == named)
+    {
+        return Some((*chinese).to_owned());
+    }
+    let (stem, number) = named.rsplit_once(' ')?;
+    number.parse::<u32>().ok()?;
+    NUMBERED_REDACTION_MARKERS
+        .iter()
+        .find(|(english, _)| *english == stem)
+        .map(|(_, chinese)| format!("{chinese} {number}"))
+}
+
+/// Names every marker in a finished document, and leaves anything else alone.
+///
+/// Run over the built page rather than at each field: the markers arrive on
+/// values the report only passes through -- a location, a policy name, a
+/// scope limit with its holders after it -- and a rule applied at one of the
+/// twenty places those are printed is a rule the twenty-first will miss.
+fn localize_redaction_markers(document: &str) -> String {
+    const OPEN: &str = "[redacted ";
+    let mut localized = String::with_capacity(document.len());
+    let mut rest = document;
+    while let Some(at) = rest.find(OPEN) {
+        let (before, marker) = rest.split_at(at);
+        localized.push_str(before);
+        let Some((named, after)) = marker[OPEN.len()..].split_once(']') else {
+            localized.push_str(marker);
+            return localized;
+        };
+        match localized_redaction_marker(named) {
+            Some(chinese) => localized.push_str(&format!("（{chinese}）")),
+            // An unknown marker stays exactly as the redaction wrote it. A
+            // reader seeing English there is told less than they should be,
+            // but never told something the redaction did not say.
+            None => localized.push_str(&marker[..OPEN.len() + named.len() + 1]),
+        }
+        rest = after;
+    }
+    localized.push_str(rest);
+    localized
+}
+
 fn html_report_bytes(
     case: &AssessmentCase,
     run_id: &str,
@@ -18353,6 +18459,9 @@ fn html_report_bytes(
             "框架授權陳述與完整資產清單雖然在畫面上收合，列印時會完整輸出。各問題的證據、來源規則、框架座標與本輪工作紀錄仍屬收合的技術細節；列印出來的版本只會包含列印前已展開的部分。",
         ),
     ));
+    if catalog.locale == crate::export::ReportLocale::ZhHant {
+        document = localize_redaction_markers(&document);
+    }
     Ok(document.into_bytes())
 }
 
