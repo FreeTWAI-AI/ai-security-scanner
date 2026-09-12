@@ -1469,7 +1469,7 @@ fn every_detector_places_its_finding_on_its_mapped_control() {
                 .expect("the asset board")..];
             let board = &board[..board.find("</section>").expect("the board ends")];
             assert!(
-                !board.contains("<th>What to do next</th>"),
+                !board.contains("<th scope=\"col\">What to do next</th>"),
                 "a column of blanks was printed anyway"
             );
             assert!(board.contains("class=\"asset-result-steps\""), "{board}");
@@ -2203,7 +2203,10 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // A row keeps what is its own: the step its coverage gap calls
             // for, and the note that some of its checks did not finish. The
             // column exists because those rows exist.
-            assert!(board.contains("<th>What to do next</th>"), "{board}");
+            assert!(
+                board.contains("<th scope=\"col\">What to do next</th>"),
+                "{board}"
+            );
             assert!(board.contains("Retry this check."));
             assert!(board.contains("Some checks are incomplete."));
 
@@ -2574,6 +2577,28 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     html.contains("h2{break-after:avoid"),
                     "nothing keeps a section heading with its section"
                 );
+            }
+
+            // A column header says which column it heads. The coverage matrix
+            // was the only table that said so; the report's own row headers
+            // already do it, and ten tables did not.
+            for html in [&ordered_html, &zh_html] {
+                let heads = html
+                    .match_indices("<thead>")
+                    .map(|(at, _)| {
+                        // Past the <thead> tag itself: it starts with "<th".
+                        let rest = &html[at + "<thead>".len()..];
+                        &rest[..rest.find("</thead>").expect("a header row closes")]
+                    })
+                    .collect::<Vec<_>>();
+                assert!(heads.len() >= 10, "the audit lost the report's tables");
+                for head in heads {
+                    assert_eq!(
+                        head.matches("<th").count(),
+                        head.matches("scope=\"col\"").count(),
+                        "a column header does not say which column it heads: {head}"
+                    );
+                }
             }
 
             // The asset column and the index's asset cell are the two narrow

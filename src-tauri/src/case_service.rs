@@ -14819,7 +14819,8 @@ fn html_framework_section(
             format!(
                 concat!(
                     "<table class=\"framework-controls\"><thead><tr>",
-                    "<th>{}</th><th>{}</th><th class=\"numeric\">{}</th><th>{}</th>",
+                    "<th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+                    "<th class=\"numeric\" scope=\"col\">{}</th><th scope=\"col\">{}</th>",
                     "</tr></thead><tbody>{}</tbody></table>"
                 ),
                 catalog.text("Control", "控制項"),
@@ -14867,7 +14868,9 @@ fn html_framework_section(
         concat!(
             "<section class=\"framework-coverage\"><h2>{}</h2><p>{}</p>",
             "<table class=\"framework-overview\"><thead><tr>",
-            "<th>{}</th><th>{}</th><th class=\"numeric\">{}</th><th class=\"numeric\">{}</th>",
+            "<th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+            "<th class=\"numeric\" scope=\"col\">{}</th>",
+            "<th class=\"numeric\" scope=\"col\">{}</th>",
             "</tr></thead><tbody>{}</tbody></table>{}{}</section>"
         ),
         catalog.text("Where this lands in each framework", "對應到各框架的位置"),
@@ -15430,7 +15433,7 @@ fn html_asset_result_section(
         true => (
             "<col>",
             format!(
-                "<th>{}</th>",
+                "<th scope=\"col\">{}</th>",
                 catalog.text("What to do next", "下一步怎麼做")
             ),
         ),
@@ -15443,7 +15446,7 @@ fn html_asset_result_section(
             "<section class=\"asset-results\"><h2>{}</h2><p>{}</p>",
             "<table class=\"asset-result-table\"><colgroup><col class=\"c-asset\">",
             "<col class=\"c-state\"><col class=\"c-mix\">{}</colgroup><thead><tr>",
-            "<th>{}</th><th>{}</th><th>{}</th>{}</tr></thead>",
+            "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>{}</tr></thead>",
             "<tbody>{}</tbody></table>{}</section>"
         ),
         catalog.text("Which assets need attention", "哪些資產需要處理"),
@@ -17274,7 +17277,8 @@ fn html_report_bytes(
                 "<table class=\"finding-index\">",
                 "<colgroup><col class=\"c-num\"><col class=\"c-sev\"><col class=\"c-name\">",
                 "<col class=\"c-asset\"><col></colgroup><thead><tr>",
-                "<th class=\"numeric\">#</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th>",
+                "<th class=\"numeric\" scope=\"col\">#</th><th scope=\"col\">{}</th>",
+                "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
                 "</tr></thead><tbody>{}</tbody></table>"
             ),
             catalog.text("Severity", "嚴重程度"),
@@ -18014,8 +18018,9 @@ fn html_report_bytes(
             "<h3>{}</h3><ul>{}</ul></div>",
             "<div class=\"report-card\"><h2>{}</h2>",
             "<p><strong>{}:</strong> {}</p>",
-            "<table class=\"tested-table\"><thead><tr><th>{}</th><th>{}</th><th>{}</th>",
-            "<th>{}</th><th>{}</th></tr></thead><tbody>{}</tbody></table>{}</div>",
+            "<table class=\"tested-table\"><thead><tr><th scope=\"col\">{}</th>",
+            "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+            "<th scope=\"col\">{}</th></tr></thead><tbody>{}</tbody></table>{}</div>",
             "<div class=\"report-card\"><h2>{}</h2><ul>{}</ul></div></section>",
             "<section><h2>{}</h2>{}<ol>{}</ol></section>",
             "<h2>{}</h2>",
@@ -18064,7 +18069,10 @@ fn html_report_bytes(
             "<h2>{}</h2>",
             "<p>{}</p>{}",
             "<h3>{}</h3>",
-            "<table><thead><tr><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>{}</tbody></table></details>"
+            "<table><thead><tr><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+            "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+            "<th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
+            "</tr></thead><tbody>{}</tbody></table></details>"
         ),
         if report.technical_details.collapsed_by_default {
             ""
