@@ -2807,6 +2807,44 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert_eq!(html.matches(footnote).count(), 1);
             }
 
+            // The artifact digest proves the retained file was not altered.
+            // Without a pointer a reader still cannot find the one record the
+            // finding was raised from inside it -- the inventory provenance
+            // has printed one all along, and the finding evidence had not.
+            for (html, records, pointer) in [
+                (
+                    &ordered_html,
+                    "<dt>Source rule</dt>",
+                    "<dt>Result pointer</dt><dd><code>",
+                ),
+                (&zh_html, "<dt>來源規則</dt>", "<dt>結果指標</dt><dd><code>"),
+            ] {
+                let evidence = html.matches(records).count();
+                assert!(evidence > 20, "the audit lost the evidence records");
+                assert_eq!(
+                    html.matches(pointer).count(),
+                    evidence,
+                    "an evidence record cannot be traced into its artifact"
+                );
+                let named = html
+                    .match_indices(pointer)
+                    .map(|(at, _)| {
+                        let value = &html[at + pointer.len()..];
+                        &value[..value.find("</code>").expect("a pointer closes")]
+                    })
+                    .collect::<Vec<_>>();
+                for into in &named {
+                    assert!(!into.is_empty(), "an evidence record points nowhere");
+                }
+                // A pointer that is the same for every record locates nothing.
+                let distinct = named.iter().collect::<std::collections::BTreeSet<_>>();
+                assert!(
+                    distinct.len() > evidence / 4,
+                    "{} pointers over {evidence} records do not locate a record",
+                    distinct.len()
+                );
+            }
+
             // The cover's last tile and the sentence under it count the same
             // list. The tile said when part of that list is a check that
             // returned no verdict; the sentence called all of it coverage

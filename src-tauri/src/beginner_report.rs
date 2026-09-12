@@ -554,6 +554,12 @@ pub struct FindingEvidenceReference {
     /// omit it, in which case the reader is told it was not retained.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// Where inside the retained artifact this record sits. The artifact
+    /// digest proves the file was not altered; this is what lets a reader
+    /// find the one record the finding was raised from. Older evidence may
+    /// not have kept one, and none is inferred.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3483,6 +3489,9 @@ fn project_finding(
                     artifact_sha256: evidence.artifact_sha256.clone(),
                     observed_at: evidence.observed_at,
                     location: evidence.location.clone(),
+                    pointer: evidence_details_frozen
+                        .then(|| evidence.pointer.clone())
+                        .flatten(),
                 })
                 .collect()
         })

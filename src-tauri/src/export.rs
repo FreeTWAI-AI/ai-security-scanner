@@ -1458,6 +1458,14 @@ fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &Asses
             if reference.location.is_some() {
                 reference.location = Some("[redacted location]".into());
             }
+            // A pointer names a record inside the artifact, and a scanner
+            // writes the matched value into that name often enough that the
+            // domain-side pass drops it outright. Named rather than dropped
+            // here: the report prints an absent field as "not provided",
+            // which would say the run never kept one.
+            if reference.pointer.is_some() {
+                reference.pointer = Some("[redacted result pointer]".into());
+            }
             if let Some(details) = &mut reference.scanner_details {
                 redact_scanner_finding_details(details, &replacements);
             }
@@ -5020,6 +5028,20 @@ mod tests {
                     | crate::beginner_report::CoverageGapKind::Unavailable
             )
         }));
+        // A pointer names a record inside the artifact, and a scanner writes
+        // the matched value into that name. Redacted it must still say a
+        // pointer was kept: the report prints an absent field as "not
+        // provided", which is a different fact from "withheld".
+        let pointers = standard_report
+            .findings
+            .iter()
+            .flat_map(|finding| &finding.evidence_references)
+            .filter_map(|reference| reference.pointer.as_deref())
+            .collect::<Vec<_>>();
+        assert!(!pointers.is_empty(), "the redacted report kept no pointer");
+        for pointer in pointers {
+            assert_eq!(pointer, "[redacted result pointer]");
+        }
         let standard_report_json = serde_json::to_string(&standard_report).unwrap();
         for private_value in [
             SENTINEL,

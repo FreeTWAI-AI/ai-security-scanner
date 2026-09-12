@@ -952,6 +952,8 @@ export interface BeginnerReportFinding {
     observedAt: string;
     /** Scanner-reported, product-redacted file, package, URL, or service location. */
     location?: string;
+    /** Where inside the retained artifact this record sits, when one was kept. */
+    pointer?: string;
   }>;
   /** Undefined only for reports that predate run-frozen official references. */
   officialReferences?: string[];

@@ -15608,6 +15608,10 @@ fn html_evidence_reference(
         .unwrap_or_else(|| unavailable.into());
     let engine_run_id = reference.engine_run_id.as_deref().unwrap_or(unavailable);
     let artifact_id = reference.artifact_id.as_deref().unwrap_or(unavailable);
+    // The digest above proves the retained artifact was not altered; without
+    // the pointer a reader still cannot find the one record the finding came
+    // from inside it. The inventory provenance has printed it all along.
+    let pointer = reference.pointer.as_deref().unwrap_or(unavailable);
     let location = reference.location.as_deref().unwrap_or(unavailable);
     // A line that glues together the three rows beside it is not a summary.
     // This build's adapters write "<engine> reported rule <rule> at
@@ -15883,6 +15887,7 @@ fn html_evidence_reference(
             "<dt>{}</dt><dd>{}</dd>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
             "<dt>{}</dt><dd><code>{}</code></dd>",
+            "<dt>{}</dt><dd><code>{}</code></dd>",
             "{}",
             "<dt>{}</dt><dd>{}</dd>",
             "</dl>{}</li>"
@@ -15897,6 +15902,8 @@ fn html_evidence_reference(
         html_escape(engine_run_id),
         catalog.text("Artifact ID", "成品 ID"),
         html_escape(artifact_id),
+        catalog.text("Result pointer", "結果指標"),
+        html_escape(pointer),
         redacted,
         catalog.text("Evidence location", "證據位置"),
         html_escape(location),
@@ -32029,6 +32036,7 @@ mod tests {
             artifact_sha256: "a".repeat(64),
             observed_at: chrono::Utc::now(),
             location: None,
+            pointer: None,
         };
         let html = html_evidence_reference(
             &reference,
@@ -32913,6 +32921,7 @@ mod tests {
             artifact_sha256: "a".repeat(64),
             observed_at: Utc::now(),
             location: Some("policy".into()),
+            pointer: Some("/policies/0".into()),
         };
         let render = |policy| {
             html_evidence_reference(
@@ -33034,6 +33043,7 @@ mod tests {
                     artifact_sha256: "a".repeat(64),
                     observed_at: Utc::now(),
                     location: Some("policy".into()),
+                    pointer: Some("/policies/0".into()),
                 },
                 HtmlReportCatalog::new(locale),
             )
@@ -33121,6 +33131,7 @@ mod tests {
             artifact_sha256: "a".repeat(64),
             observed_at: Utc::now(),
             location: Some("/usr/lib/example".into()),
+            pointer: Some("/matches/0".into()),
         };
         let render = |summary: &str, locale| {
             html_evidence_reference(&reference(summary), HtmlReportCatalog::new(locale))
@@ -33196,6 +33207,7 @@ mod tests {
             artifact_sha256: "a".repeat(64),
             observed_at: Utc::now(),
             location: Some(sentinel.into()),
+            pointer: Some(sentinel.into()),
         };
 
         let en = html_evidence_reference(
