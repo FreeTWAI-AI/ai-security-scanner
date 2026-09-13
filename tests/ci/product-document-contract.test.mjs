@@ -40,6 +40,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/research/agentic-radar-upstream-drafts.md",
   "docs/research/agentic-radar-evaluation.md",
   "docs/research/fixtures/agentic-radar/README.md",
+  "docs/research/mcp-armor-evaluation.md",
   "docs/research/vibescan-evaluation.md",
   "docs/threat-model.md",
   "docs/usability/iam-naive-first-run.md",
