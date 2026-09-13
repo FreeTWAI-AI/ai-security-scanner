@@ -32,6 +32,7 @@ Use the shortest path that matches the task.
 
 - [Release records](release/README.md) preserve shipped-version facts and evidence formats.
 - [Engine alignment handover](engine-alignment-handover.zh-TW.md) preserves the condensed 2026-09-10 engineering handover.
+- [Project handover](project-handover.zh-TW.md) preserves the 2026-09-11 engineering handover, in Traditional Chinese.
 - [Honesty audit](honesty-audit-handover.md) preserves the review method from the 2026-09-03 audit.
 - [Research](research/) records evaluated integrations and product studies.
 - [Usability studies](usability/) contains study protocols and evidence-handling rules.
