@@ -39,6 +39,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/release/engine-image-supply-chain.md",
   "docs/research/agentic-radar-upstream-drafts.md",
   "docs/research/agentic-radar-evaluation.md",
+  "docs/research/augustus-evaluation.md",
   "docs/research/fixtures/agentic-radar/README.md",
   "docs/research/fixtures/mcp-armor/README.md",
   "docs/research/mcp-armor-evaluation.md",
@@ -214,6 +215,20 @@ test("current product documents do not contain broken local Markdown links", asy
       await assert.doesNotReject(stat(resolved), `${document} has a broken local Markdown link: ${target}`);
     }
   }
+});
+
+test("Augustus research keeps hosted model testing fail closed", async () => {
+  const decision = await load("docs/research/augustus-evaluation.md");
+
+  assert.match(decision, /f032fc6373aaa9983868282b31dc9c59503c78a2/u);
+  assert.match(decision, /tagged `v0\.14\.29`/u);
+  assert.match(decision, /RESEARCH \/ NOT_DISTRIBUTED/u);
+  assert.match(decision, /Do not add Augustus to the engine\s+catalog or adapter registry/u);
+  assert.match(decision, /rest\.Rest.*out of scope/su);
+  assert.match(decision, /SkipOnError/su);
+  assert.match(decision, /complete: false/u);
+  assert.match(decision, /test\.Repeat/u);
+  assert.match(decision, /No Augustus source code was executed/u);
 });
 
 test("Agentic Radar research patch and fixtures retain the audited machine-output contract", async () => {
