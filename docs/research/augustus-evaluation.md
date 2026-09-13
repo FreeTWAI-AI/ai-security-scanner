@@ -218,7 +218,7 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
-These pairs remain isolated schema examples: product evaluation replaces their first eleven
+These pairs remain isolated schema examples: product evaluation replaces their first twelve
 caller-carried evidence rows with mechanically derived evidence before it selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
@@ -272,7 +272,13 @@ only while the complete embedded profile remains frozen. These defaults are not 
 scanner, SDK, transport, and intermediary retry is disabled or that an HTTP-aware gate meters and
 aborts provider requests. With both enforcement points absent, Rule 11 is `rejected` with conditions
 0 and 1; no connection meter is presented as HTTP-request evidence. The evaluator replaces rules 1
-through 11. Malformed, drifted, or all-verified input returns an error. The module is not connected
+through 11. An eleventh no-input producer retains the frozen 300-second probe and scanner deadlines
+and the 330-second product process deadline only while the complete embedded profile remains
+unchanged. These values are not runtime deadline enforcement: scanner-option observability, exact
+process termination and reaping, and egress-lease revocation remain absent. Rule 12 is therefore
+`rejected` with conditions 0 and 1, and the evaluator replaces rules 1 through 12 so a caller cannot
+assert that either deadline boundary exists. Malformed, drifted, or all-verified input returns an
+error. The module is not connected
 to the engine catalog, orchestrator, process runtime, credential handling, gateway, or network
 path, so this implementation still cannot dispatch Augustus or contact a model endpoint.
 

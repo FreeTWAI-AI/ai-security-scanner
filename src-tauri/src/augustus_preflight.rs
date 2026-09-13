@@ -58,6 +58,9 @@ const AUGUSTUS_FROZEN_SINGLE_CONNECTION_LIMIT: u32 = 1;
 const AUGUSTUS_FROZEN_MAXIMUM_REQUESTS_PER_SECOND: u32 = 1;
 const AUGUSTUS_FROZEN_SCANNER_RETRY_COUNT: u32 = 0;
 const AUGUSTUS_FROZEN_REQUEST_TIMEOUT_SECONDS: u32 = 20;
+const AUGUSTUS_FROZEN_PROBE_TIMEOUT_SECONDS: u32 = 300;
+const AUGUSTUS_FROZEN_SCANNER_TIMEOUT_SECONDS: u32 = 300;
+const AUGUSTUS_FROZEN_PROCESS_TIMEOUT_SECONDS: u32 = 330;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -338,6 +341,20 @@ struct AugustusProfileRequestPolicyDocument {
     schema_version: String,
     profile_id: String,
     execution_limits: AugustusProfileRequestPolicyFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDeadlinePolicyFields {
+    probe_timeout_seconds: u32,
+    scanner_timeout_seconds: u32,
+    process_timeout_seconds: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDeadlinePolicyDocument {
+    schema_version: String,
+    profile_id: String,
+    execution_limits: AugustusProfileDeadlinePolicyFields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -933,6 +950,68 @@ impl AugustusRequestPolicyEvidence {
 
     pub fn connection_meter_substituted(&self) -> bool {
         self.connection_meter_substituted
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenDeadlinePolicy {
+    probe_timeout_seconds: u32,
+    scanner_timeout_seconds: u32,
+    process_timeout_seconds: u32,
+}
+
+impl AugustusFrozenDeadlinePolicy {
+    pub fn probe_timeout_seconds(&self) -> u32 {
+        self.probe_timeout_seconds
+    }
+
+    pub fn scanner_timeout_seconds(&self) -> u32 {
+        self.scanner_timeout_seconds
+    }
+
+    pub fn process_timeout_seconds(&self) -> u32 {
+        self.process_timeout_seconds
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusDeadlinePolicyRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 12 evidence for probe, scanner, and process deadlines.
+///
+/// The starter values are not proof that scanner options expose both upstream
+/// deadlines or that a supervisor terminates and reaps the exact process while
+/// revoking its egress lease by the product-owned deadline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusDeadlinePolicyEvidence {
+    frozen_policy: Option<AugustusFrozenDeadlinePolicy>,
+    scanner_options_state: AugustusDeadlinePolicyRuntimeState,
+    process_termination_and_reaping_state: AugustusDeadlinePolicyRuntimeState,
+    egress_lease_revocation_state: AugustusDeadlinePolicyRuntimeState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusDeadlinePolicyEvidence {
+    pub fn frozen_policy(&self) -> Option<AugustusFrozenDeadlinePolicy> {
+        self.frozen_policy
+    }
+
+    pub fn scanner_options_state(&self) -> AugustusDeadlinePolicyRuntimeState {
+        self.scanner_options_state
+    }
+
+    pub fn process_termination_and_reaping_state(&self) -> AugustusDeadlinePolicyRuntimeState {
+        self.process_termination_and_reaping_state
+    }
+
+    pub fn egress_lease_revocation_state(&self) -> AugustusDeadlinePolicyRuntimeState {
+        self.egress_lease_revocation_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1773,6 +1852,60 @@ fn produce_request_policy_evidence(profile_json: &[u8]) -> AugustusRequestPolicy
     }
 }
 
+/// Produces Rule 12 evidence without accepting caller-supplied deadlines.
+///
+/// All three deadlines come only from the embedded starter profile. No
+/// scanner-options, process-supervisor, or egress-revocation statement is
+/// accepted until separately reviewed runtime enforcement exists.
+pub fn produce_augustus_deadline_policy_evidence() -> AugustusDeadlinePolicyEvidence {
+    produce_deadline_policy_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_deadline_policy_evidence(profile_json: &[u8]) -> AugustusDeadlinePolicyEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileDeadlinePolicyDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let deadline_values_match = profile.as_ref().is_some_and(|profile| {
+        profile.execution_limits.probe_timeout_seconds == AUGUSTUS_FROZEN_PROBE_TIMEOUT_SECONDS
+            && profile.execution_limits.scanner_timeout_seconds
+                == AUGUSTUS_FROZEN_SCANNER_TIMEOUT_SECONDS
+            && profile.execution_limits.process_timeout_seconds
+                == AUGUSTUS_FROZEN_PROCESS_TIMEOUT_SECONDS
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_policy = if profile_is_trusted && deadline_values_match {
+        profile
+            .as_ref()
+            .map(|profile| AugustusFrozenDeadlinePolicy {
+                probe_timeout_seconds: profile.execution_limits.probe_timeout_seconds,
+                scanner_timeout_seconds: profile.execution_limits.scanner_timeout_seconds,
+                process_timeout_seconds: profile.execution_limits.process_timeout_seconds,
+            })
+    } else {
+        None
+    };
+
+    AugustusDeadlinePolicyEvidence {
+        frozen_policy,
+        scanner_options_state: AugustusDeadlinePolicyRuntimeState::Absent,
+        process_termination_and_reaping_state: AugustusDeadlinePolicyRuntimeState::Absent,
+        egress_lease_revocation_state: AugustusDeadlinePolicyRuntimeState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 12,
+            rule_id: AugustusPreflightRuleId::ProbeScannerAndProcessDeadlines,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices: vec![0, 1],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1804,6 +1937,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let request_policy = produce_augustus_request_policy_evidence();
     input.rule_evidence[10].clone_from(request_policy.rule_evidence());
+
+    let deadline_policy = produce_augustus_deadline_policy_evidence();
+    input.rule_evidence[11].clone_from(deadline_policy.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -2849,6 +2985,83 @@ mod tests {
         );
         assert_eq!(
             input.rule_evidence[10].rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn current_deadline_policy_is_frozen_without_runtime_enforcement() {
+        let evidence = produce_augustus_deadline_policy_evidence();
+        let policy = evidence
+            .frozen_policy()
+            .expect("trusted frozen deadline policy");
+
+        assert_eq!(policy.probe_timeout_seconds(), 300);
+        assert_eq!(policy.scanner_timeout_seconds(), 300);
+        assert_eq!(policy.process_timeout_seconds(), 330);
+        assert_eq!(
+            evidence.scanner_options_state(),
+            AugustusDeadlinePolicyRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.process_termination_and_reaping_state(),
+            AugustusDeadlinePolicyRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.egress_lease_revocation_state(),
+            AugustusDeadlinePolicyRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 12,
+                rule_id: AugustusPreflightRuleId::ProbeScannerAndProcessDeadlines,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn deadline_policy_drift_is_never_returned_as_frozen() {
+        for (field, drifted_value) in [
+            ("probe_timeout_seconds", json!(301)),
+            ("scanner_timeout_seconds", json!(301)),
+            ("process_timeout_seconds", json!(331)),
+        ] {
+            let mut profile: Value =
+                serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+            profile["execution_limits"][field] = drifted_value;
+            let evidence = produce_deadline_policy_evidence(
+                &serde_json::to_vec(&profile).expect("serializable deadline-policy drift"),
+            );
+
+            assert_eq!(evidence.frozen_policy(), None, "field: {field}");
+            assert_eq!(
+                evidence.rule_evidence().rejection_condition_indices(),
+                &[0, 1],
+                "runtime deadline enforcement remains absent for field: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn caller_cannot_mark_deadline_policy_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[12].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[11].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[11],
+            produce_augustus_deadline_policy_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[11].rejection_condition_indices(),
             &[0, 1]
         );
     }
