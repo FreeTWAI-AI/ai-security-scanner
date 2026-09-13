@@ -13665,10 +13665,55 @@ impl HtmlReportCatalog {
             "pull_pinned_image" => "拉取已釘選映像".into(),
             "build_from_pinned_source" => "由已釘選來源建置".into(),
             "external_executable" => "外部執行檔".into(),
-            // Task phases, under a translated "階段" label. The backend writes
-            // these as it reaches them, so this list grows the same way the
-            // ones above did: when a report is seen carrying one.
+            // Task phases, under a translated "階段" label, and task error
+            // codes, under a translated "錯誤碼" label. Written whole rather
+            // than grown on sighting the way the lists above were: both are
+            // literals this build's own orchestrator writes, so the set is
+            // knowable now, and the reader who meets one is reading the run
+            // that went wrong -- the worst moment to be handed an English key.
+            // The two vocabularies overlap; one arm serves both.
+            "active_fixture" => "使用中的測試樣本".into(),
+            "cancel_requested" => "已要求取消".into(),
             "captured_awaiting_adapter" => "已擷取，等待轉接器處理".into(),
+            "capturing_artifacts" => "擷取產出中".into(),
+            "cleanup_identity_unavailable" => "取不到執行環境識別，無法清理".into(),
+            "cleanup_pending" => "尚待清理".into(),
+            "cleanup_reconciled" => "清理已核對完成".into(),
+            "connecting" => "連線中".into(),
+            "dispatch_activated" => "已開始派送".into(),
+            "interrupted_restart" => "中斷後重新啟動".into(),
+            "interrupted_restart_cleanup_identity_unavailable" => {
+                "中斷後重新啟動；取不到執行環境識別，無法清理".into()
+            }
+            "interrupted_restart_cleanup_pending" => "中斷後重新啟動；尚待清理".into(),
+            "preflight_preparing" => "前置檢查準備中".into(),
+            "queued_for_next_phase" => "已排入下一階段佇列".into(),
+            "queued_for_resume" => "已排入接續佇列".into(),
+            "results_partial" => "結果只有一部分".into(),
+            "cancelled_before_dispatch" => "派送前已取消".into(),
+            "cancelled_without_observation" => "取消時尚未產生任何觀察".into(),
+            "continuation_state_changed" => "接續時狀態已改變".into(),
+            "coverage_unverified_after_restart" => "重新啟動後涵蓋範圍未經確認".into(),
+            "coverage_unverified_retryable" => "涵蓋範圍未經確認，可重試".into(),
+            "desktop_process_restarted" => "桌面程式已重新啟動".into(),
+            "execution_failed" => "執行失敗".into(),
+            "execution_partially_completed" => "執行只完成一部分".into(),
+            "image_pull_denied" => "映像拉取遭拒".into(),
+            "legacy_request_requires_new_scan" => "舊版請求需要重新掃描".into(),
+            "localhost_probe_interrupted" => "本機探測遭中斷".into(),
+            "localhost_tcp_timed_out" => "本機 TCP 連線逾時".into(),
+            "manifest_unavailable" => "取不到 manifest".into(),
+            "normalization_incomplete" => "正規化未完成".into(),
+            "pause_context" => "暫停時的狀態".into(),
+            "preflight_interrupted" => "前置檢查遭中斷".into(),
+            "preserved_prior_error_code" => "保留先前的錯誤碼".into(),
+            "preflight_failed" => "前置檢查失敗".into(),
+            "resume_release_incompatible" => "版本不相容，無法接續".into(),
+            "resume_scope_changed" => "範圍已改變，無法接續".into(),
+            "resume_scope_unavailable" => "取不到原範圍，無法接續".into(),
+            "resume_work_plan_invalid" => "工作計畫無效，無法接續".into(),
+            "runtime_cleanup_identity_unavailable" => "取不到執行環境識別，無法清理".into(),
+            "runtime_cleanup_pending" => "執行環境尚待清理".into(),
             // `LocalhostTcpOutcome`.
             "reachable" => "可連線".into(),
             "closed" => "已關閉".into(),
@@ -17756,10 +17801,16 @@ fn html_report_bytes(
                 .map(|code| code.to_string())
                 .unwrap_or_else(|| catalog.text("not recorded", "未記錄").into()),
             catalog.text("Error code", "錯誤碼"),
+            // Humanized like the availability below it and the state above it.
+            // This was the one value on the line the backend's own spelling
+            // reached the page through, so a Chinese record of the run that
+            // failed read "錯誤碼: execution_failed".
             html_escape(
-                task.error_code
+                &task
+                    .error_code
                     .as_deref()
-                    .unwrap_or(catalog.text("none recorded", "未記錄"))
+                    .map(|code| catalog.identifier(code))
+                    .unwrap_or_else(|| catalog.text("none recorded", "未記錄").to_owned())
             ),
             catalog.text("Cleanup", "清理"),
             html_escape(&cleanup),

@@ -2994,6 +2994,38 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "a task phase stayed in English in the Chinese report"
             );
 
+            // The error code is the sibling of the phase and the state, and
+            // was the one value on that line the backend's own spelling
+            // reached the page through. A reader only meets it on the run
+            // that went wrong.
+            assert!(
+                ordered_html.contains("<strong>Error code:</strong> Execution Failed"),
+                "the audit lost the failing run's error code"
+            );
+            assert!(
+                zh_html.contains("<strong>錯誤碼:</strong> 執行失敗"),
+                "a task error code stayed in English in the Chinese report"
+            );
+
+            // The class, not the one case: no value under a translated label
+            // may be a raw backend key. Upstream identifiers -- a resource
+            // type, a purl -- are not printed this way and are unaffected.
+            let raw_key_after_a_label = |html: &str| {
+                html.match_indices("</strong> ").find_map(|(at, marker)| {
+                    let value = &html[at + marker.len()..];
+                    let end = value.find(['<', ' ', '\u{b7}']).unwrap_or(value.len());
+                    let value = &value[..end];
+                    let is_key = value.contains('_')
+                        && value
+                            .chars()
+                            .all(|glyph| glyph.is_ascii_lowercase() || glyph == '_');
+                    is_key.then(|| value.to_owned())
+                })
+            };
+            if let Some(raw) = raw_key_after_a_label(&zh_html) {
+                panic!("a backend key reached the Chinese report unnamed: {raw}");
+            }
+
             // One embedded catalog produced every coordinate in this run, so
             // its version and digest are one fact about the report, not a
             // hundred and forty-nine facts about individual references. The
