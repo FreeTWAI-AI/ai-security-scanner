@@ -65,8 +65,10 @@ profile blocker ledger. It also replaces Rule 3 with the frozen destination plus
 scope-grant and bound-model state. Rule 4 retains the profile's custom-base-URL and redirect denials
 as intent, while separately recording that neither launcher nor HTTP-gate enforcement exists. Rule
 5 likewise retains the exact ordered 16-entry denied-capability ledger only as intent; closed
-launcher and destination-gate enforcement remain absent. With the current profile, every
-schema-valid pair therefore stops at rule 1 when evaluated by the product.
+launcher and destination-gate enforcement remain absent. Rule 6 retains the exact one-entry
+probe/detector allowlist, case-insensitive setting, and 15-attempt metadata, but the machine plan
+remains absent. With the current profile, every schema-valid pair therefore stops at rule 1 when
+evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |

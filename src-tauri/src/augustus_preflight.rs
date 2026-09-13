@@ -11,6 +11,10 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
+use crate::augustus_terminal::{
+    AUGUSTUS_FROZEN_DETECTOR, AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS, AUGUSTUS_FROZEN_PROBE,
+};
+
 pub const AUGUSTUS_PREFLIGHT_SCHEMA_VERSION: &str = "1";
 pub const AUGUSTUS_PROFILE_SCHEMA_VERSION: &str = "1";
 pub const AUGUSTUS_PROFILE_ID: &str = "augustus-openai-promptinject-v1";
@@ -210,6 +214,26 @@ struct AugustusProfileDeniedCapabilitiesDocument {
     denied_capabilities: Vec<AugustusDeniedCapability>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDetectorConfigFields {
+    case_sensitive: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileAllowlistEntryFields {
+    probe: String,
+    detectors: Vec<String>,
+    detector_config: AugustusProfileDetectorConfigFields,
+    expected_attempts: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileAllowlistDocument {
+    schema_version: String,
+    profile_id: String,
+    allowlist: Vec<AugustusProfileAllowlistEntryFields>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AugustusFrozenDestination {
     generator: String,
@@ -403,6 +427,73 @@ impl AugustusDeniedCapabilitiesEvidence {
 
     pub fn destination_gate_enforcement_state(&self) -> AugustusCapabilityEnforcementState {
         self.destination_gate_enforcement_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusFrozenPlanAllowlistEntry {
+    probe: String,
+    detectors: Vec<String>,
+    detector_case_sensitive: bool,
+    expected_attempts: u32,
+}
+
+impl AugustusFrozenPlanAllowlistEntry {
+    pub fn probe(&self) -> &str {
+        &self.probe
+    }
+
+    pub fn detectors(&self) -> &[String] {
+        &self.detectors
+    }
+
+    pub fn detector_case_sensitive(&self) -> bool {
+        self.detector_case_sensitive
+    }
+
+    pub fn expected_attempts(&self) -> u32 {
+        self.expected_attempts
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusPlanEnforcementState {
+    Absent,
+}
+
+/// Pure-data Rule 6 evidence for the frozen probe and detector allowlist.
+///
+/// The expected-attempt count is retained as metadata for the separately owned
+/// Rule 7 check. With no launcher-built machine plan, Rule 6 rejects before
+/// contact rather than treating profile intent as an observed plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusPlanAllowlistEvidence {
+    frozen_allowlist: Option<Vec<AugustusFrozenPlanAllowlistEntry>>,
+    argument_builder_state: AugustusPlanEnforcementState,
+    plan_verifier_state: AugustusPlanEnforcementState,
+    machine_plan_state: AugustusPlanEnforcementState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusPlanAllowlistEvidence {
+    pub fn frozen_allowlist(&self) -> Option<&[AugustusFrozenPlanAllowlistEntry]> {
+        self.frozen_allowlist.as_deref()
+    }
+
+    pub fn argument_builder_state(&self) -> AugustusPlanEnforcementState {
+        self.argument_builder_state
+    }
+
+    pub fn plan_verifier_state(&self) -> AugustusPlanEnforcementState {
+        self.plan_verifier_state
+    }
+
+    pub fn machine_plan_state(&self) -> AugustusPlanEnforcementState {
+        self.machine_plan_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -849,6 +940,81 @@ fn produce_denied_capabilities_evidence(profile_json: &[u8]) -> AugustusDeniedCa
     }
 }
 
+/// Produces Rule 6 evidence without accepting a caller-built machine plan.
+///
+/// The exact one-entry allowlist is read from the embedded profile and bound to
+/// the same probe, detector, and expected-attempt constants as the terminal
+/// verifier. A machine plan remains absent until a separately reviewed typed
+/// launcher exists, so this evidence always rejects before contact.
+pub fn produce_augustus_plan_allowlist_evidence() -> AugustusPlanAllowlistEvidence {
+    produce_plan_allowlist_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_plan_allowlist_evidence(profile_json: &[u8]) -> AugustusPlanAllowlistEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileAllowlistDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let entry = profile
+        .as_ref()
+        .and_then(|profile| match profile.allowlist.as_slice() {
+            [entry] => Some(entry),
+            _ => None,
+        });
+    let probe_and_detectors_match = entry.is_some_and(|entry| {
+        entry.probe == AUGUSTUS_FROZEN_PROBE
+            && entry.detectors.as_slice() == [AUGUSTUS_FROZEN_DETECTOR]
+    });
+    let detector_config_matches = entry.is_some_and(|entry| !entry.detector_config.case_sensitive);
+    let expected_attempts_match =
+        entry.is_some_and(|entry| entry.expected_attempts == AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS);
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_allowlist = if profile_is_trusted
+        && probe_and_detectors_match
+        && detector_config_matches
+        && expected_attempts_match
+    {
+        entry.map(|entry| {
+            vec![AugustusFrozenPlanAllowlistEntry {
+                probe: entry.probe.clone(),
+                detectors: entry.detectors.clone(),
+                detector_case_sensitive: entry.detector_config.case_sensitive,
+                expected_attempts: entry.expected_attempts,
+            }]
+        })
+    } else {
+        None
+    };
+
+    let mut rejection_condition_indices = Vec::with_capacity(3);
+    if !probe_and_detectors_match {
+        rejection_condition_indices.push(0);
+    }
+    if !detector_config_matches {
+        rejection_condition_indices.push(1);
+    }
+    rejection_condition_indices.push(2);
+
+    AugustusPlanAllowlistEvidence {
+        frozen_allowlist,
+        argument_builder_state: AugustusPlanEnforcementState::Absent,
+        plan_verifier_state: AugustusPlanEnforcementState::Absent,
+        machine_plan_state: AugustusPlanEnforcementState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 6,
+            rule_id: AugustusPreflightRuleId::ProbeDetectorAllowlist,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices,
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -862,6 +1028,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let denied_capabilities = produce_augustus_denied_capabilities_evidence();
     input.rule_evidence[4].clone_from(denied_capabilities.rule_evidence());
+
+    let plan_allowlist = produce_augustus_plan_allowlist_evidence();
+    input.rule_evidence[5].clone_from(plan_allowlist.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -1412,6 +1581,104 @@ mod tests {
             input.rule_evidence[4].rejection_condition_indices(),
             &[0, 1]
         );
+    }
+
+    #[test]
+    fn current_plan_allowlist_is_frozen_but_machine_plan_is_absent() {
+        let evidence = produce_augustus_plan_allowlist_evidence();
+        let allowlist = evidence
+            .frozen_allowlist()
+            .expect("trusted frozen allowlist");
+
+        assert_eq!(allowlist.len(), 1);
+        assert_eq!(allowlist[0].probe(), AUGUSTUS_FROZEN_PROBE);
+        assert_eq!(allowlist[0].detectors(), &[AUGUSTUS_FROZEN_DETECTOR]);
+        assert!(!allowlist[0].detector_case_sensitive());
+        assert_eq!(allowlist[0].expected_attempts(), 15);
+        assert_eq!(
+            allowlist[0].expected_attempts(),
+            AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS
+        );
+        assert_eq!(
+            evidence.argument_builder_state(),
+            AugustusPlanEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.plan_verifier_state(),
+            AugustusPlanEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.machine_plan_state(),
+            AugustusPlanEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 6,
+                rule_id: AugustusPreflightRuleId::ProbeDetectorAllowlist,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![2],
+            }
+        );
+    }
+
+    #[test]
+    fn allowlist_drift_uses_only_the_owning_rule_six_conditions() {
+        let mut extra_detector: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        extra_detector["allowlist"][0]["detectors"] =
+            json!([AUGUSTUS_FROZEN_DETECTOR, "synthetic.AdditionalDetector"]);
+        let evidence = produce_plan_allowlist_evidence(
+            &serde_json::to_vec(&extra_detector).expect("serializable detector drift"),
+        );
+        assert_eq!(evidence.frozen_allowlist(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 2]
+        );
+
+        let mut detector_tuning: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        detector_tuning["allowlist"][0]["detector_config"]["case_sensitive"] = json!(true);
+        let evidence = produce_plan_allowlist_evidence(
+            &serde_json::to_vec(&detector_tuning).expect("serializable detector tuning"),
+        );
+        assert_eq!(evidence.frozen_allowlist(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[1, 2]
+        );
+
+        let mut attempt_metadata: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        attempt_metadata["allowlist"][0]["expected_attempts"] = json!(14);
+        let evidence = produce_plan_allowlist_evidence(
+            &serde_json::to_vec(&attempt_metadata).expect("serializable attempt drift"),
+        );
+        assert_eq!(evidence.frozen_allowlist(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[2],
+            "attempt-count drift belongs to Rule 7, not Rule 6"
+        );
+    }
+
+    #[test]
+    fn caller_cannot_mark_plan_allowlist_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[6].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[5].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[5],
+            produce_augustus_plan_allowlist_evidence().rule_evidence()
+        );
+        assert_eq!(input.rule_evidence[5].rejection_condition_indices(), &[2]);
     }
 
     #[test]

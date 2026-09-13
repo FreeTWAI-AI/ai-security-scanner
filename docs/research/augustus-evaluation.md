@@ -218,7 +218,7 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
-These pairs remain isolated schema examples: product evaluation replaces their first five
+These pairs remain isolated schema examples: product evaluation replaces their first six
 caller-carried evidence rows with mechanically derived evidence before it selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
@@ -241,10 +241,15 @@ through 4 with these results. A fourth no-input producer parses the 16-entry
 `denied_capabilities` ledger into a closed enum and retains it only when its exact order and the
 complete profile hash remain frozen. Because neither closed launcher construction nor destination
 gate enforcement exists, Rule 5 is also `unverified` with conditions 0 and 1. The evaluator
-replaces rules 1 through 5, so caller statements cannot clear any of these admission failures.
-Malformed, drifted, or all-verified input returns an error. The module is not connected to the
-engine catalog, orchestrator, process runtime, credential handling, gateway, or network path, so
-this implementation still cannot dispatch Augustus or contact a model endpoint.
+replaces rules 1 through 5. A fifth no-input producer retains the exact one-entry probe/detector
+allowlist, case-insensitive detector setting, and 15 expected attempts from the trusted profile,
+using the same identifiers and count as the terminal verifier. The attempt count is metadata for
+Rule 7 and does not change Rule 6 ownership. Because no launcher-built machine plan exists, Rule 6
+is `rejected` with condition 2; actual probe/detector or tuning drift adds only its owning condition
+0 or 1. The evaluator replaces rules 1 through 6, so caller statements cannot clear any of these
+admission failures. Malformed, drifted, or all-verified input returns an error. The module is not
+connected to the engine catalog, orchestrator, process runtime, credential handling, gateway, or
+network path, so this implementation still cannot dispatch Augustus or contact a model endpoint.
 
 The pure Rust [`augustus_terminal`](../../src-tauri/src/augustus_terminal.rs) verifier now checks an
 already captured machine document against the pinned scanner provenance, an exact comparison-only
