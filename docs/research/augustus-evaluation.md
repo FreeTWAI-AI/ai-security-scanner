@@ -218,7 +218,7 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
-These pairs remain isolated schema examples: product evaluation replaces their first thirteen
+These pairs remain isolated schema examples: product evaluation replaces all fourteen
 caller-carried evidence rows with mechanically derived evidence before it selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
@@ -282,8 +282,13 @@ memory, 1,000 CPU-millis, 128-PID, and 16 MiB writable-temporary-storage ceiling
 complete embedded profile remains unchanged. These values are not proof of a created sandbox or its
 mount inventory. With runtime enforcement absent, Rule 13 is `rejected` on condition 0; condition 1
 is not asserted because no forbidden mount is invented without runtime evidence. The evaluator
-replaces rules 1 through 13. Malformed, drifted, or all-verified input returns an error. The module
-is not connected
+replaces rules 1 through 13. A thirteenth no-input producer retains the frozen 262,144-byte
+decoded-response ceiling and independent 1,048,576-byte stdout and stderr ceilings only while the
+complete embedded profile remains unchanged. These values are not proof of an HTTP-aware response
+counter, bounded process capture, or a durable and completely parseable terminal document. With those enforcement
+points absent, Rule 14 is `rejected` with conditions 0 and 1. The evaluator therefore replaces all
+14 caller evidence rows mechanically. Malformed, drifted, or all-verified input returns an error.
+The module is not connected
 to the engine catalog, orchestrator, process runtime, credential handling, gateway, or network
 path, so this implementation still cannot dispatch Augustus or contact a model endpoint.
 

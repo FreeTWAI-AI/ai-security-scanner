@@ -82,6 +82,9 @@ revocation.
 Rule 13 retains 512 MiB memory, 1,000 CPU-millis, 128-PID, and 16 MiB writable-temporary-storage
 ceilings, but has no created runtime or verified mount inventory. It rejects on unavailable runtime
 enforcement without inventing a forbidden mount.
+Rule 14 retains a 262,144-byte decoded-response ceiling and independent 1,048,576-byte stdout and
+stderr ceilings, but has no HTTP-aware byte gate, bounded process capture, or durable terminal
+document parse evidence.
 With the current profile, every schema-valid pair therefore stops at rule 1 when evaluated by the
 product.
 

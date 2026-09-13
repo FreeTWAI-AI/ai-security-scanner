@@ -65,6 +65,9 @@ const AUGUSTUS_FROZEN_MEMORY_MIB: u32 = 512;
 const AUGUSTUS_FROZEN_CPU_MILLIS: u32 = 1_000;
 const AUGUSTUS_FROZEN_PIDS: u32 = 128;
 const AUGUSTUS_FROZEN_WRITABLE_TMP_MIB: u32 = 16;
+const AUGUSTUS_FROZEN_MAXIMUM_RESPONSE_BODY_BYTES: u32 = 262_144;
+const AUGUSTUS_FROZEN_MAXIMUM_STDOUT_BYTES: u32 = 1_048_576;
+const AUGUSTUS_FROZEN_MAXIMUM_STDERR_BYTES: u32 = 1_048_576;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -374,6 +377,20 @@ struct AugustusProfileSandboxPolicyDocument {
     schema_version: String,
     profile_id: String,
     execution_limits: AugustusProfileSandboxPolicyFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileOutputBoundsFields {
+    maximum_response_body_bytes: u32,
+    maximum_stdout_bytes: u32,
+    maximum_stderr_bytes: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileOutputBoundsDocument {
+    schema_version: String,
+    profile_id: String,
+    execution_limits: AugustusProfileOutputBoundsFields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1093,6 +1110,68 @@ impl AugustusProcessResourceSandboxEvidence {
 
     pub fn runtime_mount_inventory_state(&self) -> AugustusSandboxRuntimeState {
         self.runtime_mount_inventory_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenOutputBounds {
+    maximum_response_body_bytes: u32,
+    maximum_stdout_bytes: u32,
+    maximum_stderr_bytes: u32,
+}
+
+impl AugustusFrozenOutputBounds {
+    pub fn maximum_response_body_bytes(&self) -> u32 {
+        self.maximum_response_body_bytes
+    }
+
+    pub fn maximum_stdout_bytes(&self) -> u32 {
+        self.maximum_stdout_bytes
+    }
+
+    pub fn maximum_stderr_bytes(&self) -> u32 {
+        self.maximum_stderr_bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusOutputBoundsRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 14 evidence for response and process-output bounds.
+///
+/// Frozen byte ceilings are not proof that an HTTP-aware gate counts decoded
+/// response bytes or that bounded process capture preserves a complete,
+/// durably parseable terminal machine document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusResponseAndProcessOutputBoundsEvidence {
+    frozen_bounds: Option<AugustusFrozenOutputBounds>,
+    decoded_response_byte_gate_state: AugustusOutputBoundsRuntimeState,
+    process_output_capture_state: AugustusOutputBoundsRuntimeState,
+    terminal_document_parse_state: AugustusOutputBoundsRuntimeState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusResponseAndProcessOutputBoundsEvidence {
+    pub fn frozen_bounds(&self) -> Option<AugustusFrozenOutputBounds> {
+        self.frozen_bounds
+    }
+
+    pub fn decoded_response_byte_gate_state(&self) -> AugustusOutputBoundsRuntimeState {
+        self.decoded_response_byte_gate_state
+    }
+
+    pub fn process_output_capture_state(&self) -> AugustusOutputBoundsRuntimeState {
+        self.process_output_capture_state
+    }
+
+    pub fn terminal_document_parse_state(&self) -> AugustusOutputBoundsRuntimeState {
+        self.terminal_document_parse_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -2041,6 +2120,59 @@ fn produce_process_resource_sandbox_evidence(
     }
 }
 
+/// Produces Rule 14 evidence without accepting caller-supplied byte bounds.
+///
+/// All three ceilings come only from the embedded starter profile. No decoded
+/// response counter, process capture, or terminal-document statement is
+/// accepted until separately reviewed runtime enforcement exists.
+pub fn produce_augustus_output_bounds_evidence() -> AugustusResponseAndProcessOutputBoundsEvidence {
+    produce_output_bounds_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_output_bounds_evidence(
+    profile_json: &[u8],
+) -> AugustusResponseAndProcessOutputBoundsEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileOutputBoundsDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let output_bounds_match = profile.as_ref().is_some_and(|profile| {
+        profile.execution_limits.maximum_response_body_bytes
+            == AUGUSTUS_FROZEN_MAXIMUM_RESPONSE_BODY_BYTES
+            && profile.execution_limits.maximum_stdout_bytes == AUGUSTUS_FROZEN_MAXIMUM_STDOUT_BYTES
+            && profile.execution_limits.maximum_stderr_bytes == AUGUSTUS_FROZEN_MAXIMUM_STDERR_BYTES
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_bounds = if profile_is_trusted && output_bounds_match {
+        profile.as_ref().map(|profile| AugustusFrozenOutputBounds {
+            maximum_response_body_bytes: profile.execution_limits.maximum_response_body_bytes,
+            maximum_stdout_bytes: profile.execution_limits.maximum_stdout_bytes,
+            maximum_stderr_bytes: profile.execution_limits.maximum_stderr_bytes,
+        })
+    } else {
+        None
+    };
+
+    AugustusResponseAndProcessOutputBoundsEvidence {
+        frozen_bounds,
+        decoded_response_byte_gate_state: AugustusOutputBoundsRuntimeState::Absent,
+        process_output_capture_state: AugustusOutputBoundsRuntimeState::Absent,
+        terminal_document_parse_state: AugustusOutputBoundsRuntimeState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 14,
+            rule_id: AugustusPreflightRuleId::ResponseAndProcessOutputBounds,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices: vec![0, 1],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -2078,6 +2210,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let process_resource_sandbox = produce_augustus_process_resource_sandbox_evidence();
     input.rule_evidence[12].clone_from(process_resource_sandbox.rule_evidence());
+
+    let output_bounds = produce_augustus_output_bounds_evidence();
+    input.rule_evidence[13].clone_from(output_bounds.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -3274,6 +3409,83 @@ mod tests {
             produce_augustus_process_resource_sandbox_evidence().rule_evidence()
         );
         assert_eq!(input.rule_evidence[12].rejection_condition_indices(), &[0]);
+    }
+
+    #[test]
+    fn current_output_bounds_are_frozen_without_runtime_enforcement() {
+        let evidence = produce_augustus_output_bounds_evidence();
+        let bounds = evidence
+            .frozen_bounds()
+            .expect("trusted frozen output bounds");
+
+        assert_eq!(bounds.maximum_response_body_bytes(), 262_144);
+        assert_eq!(bounds.maximum_stdout_bytes(), 1_048_576);
+        assert_eq!(bounds.maximum_stderr_bytes(), 1_048_576);
+        assert_eq!(
+            evidence.decoded_response_byte_gate_state(),
+            AugustusOutputBoundsRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.process_output_capture_state(),
+            AugustusOutputBoundsRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.terminal_document_parse_state(),
+            AugustusOutputBoundsRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 14,
+                rule_id: AugustusPreflightRuleId::ResponseAndProcessOutputBounds,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn output_bound_drift_is_never_returned_as_frozen() {
+        for (field, drifted_value) in [
+            ("maximum_response_body_bytes", json!(262_145)),
+            ("maximum_stdout_bytes", json!(1_048_577)),
+            ("maximum_stderr_bytes", json!(1_048_577)),
+        ] {
+            let mut profile: Value =
+                serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+            profile["execution_limits"][field] = drifted_value;
+            let evidence = produce_output_bounds_evidence(
+                &serde_json::to_vec(&profile).expect("serializable output-bound drift"),
+            );
+
+            assert_eq!(evidence.frozen_bounds(), None, "field: {field}");
+            assert_eq!(
+                evidence.rule_evidence().rejection_condition_indices(),
+                &[0, 1],
+                "runtime output enforcement remains absent for field: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn caller_cannot_mark_response_and_process_output_bounds_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[0].0).expect("valid input fixture");
+        assert_eq!(
+            input.rule_evidence[13].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[13],
+            produce_augustus_output_bounds_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[13].rejection_condition_indices(),
+            &[0, 1]
+        );
     }
 
     #[test]
