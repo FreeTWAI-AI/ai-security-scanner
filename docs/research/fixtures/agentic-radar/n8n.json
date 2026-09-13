@@ -1,0 +1,313 @@
+{
+  "schema_version": "1",
+  "scanner_version": "0.14.1",
+  "framework": "n8n",
+  "status": "workflow_found",
+  "graph": {
+    "name": "Personal Assistant MCP server",
+    "nodes": [
+      {
+        "node_type": "basic",
+        "name": "When chat message received",
+        "description": null,
+        "label": "When chat message received",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Google Gemini Chat Model",
+        "description": null,
+        "label": "Google Gemini Chat Model",
+        "category": "llm",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Simple Memory",
+        "description": null,
+        "label": "Simple Memory",
+        "category": "document_loader",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "MCP Server Trigger",
+        "description": null,
+        "label": "MCP Server Trigger",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "mcp_server",
+        "name": "MCP Client",
+        "description": "{&quot;sseEndpoint&quot;: &quot;&lt;set-your-url-here&gt;&quot;}",
+        "label": "MCP Client",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Create event",
+        "description": null,
+        "label": "Create event",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Update event",
+        "description": null,
+        "label": "Update event",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Draft email",
+        "description": null,
+        "label": "Draft email",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "agent",
+        "name": "Personal Assistant",
+        "description": null,
+        "label": "Personal Assistant",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Sticky Note",
+        "description": null,
+        "label": "Sticky Note",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Sticky Note1",
+        "description": null,
+        "label": "Sticky Note1",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Sticky Note2",
+        "description": null,
+        "label": "Sticky Note2",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Sticky Note3",
+        "description": null,
+        "label": "Sticky Note3",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Sticky Note4",
+        "description": null,
+        "label": "Sticky Note4",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Add new row",
+        "description": null,
+        "label": "Add new row",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Find row",
+        "description": null,
+        "label": "Find row",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Update row",
+        "description": null,
+        "label": "Update row",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "Find emails",
+        "description": null,
+        "label": "Find emails",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Find single event",
+        "description": null,
+        "label": "Find single event",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Find multiple events",
+        "description": null,
+        "label": "Find multiple events",
+        "category": "default",
+        "vulnerabilities": []
+      }
+    ],
+    "edges": [
+      {
+        "start": "Find row",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "MCP Client",
+        "end": "Personal Assistant",
+        "condition": null
+      },
+      {
+        "start": "Update row",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Add new row",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Draft email",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Find emails",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Create event",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Update event",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Simple Memory",
+        "end": "Personal Assistant",
+        "condition": null
+      },
+      {
+        "start": "Find single event",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Find multiple events",
+        "end": "MCP Server Trigger",
+        "condition": null
+      },
+      {
+        "start": "Google Gemini Chat Model",
+        "end": "Personal Assistant",
+        "condition": null
+      },
+      {
+        "start": "When chat message received",
+        "end": "Personal Assistant",
+        "condition": null
+      }
+    ],
+    "agents": [],
+    "tools": [
+      {
+        "node_type": "tool",
+        "name": "Google Gemini Chat Model",
+        "description": null,
+        "label": "Google Gemini Chat Model",
+        "category": "llm",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Simple Memory",
+        "description": null,
+        "label": "Simple Memory",
+        "category": "document_loader",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Create event",
+        "description": null,
+        "label": "Create event",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Update event",
+        "description": null,
+        "label": "Update event",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Add new row",
+        "description": null,
+        "label": "Add new row",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Find row",
+        "description": null,
+        "label": "Find row",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Update row",
+        "description": null,
+        "label": "Update row",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Find single event",
+        "description": null,
+        "label": "Find single event",
+        "category": "default",
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "tool",
+        "name": "Find multiple events",
+        "description": null,
+        "label": "Find multiple events",
+        "category": "default",
+        "vulnerabilities": []
+      }
+    ]
+  }
+}

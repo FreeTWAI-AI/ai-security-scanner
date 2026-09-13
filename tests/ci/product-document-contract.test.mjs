@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -37,6 +38,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/release/README.md",
   "docs/release/engine-image-supply-chain.md",
   "docs/research/agentic-radar-evaluation.md",
+  "docs/research/fixtures/agentic-radar/README.md",
   "docs/research/vibescan-evaluation.md",
   "docs/threat-model.md",
   "docs/usability/iam-naive-first-run.md",
@@ -45,6 +47,39 @@ const CURRENT_PRODUCT_DOCUMENTS = [
 async function load(relativePath) {
   return readFile(path.join(REPOSITORY_ROOT, relativePath), "utf8");
 }
+
+const AGENTIC_RADAR_RESEARCH_FIXTURES = {
+  "autogen.json": [
+    "autogen",
+    "workflow_found",
+    "c3f66da0493ffaa2dcf85680fad1f4c104cf766429c7048bb24c239861d45411",
+  ],
+  "crewai.json": [
+    "crewai",
+    "workflow_found",
+    "e85bc1db3b40306a6a628fa66b4707e553933fead7cf8ef5981fae41f020e1c4",
+  ],
+  "langgraph.json": [
+    "langgraph",
+    "workflow_found",
+    "7c56fbc7662b068fcf9d194bf5234c902af1c74c8a25d9a00dcccab6a478a6d3",
+  ],
+  "n8n.json": [
+    "n8n",
+    "workflow_found",
+    "f266b59815482a675f951ecd6425785612862a1ae8810831f774f97023217584",
+  ],
+  "no-supported-workflow.json": [
+    "langgraph",
+    "no_supported_workflow",
+    "3b11f0e3eea835961bdd83ea810e9e74df703ad1e1aabcc08254a8d55b3572fa",
+  ],
+  "openai-agents.json": [
+    "openai-agents",
+    "workflow_found",
+    "050501da928effaf5b0e55013a1d87adc0b5a3ec63e86b7d3bf0558a9e1e646b",
+  ],
+};
 
 function localMarkdownTargets(markdown) {
   const targets = [];
@@ -160,4 +195,62 @@ test("current product documents do not contain broken local Markdown links", asy
       await assert.doesNotReject(stat(resolved), `${document} has a broken local Markdown link: ${target}`);
     }
   }
+});
+
+test("Agentic Radar research fixtures retain the audited machine-output contract", async () => {
+  const fixtures = new Map();
+  for (const [name, [framework, status, expectedSha256]] of Object.entries(
+    AGENTIC_RADAR_RESEARCH_FIXTURES,
+  )) {
+    const relativePath = `docs/research/fixtures/agentic-radar/${name}`;
+    const content = await load(relativePath);
+    assert.equal(
+      createHash("sha256").update(content).digest("hex"),
+      expectedSha256,
+      `${name} changed without review`,
+    );
+
+    const fixture = JSON.parse(content);
+    fixtures.set(name, fixture);
+    assert.equal(fixture.schema_version, "1", name);
+    assert.equal(fixture.scanner_version, "0.14.1", name);
+    assert.equal(fixture.framework, framework, name);
+    assert.equal(fixture.status, status, name);
+    assert.equal(typeof fixture.graph, "object", name);
+    for (const record of [...fixture.graph.nodes, ...fixture.graph.tools, ...fixture.graph.agents]) {
+      assert.deepEqual(
+        record.vulnerabilities,
+        [],
+        `${name} unexpectedly contains vulnerability claims`,
+      );
+    }
+  }
+
+  const n8n = fixtures.get("n8n.json");
+  const n8nNodeNames = new Set(n8n.graph.nodes.map(({ name }) => name));
+  assert.ok(
+    n8n.graph.tools.every(({ name }) => n8nNodeNames.has(name)),
+    "n8n must retain its duplicate tool collection",
+  );
+
+  const openAiAgents = fixtures.get("openai-agents.json");
+  assert.ok(openAiAgents.graph.agents.some(({ system_prompt }) => system_prompt.length > 0));
+
+  const autogen = fixtures.get("autogen.json");
+  assert.ok(
+    autogen.graph.nodes.some(({ description }) =>
+      /Authorization.*your-api-key/su.test(description ?? ""),
+    ),
+  );
+
+  const crewAi = fixtures.get("crewai.json");
+  assert.equal(
+    crewAi.graph.agents.length,
+    0,
+    "CrewAI fixture must retain its observed metadata shortfall",
+  );
+  assert.ok(crewAi.graph.nodes.some(({ node_type }) => node_type === "agent"));
+
+  const empty = fixtures.get("no-supported-workflow.json");
+  assert.deepEqual(empty.graph, { name: "input", nodes: [], edges: [], agents: [], tools: [] });
 });

@@ -1,0 +1,70 @@
+{
+  "schema_version": "1",
+  "scanner_version": "0.14.1",
+  "framework": "autogen",
+  "status": "workflow_found",
+  "graph": {
+    "name": "autogen_mcp_1",
+    "nodes": [
+      {
+        "node_type": "basic",
+        "name": "START",
+        "description": null,
+        "label": "START",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "END",
+        "description": null,
+        "label": "END",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "agent",
+        "name": "translator",
+        "description": null,
+        "label": "translator",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "mcp_server",
+        "name": "server_params",
+        "description": "{\n  &quot;url&quot;: &quot;https://api.example.com/mcp&quot;,\n  &quot;headers&quot;: {\n    &quot;Authorization&quot;: &quot;Bearer your-api-key&quot;,\n    &quot;Content-Type&quot;: &quot;application/json&quot;\n  },\n  &quot;timeout&quot;: 30\n}",
+        "label": "server_params",
+        "category": null,
+        "vulnerabilities": []
+      }
+    ],
+    "edges": [
+      {
+        "start": "translator",
+        "end": "server_params",
+        "condition": "uses_mcp"
+      },
+      {
+        "start": "START",
+        "end": "translator",
+        "condition": null
+      },
+      {
+        "start": "translator",
+        "end": "END",
+        "condition": null
+      }
+    ],
+    "agents": [
+      {
+        "name": "translator",
+        "llm": "gpt-4",
+        "system_prompt": "You are a helpful translation assistant.",
+        "is_guardrail": false,
+        "vulnerabilities": []
+      }
+    ],
+    "tools": []
+  }
+}

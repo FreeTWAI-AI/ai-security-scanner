@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "scanner_version": "0.14.1",
+  "framework": "crewai",
+  "status": "workflow_found",
+  "graph": {
+    "name": "mcp_1",
+    "nodes": [
+      {
+        "node_type": "basic",
+        "name": "START",
+        "description": null,
+        "label": "START",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "agent",
+        "name": "my_agent",
+        "description": null,
+        "label": "my_agent",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "mcp_server",
+        "name": "server_params",
+        "description": "{&quot;url&quot;: &quot;http://localhost:8001/mcp&quot;, &quot;transport&quot;: &quot;streamable-http&quot;}",
+        "label": "server_params",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "END",
+        "description": null,
+        "label": "END",
+        "category": null,
+        "vulnerabilities": []
+      }
+    ],
+    "edges": [
+      {
+        "start": "my_agent",
+        "end": "END",
+        "condition": null
+      },
+      {
+        "start": "my_agent",
+        "end": "server_params",
+        "condition": "mcp_connection"
+      },
+      {
+        "start": "START",
+        "end": "my_agent",
+        "condition": null
+      }
+    ],
+    "agents": [],
+    "tools": []
+  }
+}

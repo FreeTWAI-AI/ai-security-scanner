@@ -1,0 +1,47 @@
+{
+  "schema_version": "1",
+  "scanner_version": "0.14.1",
+  "framework": "langgraph",
+  "status": "workflow_found",
+  "graph": {
+    "name": "MCP",
+    "nodes": [
+      {
+        "node_type": "mcp_server",
+        "name": "Unnamed Server 1",
+        "description": "{&#x27;command&#x27;: &quot;&#x27;python&#x27;&quot;, &#x27;args&#x27;: &quot;[&#x27;/path/to/math_server.py&#x27;]&quot;}",
+        "label": null,
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "mcp_server",
+        "name": "math",
+        "description": "{&#x27;command&#x27;: &quot;&#x27;python&#x27;&quot;, &#x27;args&#x27;: &quot;[&#x27;math_server.py&#x27;]&quot;}",
+        "label": null,
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "mcp_server",
+        "name": "weather",
+        "description": "{&#x27;command&#x27;: &quot;&#x27;python&#x27;&quot;, &#x27;args&#x27;: &quot;[&#x27;weather_server.py&#x27;]&quot;}",
+        "label": null,
+        "category": null,
+        "vulnerabilities": []
+      }
+    ],
+    "edges": [],
+    "agents": [],
+    "tools": [
+      {
+        "node_type": "tool",
+        "name": "OpenAI",
+        "description": null,
+        "label": null,
+        "category": "llm",
+        "vulnerabilities": []
+      }
+    ]
+  }
+}

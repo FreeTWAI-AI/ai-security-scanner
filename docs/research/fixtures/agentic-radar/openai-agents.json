@@ -1,0 +1,70 @@
+{
+  "schema_version": "1",
+  "scanner_version": "0.14.1",
+  "framework": "openai-agents",
+  "status": "workflow_found",
+  "graph": {
+    "name": "filesystem_example",
+    "nodes": [
+      {
+        "node_type": "agent",
+        "name": "Assistant",
+        "description": null,
+        "label": "Assistant",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "mcp_server",
+        "name": "Filesystem Server, via npx",
+        "description": "{&quot;command&quot;: &quot;npx&quot;, &quot;args&quot;: &quot;-y @modelcontextprotocol/server-filesystem {samples_dir}&quot;, &quot;type&quot;: &quot;STDIO&quot;}",
+        "label": "Filesystem Server, via npx",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "start",
+        "description": null,
+        "label": "Start",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "end",
+        "description": null,
+        "label": "End",
+        "category": null,
+        "vulnerabilities": []
+      }
+    ],
+    "edges": [
+      {
+        "start": "Assistant",
+        "end": "Filesystem Server, via npx",
+        "condition": "mcp"
+      },
+      {
+        "start": "start",
+        "end": "Assistant",
+        "condition": null
+      },
+      {
+        "start": "Assistant",
+        "end": "end",
+        "condition": null
+      }
+    ],
+    "agents": [
+      {
+        "name": "Assistant",
+        "llm": "gpt-4o",
+        "system_prompt": "Use the tools to read the filesystem and answer questions based on those files.",
+        "is_guardrail": false,
+        "vulnerabilities": []
+      }
+    ],
+    "tools": []
+  }
+}

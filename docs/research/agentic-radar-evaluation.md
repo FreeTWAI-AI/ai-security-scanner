@@ -184,3 +184,18 @@ This patch is retained as research evidence only. It has not been applied to pro
 to the engine catalog, packaged, published, or submitted upstream. Its removal condition is an
 upstream release with an equivalent documented and tested machine-output contract. A new upstream
 revision requires a fresh audit rather than rebasing these hashes by assumption.
+
+## Controlled fixture result
+
+The patched static JSON path was then exercised against one checked-in benign example for each of
+the five supported frameworks, plus an empty temporary directory. All six invocations ran without
+credential variables inside a network namespace that exposed only loopback. The complete raw
+outputs, hashes, input paths, and field-level review are retained in the
+[Agentic Radar research fixture manifest](fixtures/agentic-radar/README.md).
+
+The run confirmed the envelope and no-hosted-assessment behavior, but it also exposed a remaining
+contract gap: CrewAI can omit agent metadata after optional-dependency warnings while still emitting
+`workflow_found`, and the envelope has no structured completeness or warning field. `workflow_found`
+is therefore only a structural upstream status. Before catalog and adapter admission, the machine
+contract must preserve such coverage shortfalls as data so the product cannot report incomplete
+inventory as complete.

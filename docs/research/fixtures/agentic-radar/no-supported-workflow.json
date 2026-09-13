@@ -1,0 +1,13 @@
+{
+  "schema_version": "1",
+  "scanner_version": "0.14.1",
+  "framework": "langgraph",
+  "status": "no_supported_workflow",
+  "graph": {
+    "name": "input",
+    "nodes": [],
+    "edges": [],
+    "agents": [],
+    "tools": []
+  }
+}
