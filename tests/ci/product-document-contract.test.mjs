@@ -41,6 +41,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/research/agentic-radar-evaluation.md",
   "docs/research/augustus-evaluation.md",
   "docs/research/fixtures/agentic-radar/README.md",
+  "docs/research/fixtures/augustus/README.md",
   "docs/research/fixtures/mcp-armor/README.md",
   "docs/research/mcp-armor-evaluation.md",
   "docs/research/vibescan-evaluation.md",
@@ -92,6 +93,25 @@ const AGENTIC_RADAR_RESEARCH_FIXTURES = {
 };
 const AGENTIC_RADAR_RESEARCH_PATCH_SHA256 =
   "d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72";
+const AUGUSTUS_RESEARCH_PATCH_SHA256 =
+  "963f7654cc043d097bf714169dae7ac445e7cdf79a3178652f4efc43309a10e2";
+const AUGUSTUS_RESEARCH_FIXTURES = {
+  "machine-complete.json": [
+    true,
+    [],
+    "8482446756cdcd079d8349aa5ac4c828092e7ec4236dae3b43ea5d7f0921f52b",
+  ],
+  "machine-count-mismatch.json": [
+    false,
+    ["count_mismatch"],
+    "d94b8616c134194f7c8a0ce11e2d2167fd611a4b1117c067347cd4d006eade19",
+  ],
+  "machine-detector-warning.json": [
+    false,
+    ["detector_failed"],
+    "1fc37120cb27660f1958f30f6ccdbd03aa5d64ff446e637aff671d81342dd2f7",
+  ],
+};
 const MCP_ARMOR_RESEARCH_PATCH_SHA256 =
   "ae7732b5f9c922fbf2bee54e0246cccde6e1e5af829db112eb0f948cbd424122";
 const MCP_ARMOR_RESEARCH_FIXTURES = {
@@ -219,6 +239,7 @@ test("current product documents do not contain broken local Markdown links", asy
 
 test("Augustus research keeps hosted model testing fail closed", async () => {
   const decision = await load("docs/research/augustus-evaluation.md");
+  const patchContent = await load("docs/research/patches/augustus-0.14.29-machine-json.patch");
 
   assert.match(decision, /f032fc6373aaa9983868282b31dc9c59503c78a2/u);
   assert.match(decision, /tagged `v0\.14\.29`/u);
@@ -228,7 +249,70 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(decision, /SkipOnError/su);
   assert.match(decision, /complete: false/u);
   assert.match(decision, /test\.Repeat/u);
-  assert.match(decision, /No Augustus source code was executed/u);
+  assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PATCH_SHA256, "u"));
+  assert.match(decision, /4195d19e2223690ca565d8ca8469b74e1069fca0/u);
+  assert.equal(
+    createHash("sha256").update(patchContent).digest("hex"),
+    AUGUSTUS_RESEARCH_PATCH_SHA256,
+  );
+  assert.match(patchContent, /machine-json/u);
+  assert.match(patchContent, /detector_failed/u);
+  assert.match(patchContent, /count_mismatch/u);
+  assert.match(patchContent, /test\.Repeat/u);
+  assert.match(patchContent, /func \(sw \*StreamWriter\) Append\(a \*attempt\.Attempt\) error/u);
+  assert.match(patchContent, /sw\.file\.Sync\(\)/u);
+
+  const fixtures = new Map();
+  for (const [name, [expectedComplete, expectedWarnings, expectedSha256]] of Object.entries(
+    AUGUSTUS_RESEARCH_FIXTURES,
+  )) {
+    const content = await load(`docs/research/fixtures/augustus/${name}`);
+    assert.equal(
+      createHash("sha256").update(content).digest("hex"),
+      expectedSha256,
+      `${name} changed without review`,
+    );
+    const fixture = JSON.parse(content);
+    fixtures.set(name, fixture);
+    assert.equal(fixture.schema_version, "1", name);
+    assert.equal(fixture.scanner_version, "v0.14.29", name);
+    assert.equal(fixture.source_revision, "f032fc6373aaa9983868282b31dc9c59503c78a2", name);
+    assert.deepEqual(fixture.target, {
+      generator: "test.Repeat",
+      endpoint: "local://test-repeat",
+    });
+    assert.equal(fixture.complete, expectedComplete, name);
+    assert.deepEqual(fixture.warnings.map(({ code }) => code), expectedWarnings, name);
+    assert.equal(fixture.counts.emitted_attempts, fixture.attempts.length, name);
+    assert.ok(fixture.attempts.every(({ prompt, response }) => prompt === response), name);
+    assert.ok(!/api[_-]?key|bearer |sk-[a-z0-9]/iu.test(content), `${name} contains credential-shaped text`);
+    for (const warning of fixture.warnings) {
+      assert.ok(["count_mismatch", "detector_failed"].includes(warning.code), name);
+      assert.ok(!Object.hasOwn(warning, "message"), `${name} exposes unbounded error text`);
+    }
+
+    const counts = fixture.counts;
+    const countsComplete =
+      counts.expected_probes === fixture.plan.length
+      && counts.started_probes === counts.expected_probes
+      && counts.completed_probes === counts.expected_probes
+      && counts.succeeded_probes === counts.expected_probes
+      && counts.failed_probes === 0
+      && counts.produced_attempts === counts.expected_attempts
+      && counts.processed_attempts === counts.produced_attempts
+      && counts.emitted_attempts === counts.produced_attempts
+      && counts.not_tested_attempts === 0
+      && counts.errored_attempts === 0;
+    assert.equal(
+      fixture.complete,
+      fixture.warnings.length === 0 && countsComplete,
+      `${name} must fail closed`,
+    );
+  }
+
+  assert.equal(fixtures.get("machine-complete.json").attempts[0].verdict, "safe");
+  assert.equal(fixtures.get("machine-detector-warning.json").attempts[0].verdict, "safe");
+  assert.equal(fixtures.get("machine-detector-warning.json").complete, false);
 });
 
 test("Agentic Radar research patch and fixtures retain the audited machine-output contract", async () => {

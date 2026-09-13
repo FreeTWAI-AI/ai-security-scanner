@@ -1,0 +1,1552 @@
+From 4195d19e2223690ca565d8ca8469b74e1069fca0 Mon Sep 17 00:00:00 2001
+From: Ted Huang <233386770+teddashh@users.noreply.github.com>
+Date: Sun, 13 Sep 2026 06:55:37 -0400
+Subject: [PATCH] output: add fail-closed machine report
+
+---
+ Makefile                                      |   3 +-
+ cmd/augustus/cli.go                           |  37 +++-
+ cmd/augustus/common.go                        |   1 +
+ cmd/augustus/machine.go                       | 132 +++++++++++++
+ cmd/augustus/machine_test.go                  |  43 ++++
+ cmd/augustus/scan.go                          |  44 ++++-
+ .../generators/test/machine_output_test.go    | 184 ++++++++++++++++++
+ .../test/testdata/machine-complete.json       |  49 +++++
+ .../test/testdata/machine-count-mismatch.json |  60 ++++++
+ .../testdata/machine-detector-warning.json    |  54 +++++
+ .../probewise/machine_coverage_test.go        |  80 ++++++++
+ internal/harnesses/probewise/probewise.go     |  51 ++++-
+ pkg/harnesses/coverage.go                     |  40 ++++
+ pkg/harnesses/detection.go                    |  25 ++-
+ pkg/harnesses/detection_machine_test.go       |  51 +++++
+ pkg/probes/simple.go                          |   6 +
+ pkg/results/machine.go                        | 179 +++++++++++++++++
+ pkg/results/machine_test.go                   |  24 +++
+ pkg/results/stream.go                         |  12 +-
+ pkg/scanner/machine_counts_test.go            |  51 +++++
+ pkg/scanner/scanner.go                        |  17 ++
+ pkg/types/prober.go                           |   7 +
+ 22 files changed, 1129 insertions(+), 21 deletions(-)
+ create mode 100644 cmd/augustus/machine.go
+ create mode 100644 cmd/augustus/machine_test.go
+ create mode 100644 internal/generators/test/machine_output_test.go
+ create mode 100644 internal/generators/test/testdata/machine-complete.json
+ create mode 100644 internal/generators/test/testdata/machine-count-mismatch.json
+ create mode 100644 internal/generators/test/testdata/machine-detector-warning.json
+ create mode 100644 internal/harnesses/probewise/machine_coverage_test.go
+ create mode 100644 pkg/harnesses/coverage.go
+ create mode 100644 pkg/harnesses/detection_machine_test.go
+ create mode 100644 pkg/results/machine.go
+ create mode 100644 pkg/results/machine_test.go
+ create mode 100644 pkg/scanner/machine_counts_test.go
+
+diff --git a/Makefile b/Makefile
+index 5c893f7..261440f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -9,7 +9,8 @@ GO ?= go
+ BINARY ?= augustus
+ BUILD_DIR ?= bin
+ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+-LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
++REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
++LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION) -X main.sourceRevision=$(REVISION)"
+ GOLANGCI_LINT_VERSION ?= v2.13.1
+ 
+ # Auto-discover source files
+diff --git a/cmd/augustus/cli.go b/cmd/augustus/cli.go
+index 8b397fc..595989a 100644
+--- a/cmd/augustus/cli.go
++++ b/cmd/augustus/cli.go
+@@ -86,11 +86,16 @@ type ScanCmd struct {
+ 	ProbeTimeout time.Duration `help:"Per-probe timeout (0 = no timeout)."`
+ 
+ 	// Output
+-	Format  string `help:"Output format." enum:"table,json,jsonl" default:"table" short:"f"`
++	Format  string `help:"Output format." enum:"table,json,jsonl,machine-json" default:"table" short:"f"`
+ 	Output  string `help:"JSONL output file path." short:"o" type:"path"`
+ 	HTML    string `help:"HTML report file path." type:"path" name:"html"`
+ 	Verbose bool   `help:"Verbose output." short:"v"`
+ 
++	// Fail-closed machine output provenance. These values identify the already
++	// authorized target; they do not grant scope or carry credentials.
++	MachineRunID    string `help:"Trusted run identifier for machine-json output." name:"machine-run-id"`
++	MachineEndpoint string `help:"Trusted endpoint identity for machine-json output." name:"machine-endpoint"`
++
+ 	// Runtime hooks
+ 	Setup   string `help:"Shell command run once before all probes. Stdout KEY=VALUE lines are injected into the generator request template as $KEY." name:"setup"`
+ 	Prepare string `help:"Shell command run before each probe. Receives AUGUSTUS_LAST_RESPONSE env var with raw response from the previous probe." name:"prepare"`
+@@ -128,6 +133,36 @@ func (s *ScanCmd) Validate() error {
+ 		return fmt.Errorf("--profile requires --config-file")
+ 	}
+ 
++	if s.Format == "machine-json" {
++		if s.MachineRunID == "" {
++			return fmt.Errorf("--machine-run-id is required with --format machine-json")
++		}
++		if s.MachineEndpoint == "" {
++			return fmt.Errorf("--machine-endpoint is required with --format machine-json")
++		}
++		if s.Output != "" || s.HTML != "" {
++			return fmt.Errorf("--format machine-json cannot be combined with --output or --html")
++		}
++		if len(s.Probe) == 0 || s.ProbesGlob != "" || s.All || len(s.Recon) != 0 {
++			return fmt.Errorf("--format machine-json requires explicit --probe values and rejects globs, --all, and recon")
++		}
++		if s.ConfigFile != "" || s.Config != "" || s.Profile != "" {
++			return fmt.Errorf("--format machine-json rejects argv and file configuration; use a typed isolated launcher")
++		}
++		if len(s.Buff) != 0 || s.BuffsGlob != "" || s.Setup != "" || s.Prepare != "" || s.Cleanup != "" {
++			return fmt.Errorf("--format machine-json rejects buffs and runtime hooks")
++		}
++		if s.DetectorsGlob != "" || len(s.RefusalPattern) != 0 {
++			return fmt.Errorf("--format machine-json rejects detector globs and runtime detector tuning")
++		}
++		if s.Harness != "probewise.Probewise" {
++			return fmt.Errorf("--format machine-json requires the probewise.Probewise harness")
++		}
++	}
++	if s.Format != "machine-json" && (s.MachineRunID != "" || s.MachineEndpoint != "") {
++		return fmt.Errorf("--machine-run-id and --machine-endpoint require --format machine-json")
++	}
++
+ 	return nil
+ }
+ 
+diff --git a/cmd/augustus/common.go b/cmd/augustus/common.go
+index 5171414..098d7be 100644
+--- a/cmd/augustus/common.go
++++ b/cmd/augustus/common.go
+@@ -12,6 +12,7 @@ import (
+ )
+ 
+ var version = "0.0.9"
++var sourceRevision = "unknown"
+ 
+ func listCapabilities() {
+ 	fmt.Println("Registered Capabilities")
+diff --git a/cmd/augustus/machine.go b/cmd/augustus/machine.go
+new file mode 100644
+index 0000000..3bb8214
+--- /dev/null
++++ b/cmd/augustus/machine.go
+@@ -0,0 +1,132 @@
++package main
++
++import (
++	"context"
++	"errors"
++	"io"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++	"github.com/praetorian-inc/augustus/pkg/detectors"
++	"github.com/praetorian-inc/augustus/pkg/harnesses"
++	"github.com/praetorian-inc/augustus/pkg/probes"
++	"github.com/praetorian-inc/augustus/pkg/results"
++	"github.com/praetorian-inc/augustus/pkg/types"
++)
++
++// machineEvaluator emits one terminal document after the harness has supplied
++// its coverage ledger. It intentionally cannot operate through Evaluate alone.
++type machineEvaluator struct {
++	writer   io.Writer
++	metadata results.MachineMetadata
++}
++
++func (m *machineEvaluator) Evaluate(context.Context, []*attempt.Attempt) error {
++	return errors.New("machine evaluator requires a run coverage ledger")
++}
++
++func (m *machineEvaluator) EvaluateRun(
++	_ context.Context,
++	attempts []*attempt.Attempt,
++	coverage harnesses.RunCoverage,
++) error {
++	report := results.NewMachineReport(m.metadata, coverage, attempts)
++	return results.WriteMachineJSON(m.writer, report)
++}
++
++// configureMachineEvaluator freezes trusted invocation metadata and the exact
++// selected detector plan before any probe is dispatched.
++func configureMachineEvaluator(
++	eval harnesses.Evaluator,
++	scannerVersion string,
++	revision string,
++	runID string,
++	generator string,
++	endpoint string,
++	model string,
++	probeList []probes.Prober,
++	detectorList []detectors.Detector,
++	overrides map[string][]detectors.Detector,
++	detectorsExplicit bool,
++) (expectedAttempts int, expectedAttemptsKnown bool, err error) {
++	machine, ok := eval.(*machineEvaluator)
++	if !ok {
++		total, known := machineExpectedAttempts(probeList)
++		return total, known, nil
++	}
++
++	plan, expectedAttempts, expectedAttemptsKnown := buildMachinePlan(
++		probeList,
++		detectorList,
++		overrides,
++		detectorsExplicit,
++	)
++	machine.metadata = results.MachineMetadata{
++		ScannerVersion: scannerVersion,
++		SourceRevision: revision,
++		RunID:          runID,
++		Target: results.MachineTarget{
++			Generator: generator,
++			Endpoint:  endpoint,
++			Model:     model,
++		},
++		Plan: plan,
++	}
++	return expectedAttempts, expectedAttemptsKnown, nil
++}
++
++func buildMachinePlan(
++	probeList []probes.Prober,
++	detectorList []detectors.Detector,
++	overrides map[string][]detectors.Detector,
++	detectorsExplicit bool,
++) ([]results.MachinePlanEntry, int, bool) {
++	plan := make([]results.MachinePlanEntry, 0, len(probeList))
++	total, known := machineExpectedAttempts(probeList)
++
++	for _, probe := range probeList {
++		primary := ""
++		var expected *int
++		if metadata, ok := probe.(types.ProbeMetadata); ok {
++			primary = metadata.GetPrimaryDetector()
++		}
++		if counter, ok := probe.(types.ExpectedAttemptCounter); ok {
++			count := counter.ExpectedAttempts()
++			if count > 0 {
++				expected = &count
++			}
++		}
++		selected := harnesses.SelectProbeDetectors(
++			&attempt.Attempt{Probe: probe.Name(), Detector: primary},
++			detectorList,
++			overrides,
++			detectorsExplicit,
++		)
++		detectorNames := make([]string, 0, len(selected))
++		for _, detector := range selected {
++			detectorNames = append(detectorNames, detector.Name())
++		}
++		plan = append(plan, results.MachinePlanEntry{
++			Probe:            probe.Name(),
++			Detectors:        detectorNames,
++			ExpectedAttempts: expected,
++		})
++	}
++
++	return plan, total, known
++}
++
++func machineExpectedAttempts(probeList []probes.Prober) (int, bool) {
++	total := 0
++	for _, probe := range probeList {
++		counter, ok := probe.(types.ExpectedAttemptCounter)
++		if !ok {
++			return 0, false
++		}
++		expected := counter.ExpectedAttempts()
++		if expected <= 0 {
++			return 0, false
++		}
++		total += expected
++	}
++	return total, true
++}
+diff --git a/cmd/augustus/machine_test.go b/cmd/augustus/machine_test.go
+new file mode 100644
+index 0000000..e265a63
+--- /dev/null
++++ b/cmd/augustus/machine_test.go
+@@ -0,0 +1,43 @@
++package main
++
++import (
++	"context"
++	"testing"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++	"github.com/praetorian-inc/augustus/pkg/detectors"
++	"github.com/praetorian-inc/augustus/pkg/probes"
++)
++
++type machinePlanDetector struct{}
++
++func (machinePlanDetector) Detect(context.Context, *attempt.Attempt) ([]float64, error) {
++	return []float64{0}, nil
++}
++func (machinePlanDetector) Name() string        { return "synthetic.Plan" }
++func (machinePlanDetector) Description() string { return "synthetic plan detector" }
++
++func TestBuildMachinePlanUsesExplicitAttemptContract(t *testing.T) {
++	probe := probes.NewSimpleProbe(
++		"synthetic.Static",
++		"synthetic goal",
++		"synthetic.Plan",
++		"synthetic static probe",
++		[]string{"one", "two"},
++	)
++	plan, expected, known := buildMachinePlan(
++		[]probes.Prober{probe},
++		[]detectors.Detector{machinePlanDetector{}},
++		nil,
++		false,
++	)
++	if !known || expected != 2 {
++		t.Fatalf("expected attempts = %d, known = %t; want 2, true", expected, known)
++	}
++	if len(plan) != 1 || plan[0].ExpectedAttempts == nil || *plan[0].ExpectedAttempts != 2 {
++		t.Fatalf("plan = %#v", plan)
++	}
++	if len(plan[0].Detectors) != 1 || plan[0].Detectors[0] != "synthetic.Plan" {
++		t.Fatalf("plan detectors = %#v", plan[0].Detectors)
++	}
++}
+diff --git a/cmd/augustus/scan.go b/cmd/augustus/scan.go
+index 2f36f15..21734c0 100644
+--- a/cmd/augustus/scan.go
++++ b/cmd/augustus/scan.go
+@@ -51,6 +51,8 @@ type scanConfig struct {
+ 	prepare         string        // Shell command: before each probe
+ 	cleanup         string        // Shell command: after all probes
+ 	refusalPatterns []string      // Target refusal/guardrail phrases for mitigation.* detectors
++	machineRunID    string        // Trusted product run identifier for machine output
++	machineEndpoint string        // Trusted exact endpoint identity for machine output
+ }
+ 
+ // Kong helper methods
+@@ -83,14 +85,13 @@ func (s *ScanCmd) execute() error {
+ 	// When streaming is active, JSONL is written incrementally per-attempt,
+ 	// so the collectingEvaluator only handles HTML output.
+ 	var streamWriter *results.StreamWriter
+-	var onAttemptProcessed func(*attempt.Attempt)
++	var onAttemptProcessed func(*attempt.Attempt) error
+ 	collectJSONLPath := resolved.OutputFile
+ 	if resolved.OutputFile != "" {
+ 		streamWriter, err = results.NewStreamWriter(resolved.OutputFile)
+ 		if err != nil {
+ 			return fmt.Errorf("failed to create stream writer: %w", err)
+ 		}
+-		defer func() { _ = streamWriter.Close() }()
+ 		onAttemptProcessed = streamWriter.Append
+ 		collectJSONLPath = "" // Streaming handles JSONL; don't double-write
+ 	}
+@@ -104,7 +105,14 @@ func (s *ScanCmd) execute() error {
+ 	ctx, cancel := s.setupContext()
+ 	defer cancel()
+ 
+-	return runScanResolved(ctx, cfg, yamlCfg, resolved, eval, onAttemptProcessed)
++	scanErr := runScanResolved(ctx, cfg, yamlCfg, resolved, eval, onAttemptProcessed)
++	if streamWriter == nil {
++		return scanErr
++	}
++	if closeErr := streamWriter.Close(); closeErr != nil {
++		scanErr = errors.Join(scanErr, fmt.Errorf("failed to close stream writer: %w", closeErr))
++	}
++	return scanErr
+ }
+ 
+ // loadScanConfig converts Kong struct to legacy scanConfig
+@@ -130,6 +138,8 @@ func (s *ScanCmd) loadScanConfig() *scanConfig {
+ 		prepare:         s.Prepare,
+ 		cleanup:         s.Cleanup,
+ 		refusalPatterns: s.RefusalPattern,
++		machineRunID:    s.MachineRunID,
++		machineEndpoint: s.MachineEndpoint,
+ 	}
+ }
+ 
+@@ -226,6 +236,8 @@ func (s *ScanCmd) createEvaluator(cfg *scanConfig) harnesses.Evaluator {
+ 		eval = &jsonEvaluator{}
+ 	case "jsonl":
+ 		eval = &jsonlEvaluator{}
++	case "machine-json":
++		eval = &machineEvaluator{writer: os.Stdout}
+ 	default:
+ 		eval = &tableEvaluator{verbose: cfg.verbose}
+ 	}
+@@ -643,7 +655,7 @@ func createAndApplyBuffs(probeList []probes.Prober, buffNames []string, yamlCfg
+ }
+ 
+ // runScanResolved executes the scan with resolved configuration.
+-func runScanResolved(ctx context.Context, cfg *scanConfig, yamlCfg *config.Config, resolved *config.ResolvedConfig, eval harnesses.Evaluator, onAttemptProcessed func(*attempt.Attempt)) error {
++func runScanResolved(ctx context.Context, cfg *scanConfig, yamlCfg *config.Config, resolved *config.ResolvedConfig, eval harnesses.Evaluator, onAttemptProcessed func(*attempt.Attempt) error) error {
+ 	// Resolve runtime hooks: YAML config provides defaults, CLI flags override.
+ 	if yamlCfg != nil {
+ 		if cfg.setup == "" && yamlCfg.Hooks.Setup != "" {
+@@ -828,6 +840,22 @@ func runScanResolved(ctx context.Context, cfg *scanConfig, yamlCfg *config.Confi
+ 	if err != nil {
+ 		return fmt.Errorf("building per-probe detector map: %w", err)
+ 	}
++	expectedAttempts, expectedAttemptsKnown, err := configureMachineEvaluator(
++		eval,
++		version,
++		sourceRevision,
++		cfg.machineRunID,
++		cfg.generatorName,
++		cfg.machineEndpoint,
++		registry.GetString(resolved.GeneratorConfig, "model", ""),
++		probeList,
++		detectorList,
++		probeDetectorOverrides,
++		detectorsExplicit,
++	)
++	if err != nil {
++		return fmt.Errorf("configuring machine output: %w", err)
++	}
+ 
+ 	// Create and apply buffs
+ 	buffNames := cfg.buffNames
+@@ -841,9 +869,11 @@ func runScanResolved(ctx context.Context, cfg *scanConfig, yamlCfg *config.Confi
+ 
+ 	// Create harness with resolved scanner options
+ 	harnessConfig := registry.Config{
+-		"scanner_opts": &resolved.ScannerOpts,
+-		"concurrency":  resolved.ScannerOpts.Concurrency,
+-		"timeout":      resolved.ScannerOpts.Timeout,
++		"scanner_opts":            &resolved.ScannerOpts,
++		"concurrency":             resolved.ScannerOpts.Concurrency,
++		"timeout":                 resolved.ScannerOpts.Timeout,
++		"expected_attempts":       expectedAttempts,
++		"expected_attempts_known": expectedAttemptsKnown,
+ 	}
+ 	if onAttemptProcessed != nil {
+ 		harnessConfig["on_attempt_processed"] = onAttemptProcessed
+diff --git a/internal/generators/test/machine_output_test.go b/internal/generators/test/machine_output_test.go
+new file mode 100644
+index 0000000..14ad10d
+--- /dev/null
++++ b/internal/generators/test/machine_output_test.go
+@@ -0,0 +1,184 @@
++package test
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"os"
++	"testing"
++	"time"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++	"github.com/praetorian-inc/augustus/pkg/detectors"
++	"github.com/praetorian-inc/augustus/pkg/harnesses"
++	"github.com/praetorian-inc/augustus/pkg/results"
++)
++
++const machineSourceRevision = "f032fc6373aaa9983868282b31dc9c59503c78a2"
++
++type machineSyntheticDetector struct {
++	name  string
++	score float64
++	err   error
++}
++
++func (d machineSyntheticDetector) Detect(context.Context, *attempt.Attempt) ([]float64, error) {
++	if d.err != nil {
++		return nil, d.err
++	}
++	return []float64{d.score}, nil
++}
++
++func (d machineSyntheticDetector) Name() string        { return d.name }
++func (d machineSyntheticDetector) Description() string { return "synthetic machine-output detector" }
++
++func TestRepeatMachineOutputFixtures(t *testing.T) {
++	t.Run("complete", func(t *testing.T) {
++		a := repeatAttempt(t, "attempt-complete")
++		warnings, err := harnesses.ApplyDetectorsWithWarnings(
++			context.Background(),
++			a,
++			[]detectors.Detector{machineSyntheticDetector{name: "synthetic.Pass", score: 0.1}},
++			harnesses.SkipOnError,
++		)
++		if err != nil {
++			t.Fatalf("ApplyDetectorsWithWarnings() error = %v", err)
++		}
++		report := results.NewMachineReport(
++			machineMetadata("machine-complete", "synthetic.Pass", 1),
++			completeCoverage(warnings),
++			[]*attempt.Attempt{a},
++		)
++		if !report.Complete {
++			t.Fatalf("report.Complete = false, warnings = %#v", report.Warnings)
++		}
++		assertMachineFixture(t, "machine-complete.json", report)
++	})
++
++	t.Run("detector warning", func(t *testing.T) {
++		a := repeatAttempt(t, "attempt-warning")
++		detector := machineSyntheticDetector{
++			name: "synthetic.FailsClosed",
++			err:  errors.New("synthetic detector failure"),
++		}
++		a.Detector = detector.Name()
++		warnings, err := harnesses.ApplyDetectorsWithWarnings(
++			context.Background(),
++			a,
++			[]detectors.Detector{detector},
++			harnesses.SkipOnError,
++		)
++		if err != nil {
++			t.Fatalf("ApplyDetectorsWithWarnings() error = %v", err)
++		}
++		report := results.NewMachineReport(
++			machineMetadata("machine-detector-warning", detector.Name(), 1),
++			completeCoverage(warnings),
++			[]*attempt.Attempt{a},
++		)
++		if report.Complete {
++			t.Fatal("report.Complete = true after detector warning")
++		}
++		assertMachineFixture(t, "machine-detector-warning.json", report)
++	})
++
++	t.Run("count mismatch", func(t *testing.T) {
++		a := repeatAttempt(t, "attempt-count-mismatch")
++		detector := machineSyntheticDetector{name: "synthetic.Pass", score: 0.1}
++		warnings, err := harnesses.ApplyDetectorsWithWarnings(
++			context.Background(),
++			a,
++			[]detectors.Detector{detector},
++			harnesses.SkipOnError,
++		)
++		if err != nil {
++			t.Fatalf("ApplyDetectorsWithWarnings() error = %v", err)
++		}
++		metadata := machineMetadata("machine-count-mismatch", detector.Name(), 1)
++		one := 1
++		metadata.Plan = append(metadata.Plan, results.MachinePlanEntry{
++			Probe:            "synthetic.Missing",
++			Detectors:        []string{detector.Name()},
++			ExpectedAttempts: &one,
++		})
++		coverage := completeCoverage(warnings)
++		coverage.ExpectedProbes = 2
++		coverage.ExpectedAttempts = 2
++		report := results.NewMachineReport(metadata, coverage, []*attempt.Attempt{a})
++		if report.Complete {
++			t.Fatal("report.Complete = true after count mismatch")
++		}
++		assertMachineFixture(t, "machine-count-mismatch.json", report)
++	})
++}
++
++func repeatAttempt(t *testing.T, id string) *attempt.Attempt {
++	t.Helper()
++	gen, err := NewRepeat(nil)
++	if err != nil {
++		t.Fatalf("NewRepeat() error = %v", err)
++	}
++	conversation := attempt.NewConversation()
++	conversation.AddPrompt("SYNTHETIC AUGUSTUS REPEAT INPUT")
++	messages, err := gen.Generate(context.Background(), conversation, 1)
++	if err != nil {
++		t.Fatalf("test.Repeat Generate() error = %v", err)
++	}
++	if len(messages) != 1 {
++		t.Fatalf("test.Repeat messages = %d, want 1", len(messages))
++	}
++	a := attempt.New("SYNTHETIC AUGUSTUS REPEAT INPUT")
++	a.ID = id
++	a.Probe = "synthetic.SingleTurn"
++	a.Detector = "synthetic.Pass"
++	a.Generator = gen.Name()
++	a.Timestamp = time.Date(2026, time.September, 13, 12, 0, 0, 0, time.UTC)
++	a.AddOutput(messages[0].Content)
++	return a
++}
++
++func machineMetadata(runID, detector string, expectedAttempts int) results.MachineMetadata {
++	return results.MachineMetadata{
++		ScannerVersion: "v0.14.29",
++		SourceRevision: machineSourceRevision,
++		RunID:          runID,
++		Target: results.MachineTarget{
++			Generator: "test.Repeat",
++			Endpoint:  "local://test-repeat",
++		},
++		Plan: []results.MachinePlanEntry{{
++			Probe:            "synthetic.SingleTurn",
++			Detectors:        []string{detector},
++			ExpectedAttempts: &expectedAttempts,
++		}},
++	}
++}
++
++func completeCoverage(warnings []harnesses.CoverageWarning) harnesses.RunCoverage {
++	return harnesses.RunCoverage{
++		ExpectedProbes:        1,
++		StartedProbes:         1,
++		CompletedProbes:       1,
++		SucceededProbes:       1,
++		ExpectedAttempts:      1,
++		ExpectedAttemptsKnown: true,
++		ProducedAttempts:      1,
++		ProcessedAttempts:     1,
++		Warnings:              warnings,
++	}
++}
++
++func assertMachineFixture(t *testing.T, name string, report results.MachineReport) {
++	t.Helper()
++	var got bytes.Buffer
++	if err := results.WriteMachineJSON(&got, report); err != nil {
++		t.Fatalf("WriteMachineJSON() error = %v", err)
++	}
++	want, err := os.ReadFile("testdata/" + name)
++	if err != nil {
++		t.Fatalf("ReadFile(%s) error = %v", name, err)
++	}
++	if !bytes.Equal(got.Bytes(), want) {
++		t.Fatalf("machine fixture %s changed\n--- got ---\n%s\n--- want ---\n%s", name, got.Bytes(), want)
++	}
++}
+diff --git a/internal/generators/test/testdata/machine-complete.json b/internal/generators/test/testdata/machine-complete.json
+new file mode 100644
+index 0000000..d92a5ea
+--- /dev/null
++++ b/internal/generators/test/testdata/machine-complete.json
+@@ -0,0 +1,49 @@
++{
++  "schema_version": "1",
++  "scanner_version": "v0.14.29",
++  "source_revision": "f032fc6373aaa9983868282b31dc9c59503c78a2",
++  "run_id": "machine-complete",
++  "target": {
++    "generator": "test.Repeat",
++    "endpoint": "local://test-repeat"
++  },
++  "plan": [
++    {
++      "probe": "synthetic.SingleTurn",
++      "detectors": [
++        "synthetic.Pass"
++      ],
++      "expected_attempts": 1
++    }
++  ],
++  "counts": {
++    "expected_probes": 1,
++    "started_probes": 1,
++    "completed_probes": 1,
++    "succeeded_probes": 1,
++    "failed_probes": 0,
++    "expected_attempts": 1,
++    "produced_attempts": 1,
++    "processed_attempts": 1,
++    "emitted_attempts": 1,
++    "not_tested_attempts": 0,
++    "errored_attempts": 0
++  },
++  "complete": true,
++  "warnings": [],
++  "attempts": [
++    {
++      "probe": "synthetic.SingleTurn",
++      "prompt": "SYNTHETIC AUGUSTUS REPEAT INPUT",
++      "response": "SYNTHETIC AUGUSTUS REPEAT INPUT",
++      "detector": "synthetic.Pass",
++      "scores": [
++        0.1
++      ],
++      "passed": true,
++      "verdict": "safe",
++      "status": "complete",
++      "timestamp": "2026-09-13T12:00:00Z"
++    }
++  ]
++}
+diff --git a/internal/generators/test/testdata/machine-count-mismatch.json b/internal/generators/test/testdata/machine-count-mismatch.json
+new file mode 100644
+index 0000000..2e6ca7c
+--- /dev/null
++++ b/internal/generators/test/testdata/machine-count-mismatch.json
+@@ -0,0 +1,60 @@
++{
++  "schema_version": "1",
++  "scanner_version": "v0.14.29",
++  "source_revision": "f032fc6373aaa9983868282b31dc9c59503c78a2",
++  "run_id": "machine-count-mismatch",
++  "target": {
++    "generator": "test.Repeat",
++    "endpoint": "local://test-repeat"
++  },
++  "plan": [
++    {
++      "probe": "synthetic.SingleTurn",
++      "detectors": [
++        "synthetic.Pass"
++      ],
++      "expected_attempts": 1
++    },
++    {
++      "probe": "synthetic.Missing",
++      "detectors": [
++        "synthetic.Pass"
++      ],
++      "expected_attempts": 1
++    }
++  ],
++  "counts": {
++    "expected_probes": 2,
++    "started_probes": 1,
++    "completed_probes": 1,
++    "succeeded_probes": 1,
++    "failed_probes": 0,
++    "expected_attempts": 2,
++    "produced_attempts": 1,
++    "processed_attempts": 1,
++    "emitted_attempts": 1,
++    "not_tested_attempts": 0,
++    "errored_attempts": 0
++  },
++  "complete": false,
++  "warnings": [
++    {
++      "code": "count_mismatch"
++    }
++  ],
++  "attempts": [
++    {
++      "probe": "synthetic.SingleTurn",
++      "prompt": "SYNTHETIC AUGUSTUS REPEAT INPUT",
++      "response": "SYNTHETIC AUGUSTUS REPEAT INPUT",
++      "detector": "synthetic.Pass",
++      "scores": [
++        0.1
++      ],
++      "passed": true,
++      "verdict": "safe",
++      "status": "complete",
++      "timestamp": "2026-09-13T12:00:00Z"
++    }
++  ]
++}
+diff --git a/internal/generators/test/testdata/machine-detector-warning.json b/internal/generators/test/testdata/machine-detector-warning.json
+new file mode 100644
+index 0000000..ac92ac0
+--- /dev/null
++++ b/internal/generators/test/testdata/machine-detector-warning.json
+@@ -0,0 +1,54 @@
++{
++  "schema_version": "1",
++  "scanner_version": "v0.14.29",
++  "source_revision": "f032fc6373aaa9983868282b31dc9c59503c78a2",
++  "run_id": "machine-detector-warning",
++  "target": {
++    "generator": "test.Repeat",
++    "endpoint": "local://test-repeat"
++  },
++  "plan": [
++    {
++      "probe": "synthetic.SingleTurn",
++      "detectors": [
++        "synthetic.FailsClosed"
++      ],
++      "expected_attempts": 1
++    }
++  ],
++  "counts": {
++    "expected_probes": 1,
++    "started_probes": 1,
++    "completed_probes": 1,
++    "succeeded_probes": 1,
++    "failed_probes": 0,
++    "expected_attempts": 1,
++    "produced_attempts": 1,
++    "processed_attempts": 1,
++    "emitted_attempts": 1,
++    "not_tested_attempts": 0,
++    "errored_attempts": 0
++  },
++  "complete": false,
++  "warnings": [
++    {
++      "code": "detector_failed",
++      "probe": "synthetic.SingleTurn",
++      "attempt_id": "attempt-warning",
++      "detector": "synthetic.FailsClosed"
++    }
++  ],
++  "attempts": [
++    {
++      "probe": "synthetic.SingleTurn",
++      "prompt": "SYNTHETIC AUGUSTUS REPEAT INPUT",
++      "response": "SYNTHETIC AUGUSTUS REPEAT INPUT",
++      "detector": "synthetic.FailsClosed",
++      "scores": [],
++      "passed": true,
++      "verdict": "safe",
++      "status": "complete",
++      "timestamp": "2026-09-13T12:00:00Z"
++    }
++  ]
++}
+diff --git a/internal/harnesses/probewise/machine_coverage_test.go b/internal/harnesses/probewise/machine_coverage_test.go
+new file mode 100644
+index 0000000..71ce09d
+--- /dev/null
++++ b/internal/harnesses/probewise/machine_coverage_test.go
+@@ -0,0 +1,80 @@
++package probewise
++
++import (
++	"context"
++	"testing"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++	"github.com/praetorian-inc/augustus/pkg/detectors"
++	"github.com/praetorian-inc/augustus/pkg/generators"
++	"github.com/praetorian-inc/augustus/pkg/harnesses"
++	"github.com/praetorian-inc/augustus/pkg/probes"
++)
++
++type machineEmptyProbe struct{}
++
++func (machineEmptyProbe) Probe(context.Context, probes.Generator) ([]*attempt.Attempt, error) {
++	return nil, nil
++}
++func (machineEmptyProbe) Name() string { return "synthetic.Empty" }
++
++type machineUnusedGenerator struct{}
++
++func (machineUnusedGenerator) Generate(context.Context, *attempt.Conversation, int) ([]attempt.Message, error) {
++	return nil, nil
++}
++func (machineUnusedGenerator) ClearHistory()       {}
++func (machineUnusedGenerator) Name() string        { return "test.Repeat" }
++func (machineUnusedGenerator) Description() string { return "synthetic unused generator" }
++
++type machineUnusedDetector struct{}
++
++func (machineUnusedDetector) Detect(context.Context, *attempt.Attempt) ([]float64, error) {
++	return []float64{0}, nil
++}
++func (machineUnusedDetector) Name() string        { return "synthetic.Unused" }
++func (machineUnusedDetector) Description() string { return "synthetic unused detector" }
++
++type machineCoverageEvaluator struct {
++	called   bool
++	coverage harnesses.RunCoverage
++}
++
++func (*machineCoverageEvaluator) Evaluate(context.Context, []*attempt.Attempt) error {
++	return nil
++}
++
++func (e *machineCoverageEvaluator) EvaluateRun(
++	_ context.Context,
++	_ []*attempt.Attempt,
++	coverage harnesses.RunCoverage,
++) error {
++	e.called = true
++	e.coverage = coverage
++	return nil
++}
++
++func TestRunEvaluatorReceivesZeroAttemptCoverage(t *testing.T) {
++	eval := &machineCoverageEvaluator{}
++	h := New()
++	h.expectedAttempts = 1
++	h.expectedAttemptsKnown = true
++	err := h.Run(
++		context.Background(),
++		machineUnusedGenerator{},
++		[]probes.Prober{machineEmptyProbe{}},
++		[]detectors.Detector{machineUnusedDetector{}},
++		eval,
++	)
++	if err != nil {
++		t.Fatalf("Run() error = %v", err)
++	}
++	if !eval.called {
++		t.Fatal("EvaluateRun() was not called for zero attempts")
++	}
++	if eval.coverage.ExpectedAttempts != 1 || eval.coverage.ProducedAttempts != 0 {
++		t.Fatalf("coverage = %#v", eval.coverage)
++	}
++}
++
++var _ generators.Generator = machineUnusedGenerator{}
+diff --git a/internal/harnesses/probewise/probewise.go b/internal/harnesses/probewise/probewise.go
+index 7c30978..236347d 100644
+--- a/internal/harnesses/probewise/probewise.go
++++ b/internal/harnesses/probewise/probewise.go
+@@ -39,7 +39,9 @@ var (
+ // 5. Calls the evaluator with all attempts
+ type Probewise struct {
+ 	opts                   *scanner.Options
+-	onAttemptProcessed     func(*attempt.Attempt)
++	onAttemptProcessed     func(*attempt.Attempt) error
++	expectedAttempts       int
++	expectedAttemptsKnown  bool
+ 	probeDetectorOverrides map[string][]detectors.Detector
+ 	// detectorsExplicit is true when the user passed --detector/--detectors-glob.
+ 	// It controls the per-attempt fallback when a probe has no override entry:
+@@ -175,6 +177,8 @@ func (p *Probewise) Run(
+ 	// We'll report probe errors at the end, after processing partial results.
+ 
+ 	// Apply detectors to all attempts and stream results
++	warnings := make([]harnesses.CoverageWarning, 0)
++	processedAttempts := 0
+ 	for _, a := range results.Attempts {
+ 		// Check context cancellation between attempts
+ 		if err := evalCtx.Err(); err != nil {
+@@ -192,25 +196,54 @@ func (p *Probewise) Run(
+ 		activeDetectors := harnesses.SelectProbeDetectors(a, detectorList, p.probeDetectorOverrides, p.detectorsExplicit)
+ 
+ 		// Run detectors using shared logic (SkipOnError for partial results)
+-		if err := harnesses.ApplyDetectors(evalCtx, a, activeDetectors, harnesses.SkipOnError); err != nil {
++		detectorWarnings, err := harnesses.ApplyDetectorsWithWarnings(evalCtx, a, activeDetectors, harnesses.SkipOnError)
++		if err != nil {
+ 			return err
+ 		}
++		warnings = append(warnings, detectorWarnings...)
++		processedAttempts++
+ 
+ 		// Stream result immediately after detection
+ 		if p.onAttemptProcessed != nil {
+-			p.onAttemptProcessed(a)
++			if err := p.onAttemptProcessed(a); err != nil {
++				return fmt.Errorf("writing processed attempt: %w", err)
++			}
+ 		}
+ 	}
+ 
+ 	allAttempts := results.Attempts
++	for _, probeName := range results.FailedProbeNames {
++		warnings = append(warnings, harnesses.CoverageWarning{
++			Code:  "probe_failed",
++			Probe: probeName,
++		})
++	}
++	coverage := harnesses.RunCoverage{
++		ExpectedProbes:        results.Total,
++		StartedProbes:         results.Started,
++		CompletedProbes:       results.Completed,
++		SucceededProbes:       results.Succeeded,
++		FailedProbes:          results.Failed,
++		ExpectedAttempts:      p.expectedAttempts,
++		ExpectedAttemptsKnown: p.expectedAttemptsKnown,
++		ProducedAttempts:      len(results.Attempts),
++		ProcessedAttempts:     processedAttempts,
++		Warnings:              warnings,
++	}
+ 
+ 	// Call evaluator if provided (even with partial results). An
+ 	// errProbesErrored result is a verdict signal (some attempts never reached
+ 	// the model); capture it but do not return yet, so genuine probe-level
+ 	// failures still get reported below (LAB-4316).
+ 	var evalErr error
+-	if eval != nil && len(allAttempts) > 0 {
+-		if err := eval.Evaluate(evalCtx, allAttempts); err != nil {
++	if eval != nil {
++		var err error
++		if runEval, ok := eval.(harnesses.RunEvaluator); ok {
++			err = runEval.EvaluateRun(evalCtx, allAttempts, coverage)
++		} else if len(allAttempts) > 0 {
++			err = eval.Evaluate(evalCtx, allAttempts)
++		}
++		if err != nil {
+ 			evalErr = fmt.Errorf("evaluation failed: %w", err)
+ 		}
+ 	}
+@@ -236,7 +269,7 @@ func init() {
+ 			slog.Warn("probewise: key has unexpected type, ignoring", "key", "scanner_opts", "type", fmt.Sprintf("%T", cfg["scanner_opts"]))
+ 		}
+ 		// Extract streaming callback if provided
+-		if cb, ok := cfg["on_attempt_processed"].(func(*attempt.Attempt)); ok {
++		if cb, ok := cfg["on_attempt_processed"].(func(*attempt.Attempt) error); ok {
+ 			p.onAttemptProcessed = cb
+ 		} else if _, exists := cfg["on_attempt_processed"]; exists {
+ 			slog.Warn("probewise: key has unexpected type, ignoring", "key", "on_attempt_processed", "type", fmt.Sprintf("%T", cfg["on_attempt_processed"]))
+@@ -251,6 +284,12 @@ func init() {
+ 		if explicit, ok := cfg["detectors_explicit"].(bool); ok {
+ 			p.detectorsExplicit = explicit
+ 		}
++		if expected, ok := cfg["expected_attempts"].(int); ok {
++			p.expectedAttempts = expected
++		}
++		if known, ok := cfg["expected_attempts_known"].(bool); ok {
++			p.expectedAttemptsKnown = known
++		}
+ 		return p, nil
+ 	})
+ }
+diff --git a/pkg/harnesses/coverage.go b/pkg/harnesses/coverage.go
+new file mode 100644
+index 0000000..ce135e7
+--- /dev/null
++++ b/pkg/harnesses/coverage.go
+@@ -0,0 +1,40 @@
++package harnesses
++
++import (
++	"context"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++)
++
++// CoverageWarning is a bounded, machine-readable record of work that could
++// not be evaluated. It deliberately omits the underlying error text because
++// detector and target errors may contain model output or credentials.
++type CoverageWarning struct {
++	Code      string `json:"code"`
++	Probe     string `json:"probe,omitempty"`
++	AttemptID string `json:"attempt_id,omitempty"`
++	Detector  string `json:"detector,omitempty"`
++}
++
++// RunCoverage records the work ledger produced by a harness. ExpectedAttempts
++// is trustworthy only when ExpectedAttemptsKnown is true.
++type RunCoverage struct {
++	ExpectedProbes        int
++	StartedProbes         int
++	CompletedProbes       int
++	SucceededProbes       int
++	FailedProbes          int
++	ExpectedAttempts      int
++	ExpectedAttemptsKnown bool
++	ProducedAttempts      int
++	ProcessedAttempts     int
++	Warnings              []CoverageWarning
++}
++
++// RunEvaluator receives the attempt list together with the harness's coverage
++// ledger. Human evaluators retain the smaller Evaluator interface; machine
++// consumers opt into this interface so they never infer completeness from the
++// presence or absence of attempt rows.
++type RunEvaluator interface {
++	EvaluateRun(ctx context.Context, attempts []*attempt.Attempt, coverage RunCoverage) error
++}
+diff --git a/pkg/harnesses/detection.go b/pkg/harnesses/detection.go
+index 18dc750..0396266 100644
+--- a/pkg/harnesses/detection.go
++++ b/pkg/harnesses/detection.go
+@@ -98,11 +98,26 @@ func ApplyDetectors(
+ 	detectorList []detectors.Detector,
+ 	onError DetectorErrorBehavior,
+ ) error {
++	_, err := ApplyDetectorsWithWarnings(ctx, a, detectorList, onError)
++	return err
++}
++
++// ApplyDetectorsWithWarnings preserves ApplyDetectors' scoring behavior while
++// returning a bounded ledger for detectors skipped under SkipOnError. Machine
++// output uses that ledger to clear run completeness instead of treating a
++// logged detector failure as a clean result.
++func ApplyDetectorsWithWarnings(
++	ctx context.Context,
++	a *attempt.Attempt,
++	detectorList []detectors.Detector,
++	onError DetectorErrorBehavior,
++) ([]CoverageWarning, error) {
+ 	maxScore := 0.0
+ 	primaryDetector := ""
+ 	var primaryScores []float64
+ 	firstDetector := ""
+ 	var firstScores []float64
++	warnings := make([]CoverageWarning, 0)
+ 
+ 	for _, detector := range detectorList {
+ 		slog.Debug("running detector", "detector", detector.Name(), "probe", a.Probe)
+@@ -135,10 +150,16 @@ func ApplyDetectors(
+ 					"detector", detector.Name(),
+ 					"probe", a.Probe,
+ 					"error", err)
++				warnings = append(warnings, CoverageWarning{
++					Code:      "detector_failed",
++					Probe:     a.Probe,
++					AttemptID: a.ID,
++					Detector:  detector.Name(),
++				})
+ 				continue
+ 			}
+ 			// FailOnError: return immediately
+-			return fmt.Errorf("detector %s failed: %w", detector.Name(), err)
++			return warnings, fmt.Errorf("detector %s failed: %w", detector.Name(), err)
+ 		}
+ 
+ 		// Store detector results
+@@ -198,5 +219,5 @@ func ApplyDetectors(
+ 		a.Complete()
+ 	}
+ 
+-	return nil
++	return warnings, nil
+ }
+diff --git a/pkg/harnesses/detection_machine_test.go b/pkg/harnesses/detection_machine_test.go
+new file mode 100644
+index 0000000..65fd39f
+--- /dev/null
++++ b/pkg/harnesses/detection_machine_test.go
+@@ -0,0 +1,51 @@
++package harnesses
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++	"github.com/praetorian-inc/augustus/pkg/detectors"
++)
++
++type machineErrorDetector struct{}
++
++func (machineErrorDetector) Detect(context.Context, *attempt.Attempt) ([]float64, error) {
++	return nil, errors.New("synthetic detector failure")
++}
++
++func (machineErrorDetector) Name() string        { return "synthetic.FailsClosed" }
++func (machineErrorDetector) Description() string { return "synthetic detector failure" }
++
++func TestApplyDetectorsWithWarningsRecordsSkippedDetector(t *testing.T) {
++	a := attempt.New("synthetic prompt")
++	a.ID = "attempt-warning"
++	a.Probe = "synthetic.SingleTurn"
++	a.Detector = "synthetic.FailsClosed"
++
++	warnings, err := ApplyDetectorsWithWarnings(
++		context.Background(),
++		a,
++		[]detectors.Detector{machineErrorDetector{}},
++		SkipOnError,
++	)
++	if err != nil {
++		t.Fatalf("ApplyDetectorsWithWarnings() error = %v", err)
++	}
++	if len(warnings) != 1 {
++		t.Fatalf("warnings length = %d, want 1", len(warnings))
++	}
++	want := CoverageWarning{
++		Code:      "detector_failed",
++		Probe:     "synthetic.SingleTurn",
++		AttemptID: "attempt-warning",
++		Detector:  "synthetic.FailsClosed",
++	}
++	if warnings[0] != want {
++		t.Fatalf("warning = %#v, want %#v", warnings[0], want)
++	}
++	if a.Status != attempt.StatusComplete {
++		t.Fatalf("status = %q, want existing complete behavior", a.Status)
++	}
++}
+diff --git a/pkg/probes/simple.go b/pkg/probes/simple.go
+index 352c5b3..c79c75d 100644
+--- a/pkg/probes/simple.go
++++ b/pkg/probes/simple.go
+@@ -68,3 +68,9 @@ func (s *SimpleProbe) GetPrimaryDetector() string {
+ func (s *SimpleProbe) GetPrompts() []string {
+ 	return s.Prompts
+ }
++
++// ExpectedAttempts reports the exact number of attempts produced by this
++// static one-prompt-per-attempt probe when execution completes.
++func (s *SimpleProbe) ExpectedAttempts() int {
++	return len(s.Prompts)
++}
+diff --git a/pkg/results/machine.go b/pkg/results/machine.go
+new file mode 100644
+index 0000000..a40afc3
+--- /dev/null
++++ b/pkg/results/machine.go
+@@ -0,0 +1,179 @@
++package results
++
++import (
++	"encoding/json"
++	"fmt"
++	"io"
++	"sort"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++	"github.com/praetorian-inc/augustus/pkg/harnesses"
++)
++
++const MachineSchemaVersion = "1"
++
++// MachineTarget is trusted invocation metadata. It identifies the one model
++// endpoint selected by the caller; it is never inferred from model output.
++type MachineTarget struct {
++	Generator string `json:"generator"`
++	Endpoint  string `json:"endpoint"`
++	Model     string `json:"model,omitempty"`
++}
++
++// MachinePlanEntry records exactly which local detectors were selected for a
++// probe. ExpectedAttempts is the probe's declared prompt count.
++type MachinePlanEntry struct {
++	Probe            string   `json:"probe"`
++	Detectors        []string `json:"detectors"`
++	ExpectedAttempts *int     `json:"expected_attempts"`
++}
++
++// MachineMetadata is supplied by trusted orchestration rather than target
++// content.
++type MachineMetadata struct {
++	ScannerVersion string             `json:"scanner_version"`
++	SourceRevision string             `json:"source_revision"`
++	RunID          string             `json:"run_id"`
++	Target         MachineTarget      `json:"target"`
++	Plan           []MachinePlanEntry `json:"plan"`
++}
++
++// MachineCounts is the explicit run ledger. The adapter does not derive any of
++// these values by counting whatever rows happened to survive output.
++type MachineCounts struct {
++	ExpectedProbes    int `json:"expected_probes"`
++	StartedProbes     int `json:"started_probes"`
++	CompletedProbes   int `json:"completed_probes"`
++	SucceededProbes   int `json:"succeeded_probes"`
++	FailedProbes      int `json:"failed_probes"`
++	ExpectedAttempts  int `json:"expected_attempts"`
++	ProducedAttempts  int `json:"produced_attempts"`
++	ProcessedAttempts int `json:"processed_attempts"`
++	EmittedAttempts   int `json:"emitted_attempts"`
++	NotTestedAttempts int `json:"not_tested_attempts"`
++	ErroredAttempts   int `json:"errored_attempts"`
++}
++
++// MachineReport is one terminal JSON document. The encoder returns an error
++// instead of leaving a partial stream that could be mistaken for success.
++type MachineReport struct {
++	SchemaVersion  string                      `json:"schema_version"`
++	ScannerVersion string                      `json:"scanner_version"`
++	SourceRevision string                      `json:"source_revision"`
++	RunID          string                      `json:"run_id"`
++	Target         MachineTarget               `json:"target"`
++	Plan           []MachinePlanEntry          `json:"plan"`
++	Counts         MachineCounts               `json:"counts"`
++	Complete       bool                        `json:"complete"`
++	Warnings       []harnesses.CoverageWarning `json:"warnings"`
++	Attempts       []AttemptResult             `json:"attempts"`
++}
++
++// NewMachineReport constructs a fail-closed terminal report. Count,
++// provenance, detector, and attempt shortfalls become structured warnings and
++// clear Complete without changing any upstream attempt verdict or score.
++func NewMachineReport(
++	metadata MachineMetadata,
++	coverage harnesses.RunCoverage,
++	attempts []*attempt.Attempt,
++) MachineReport {
++	attemptResults := ToAttemptResults(attempts)
++	warnings := make([]harnesses.CoverageWarning, len(coverage.Warnings))
++	copy(warnings, coverage.Warnings)
++	planExpectedAttempts := 0
++	planComplete := len(metadata.Plan) > 0
++	for _, entry := range metadata.Plan {
++		if entry.Probe == "" || len(entry.Detectors) == 0 || entry.ExpectedAttempts == nil {
++			planComplete = false
++			continue
++		}
++		planExpectedAttempts += *entry.ExpectedAttempts
++	}
++
++	notTested := 0
++	errored := 0
++	for _, a := range attempts {
++		if NotTested(a) {
++			notTested++
++		}
++		if IsErrored(a.Status) {
++			errored++
++		}
++	}
++
++	if metadata.ScannerVersion == "" || metadata.ScannerVersion == "dev" ||
++		metadata.SourceRevision == "" || metadata.SourceRevision == "unknown" || metadata.RunID == "" ||
++		metadata.Target.Generator == "" || metadata.Target.Endpoint == "" {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "provenance_incomplete"})
++	}
++	if metadata.Target.Generator != "test.Repeat" && metadata.Target.Model == "" {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "target_model_missing"})
++	}
++	if !planComplete {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "plan_incomplete"})
++	}
++	if !coverage.ExpectedAttemptsKnown || !planComplete {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "expected_attempt_count_unavailable"})
++	}
++	if coverage.ExpectedProbes != len(metadata.Plan) ||
++		coverage.StartedProbes != coverage.ExpectedProbes ||
++		coverage.CompletedProbes != coverage.ExpectedProbes ||
++		coverage.SucceededProbes != coverage.ExpectedProbes ||
++		coverage.FailedProbes != 0 ||
++		(coverage.ExpectedAttemptsKnown && coverage.ProducedAttempts != coverage.ExpectedAttempts) ||
++		(planComplete && planExpectedAttempts != coverage.ExpectedAttempts) ||
++		coverage.ProcessedAttempts != coverage.ProducedAttempts ||
++		len(attempts) != coverage.ProducedAttempts {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "count_mismatch"})
++	}
++	if notTested > 0 {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "attempt_not_tested"})
++	}
++	if errored > 0 {
++		warnings = append(warnings, harnesses.CoverageWarning{Code: "attempt_errored"})
++	}
++
++	sort.SliceStable(warnings, func(i, j int) bool {
++		left := warnings[i].Code + "\x00" + warnings[i].Probe + "\x00" + warnings[i].AttemptID + "\x00" + warnings[i].Detector
++		right := warnings[j].Code + "\x00" + warnings[j].Probe + "\x00" + warnings[j].AttemptID + "\x00" + warnings[j].Detector
++		return left < right
++	})
++
++	counts := MachineCounts{
++		ExpectedProbes:    coverage.ExpectedProbes,
++		StartedProbes:     coverage.StartedProbes,
++		CompletedProbes:   coverage.CompletedProbes,
++		SucceededProbes:   coverage.SucceededProbes,
++		FailedProbes:      coverage.FailedProbes,
++		ExpectedAttempts:  coverage.ExpectedAttempts,
++		ProducedAttempts:  coverage.ProducedAttempts,
++		ProcessedAttempts: coverage.ProcessedAttempts,
++		EmittedAttempts:   len(attemptResults),
++		NotTestedAttempts: notTested,
++		ErroredAttempts:   errored,
++	}
++
++	return MachineReport{
++		SchemaVersion:  MachineSchemaVersion,
++		ScannerVersion: metadata.ScannerVersion,
++		SourceRevision: metadata.SourceRevision,
++		RunID:          metadata.RunID,
++		Target:         metadata.Target,
++		Plan:           metadata.Plan,
++		Counts:         counts,
++		Complete:       len(warnings) == 0,
++		Warnings:       warnings,
++		Attempts:       attemptResults,
++	}
++}
++
++// WriteMachineJSON writes one complete machine document. Callers must treat an
++// error as a failed run; no partial byte sequence is admissible evidence.
++func WriteMachineJSON(w io.Writer, report MachineReport) error {
++	encoder := json.NewEncoder(w)
++	encoder.SetIndent("", "  ")
++	if err := encoder.Encode(report); err != nil {
++		return fmt.Errorf("failed to encode machine report: %w", err)
++	}
++	return nil
++}
+diff --git a/pkg/results/machine_test.go b/pkg/results/machine_test.go
+new file mode 100644
+index 0000000..244f3e7
+--- /dev/null
++++ b/pkg/results/machine_test.go
+@@ -0,0 +1,24 @@
++package results
++
++import (
++	"errors"
++	"testing"
++)
++
++type machineFailingWriter struct{}
++
++var errSyntheticWriteFailure = errors.New("synthetic write failure")
++
++func (machineFailingWriter) Write([]byte) (int, error) {
++	return 0, errSyntheticWriteFailure
++}
++
++func TestWriteMachineJSONReturnsWriteFailure(t *testing.T) {
++	err := WriteMachineJSON(machineFailingWriter{}, MachineReport{SchemaVersion: MachineSchemaVersion})
++	if err == nil {
++		t.Fatal("WriteMachineJSON() error = nil, want synthetic write failure")
++	}
++	if !errors.Is(err, errSyntheticWriteFailure) {
++		t.Fatalf("WriteMachineJSON() error = %q", err)
++	}
++}
+diff --git a/pkg/results/stream.go b/pkg/results/stream.go
+index b694b2a..1271e5f 100644
+--- a/pkg/results/stream.go
++++ b/pkg/results/stream.go
+@@ -2,6 +2,7 @@ package results
+ 
+ import (
+ 	"encoding/json"
++	"errors"
+ 	"fmt"
+ 	"os"
+ 	"path/filepath"
+@@ -36,19 +37,22 @@ func NewStreamWriter(outputPath string) (*StreamWriter, error) {
+ 
+ // Append writes a single attempt result as a JSONL line.
+ // Safe for concurrent use.
+-func (sw *StreamWriter) Append(a *attempt.Attempt) {
++func (sw *StreamWriter) Append(a *attempt.Attempt) error {
+ 	sw.mu.Lock()
+ 	defer sw.mu.Unlock()
+ 
+ 	result := ToAttemptResult(a)
+ 	if err := sw.enc.Encode(result); err != nil {
+-		fmt.Fprintf(os.Stderr, "warning: failed to stream result: %v\n", err)
++		return fmt.Errorf("failed to stream result: %w", err)
+ 	}
++	return nil
+ }
+ 
+-// Close closes the underlying file.
++// Close flushes the completed stream to durable storage and closes the file.
+ func (sw *StreamWriter) Close() error {
+ 	sw.mu.Lock()
+ 	defer sw.mu.Unlock()
+-	return sw.file.Close()
++	syncErr := sw.file.Sync()
++	closeErr := sw.file.Close()
++	return errors.Join(syncErr, closeErr)
+ }
+diff --git a/pkg/scanner/machine_counts_test.go b/pkg/scanner/machine_counts_test.go
+new file mode 100644
+index 0000000..bd03258
+--- /dev/null
++++ b/pkg/scanner/machine_counts_test.go
+@@ -0,0 +1,51 @@
++package scanner
++
++import (
++	"context"
++	"errors"
++	"testing"
++
++	"github.com/praetorian-inc/augustus/pkg/attempt"
++)
++
++type machineCountGenerator struct{}
++
++func (machineCountGenerator) Generate(context.Context, *attempt.Conversation, int) ([]attempt.Message, error) {
++	return []attempt.Message{attempt.NewAssistantMessage("synthetic")}, nil
++}
++func (machineCountGenerator) ClearHistory()       {}
++func (machineCountGenerator) Name() string        { return "test.Repeat" }
++func (machineCountGenerator) Description() string { return "synthetic count generator" }
++
++type machineCountProbe struct {
++	name     string
++	attempts []*attempt.Attempt
++	err      error
++}
++
++func (p machineCountProbe) Probe(context.Context, Generator) ([]*attempt.Attempt, error) {
++	return p.attempts, p.err
++}
++func (p machineCountProbe) Name() string { return p.name }
++
++func TestRunRecordsMachineCoverageCounts(t *testing.T) {
++	engine := New(Options{Concurrency: 1})
++	result := engine.Run(
++		context.Background(),
++		[]Prober{
++			machineCountProbe{name: "synthetic.Success", attempts: []*attempt.Attempt{{ID: "one"}}},
++			machineCountProbe{name: "synthetic.Failure", err: errors.New("synthetic probe failure")},
++		},
++		machineCountGenerator{},
++	)
++
++	if result.Total != 2 || result.Started != 2 || result.Completed != 2 {
++		t.Fatalf("total/started/completed = %d/%d/%d, want 2/2/2", result.Total, result.Started, result.Completed)
++	}
++	if result.Succeeded != 1 || result.Failed != 1 {
++		t.Fatalf("succeeded/failed = %d/%d, want 1/1", result.Succeeded, result.Failed)
++	}
++	if len(result.FailedProbeNames) != 1 || result.FailedProbeNames[0] != "synthetic.Failure" {
++		t.Fatalf("failed probe names = %#v", result.FailedProbeNames)
++	}
++}
+diff --git a/pkg/scanner/scanner.go b/pkg/scanner/scanner.go
+index 50444e4..578261b 100644
+--- a/pkg/scanner/scanner.go
++++ b/pkg/scanner/scanner.go
+@@ -38,6 +38,12 @@ type Results struct {
+ 	// Total is the total number of probes executed.
+ 	Total int
+ 
++	// Started is the number of probes whose worker began execution.
++	Started int
++
++	// Completed is the number of probes that reached a terminal probe result.
++	Completed int
++
+ 	// Succeeded is the number of probes that completed successfully.
+ 	Succeeded int
+ 
+@@ -47,6 +53,10 @@ type Results struct {
+ 	// Errors contains any errors that occurred during execution.
+ 	Errors []error
+ 
++	// FailedProbeNames identifies failed probes without copying potentially
++	// sensitive error text into machine output.
++	FailedProbeNames []string
++
+ 	// Error is the overall error if scanner execution failed.
+ 	Error error
+ }
+@@ -128,6 +138,9 @@ func (s *Scanner) Run(ctx context.Context, probes []Prober, gen Generator) Resul
+ 
+ 		g.Go(func() error {
+ 			start := time.Now()
++			mu.Lock()
++			results.Started++
++			mu.Unlock()
+ 
+ 			// Apply per-probe timeout if configured
+ 			probeCtx := gctx
+@@ -174,8 +187,10 @@ func (s *Scanner) Run(ctx context.Context, probes []Prober, gen Generator) Resul
+ 				// If only probe context timed out, record as probe failure
+ 				mu.Lock()
+ 				completed++
++				results.Completed++
+ 				results.Failed++
+ 				results.Errors = append(results.Errors, timeoutErr)
++				results.FailedProbeNames = append(results.FailedProbeNames, probe.Name())
+ 				currentCompleted := completed
+ 				currentTotal := results.Total
+ 				mu.Unlock()
+@@ -194,9 +209,11 @@ func (s *Scanner) Run(ctx context.Context, probes []Prober, gen Generator) Resul
+ 			// Collect results (thread-safe)
+ 			mu.Lock()
+ 			completed++
++			results.Completed++
+ 			if err != nil {
+ 				results.Failed++
+ 				results.Errors = append(results.Errors, fmt.Errorf("probe %s failed: %w", probe.Name(), err))
++				results.FailedProbeNames = append(results.FailedProbeNames, probe.Name())
+ 			} else {
+ 				results.Succeeded++
+ 				results.Attempts = append(results.Attempts, attempts...)
+diff --git a/pkg/types/prober.go b/pkg/types/prober.go
+index bb7cbe7..8ec0752 100644
+--- a/pkg/types/prober.go
++++ b/pkg/types/prober.go
+@@ -31,6 +31,13 @@ type ProbeMetadata interface {
+ 	GetPrompts() []string
+ }
+ 
++// ExpectedAttemptCounter is an optional contract for probes whose exact
++// attempt count is known before execution. Machine output must not infer this
++// count merely from descriptive prompt metadata.
++type ExpectedAttemptCounter interface {
++	ExpectedAttempts() int
++}
++
+ // RiskInfo is a probe's curated security write-up for the vulnerability it
+ // detects: the vulnerability description and its impact, remediation guidance,
+ // newline-separated reference URLs, and a taxonomy-mapping block (e.g. CWE ids).
+-- 
+2.53.0
+

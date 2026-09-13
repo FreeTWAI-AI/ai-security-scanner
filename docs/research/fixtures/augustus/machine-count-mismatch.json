@@ -1,0 +1,60 @@
+{
+  "schema_version": "1",
+  "scanner_version": "v0.14.29",
+  "source_revision": "f032fc6373aaa9983868282b31dc9c59503c78a2",
+  "run_id": "machine-count-mismatch",
+  "target": {
+    "generator": "test.Repeat",
+    "endpoint": "local://test-repeat"
+  },
+  "plan": [
+    {
+      "probe": "synthetic.SingleTurn",
+      "detectors": [
+        "synthetic.Pass"
+      ],
+      "expected_attempts": 1
+    },
+    {
+      "probe": "synthetic.Missing",
+      "detectors": [
+        "synthetic.Pass"
+      ],
+      "expected_attempts": 1
+    }
+  ],
+  "counts": {
+    "expected_probes": 2,
+    "started_probes": 1,
+    "completed_probes": 1,
+    "succeeded_probes": 1,
+    "failed_probes": 0,
+    "expected_attempts": 2,
+    "produced_attempts": 1,
+    "processed_attempts": 1,
+    "emitted_attempts": 1,
+    "not_tested_attempts": 0,
+    "errored_attempts": 0
+  },
+  "complete": false,
+  "warnings": [
+    {
+      "code": "count_mismatch"
+    }
+  ],
+  "attempts": [
+    {
+      "probe": "synthetic.SingleTurn",
+      "prompt": "SYNTHETIC AUGUSTUS REPEAT INPUT",
+      "response": "SYNTHETIC AUGUSTUS REPEAT INPUT",
+      "detector": "synthetic.Pass",
+      "scores": [
+        0.1
+      ],
+      "passed": true,
+      "verdict": "safe",
+      "status": "complete",
+      "timestamp": "2026-09-13T12:00:00Z"
+    }
+  ]
+}

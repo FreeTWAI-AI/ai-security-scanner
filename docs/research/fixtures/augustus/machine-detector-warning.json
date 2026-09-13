@@ -1,0 +1,54 @@
+{
+  "schema_version": "1",
+  "scanner_version": "v0.14.29",
+  "source_revision": "f032fc6373aaa9983868282b31dc9c59503c78a2",
+  "run_id": "machine-detector-warning",
+  "target": {
+    "generator": "test.Repeat",
+    "endpoint": "local://test-repeat"
+  },
+  "plan": [
+    {
+      "probe": "synthetic.SingleTurn",
+      "detectors": [
+        "synthetic.FailsClosed"
+      ],
+      "expected_attempts": 1
+    }
+  ],
+  "counts": {
+    "expected_probes": 1,
+    "started_probes": 1,
+    "completed_probes": 1,
+    "succeeded_probes": 1,
+    "failed_probes": 0,
+    "expected_attempts": 1,
+    "produced_attempts": 1,
+    "processed_attempts": 1,
+    "emitted_attempts": 1,
+    "not_tested_attempts": 0,
+    "errored_attempts": 0
+  },
+  "complete": false,
+  "warnings": [
+    {
+      "code": "detector_failed",
+      "probe": "synthetic.SingleTurn",
+      "attempt_id": "attempt-warning",
+      "detector": "synthetic.FailsClosed"
+    }
+  ],
+  "attempts": [
+    {
+      "probe": "synthetic.SingleTurn",
+      "prompt": "SYNTHETIC AUGUSTUS REPEAT INPUT",
+      "response": "SYNTHETIC AUGUSTUS REPEAT INPUT",
+      "detector": "synthetic.FailsClosed",
+      "scores": [],
+      "passed": true,
+      "verdict": "safe",
+      "status": "complete",
+      "timestamp": "2026-09-13T12:00:00Z"
+    }
+  ]
+}

@@ -187,13 +187,51 @@ No control-framework mapping is approved by this decision. A mapping can be revi
 fixed probe profile exists, using upstream identifiers and evidence rather than names or target
 content.
 
+## Local machine-output patch evaluation
+
+On 2026-09-13, the narrow output patch was evaluated against the pinned source in the ignored
+research checkout. The exact
+[`augustus-0.14.29-machine-json.patch`](patches/augustus-0.14.29-machine-json.patch) has SHA-256
+`963f7654cc043d097bf714169dae7ac445e7cdf79a3178652f4efc43309a10e2`. It was generated from local
+research commit `4195d19e2223690ca565d8ca8469b74e1069fca0`, whose parent is the audited upstream
+commit.
+
+The patch stays within output and orchestration plumbing:
+
+- adds `machine-json` as a terminal schema-versioned document with trusted run, endpoint, generator,
+  model, version, source, and exact ordered probe/detector plan metadata;
+- records expected, started, completed, successful, failed, produced, processed, emitted,
+  not-tested, and errored counts instead of inferring coverage from surviving rows;
+- adds an explicit expected-attempt interface to static one-prompt-per-attempt probes, while an
+  unsupported probe makes the plan incomplete rather than guessing;
+- turns a detector skipped under the existing `SkipOnError` behavior into a bounded
+  `detector_failed` warning and `complete: false`, without changing the detector score or upstream
+  attempt verdict;
+- emits `count_mismatch`, provenance, plan, not-tested, and errored warnings fail-closed; and
+- propagates terminal JSON encoding failures plus incremental JSONL append, sync, and close failures
+  to the process boundary.
+
+The machine CLI path requires a trusted run ID and endpoint identity, explicit probe names, and the
+probewise harness. It rejects `--all`, globs, recon, buffs, runtime hooks, config files, inline
+configuration, secondary output files, and runtime detector tuning. This prevents the research path
+from becoming an alternate credential or target-expansion channel; the future product launcher
+still owns authorization and secure credential delivery.
+
+The three reviewed [`test.Repeat` fixtures](fixtures/augustus/README.md) cover a complete run, a
+detector warning, and a count mismatch. Six dependency-free focused Go test commands passed,
+including the real checked-in `test.Repeat` generator and a failing writer; the affected core
+packages also built offline. The full upstream suite could not run with `GOPROXY=off` because
+`testify` and `x/text` were absent from the local module cache. They were not downloaded or
+installed. This local evidence proves the machine contract's shape, but it is not release
+qualification or engine admission.
+
 ## Remaining blockers
 
 Augustus remains outside the catalog until all of these are independently resolved:
 
 1. an exact provider/model endpoint scope-grant path for active external testing;
 2. a product-owned ephemeral credential-delivery and cleanup path;
-3. the versioned fail-closed machine envelope and synthetic fixtures described above;
+3. upstream review plus a dependency-complete gate for the pinned machine-output patch;
 4. a source-audited, single-turn, single-destination probe/detector profile with explicit cost and
    resource bounds; and
 5. a separately authorized packaging decision by the product owner.
@@ -204,6 +242,8 @@ does not authorize the fifth.
 ## Research actions performed
 
 The exact upstream revision was shallow-cloned into the ignored `.upstreams/` research area and
-reviewed as source. No Augustus source code was executed, no dependency was installed, no target or
-provider API was contacted, and no credential or model weight was accessed. No image was built or
-published, and no repository branch was pushed.
+reviewed as source. The patched output components and checked-in `test.Repeat` generator were run
+locally against inert synthetic data with network-backed module lookup disabled. No Augustus probe,
+hosted-provider generator, target, or provider API was contacted; no dependency was installed, and
+no credential or model weight was accessed. No image was built or published, and no repository
+branch was pushed.
