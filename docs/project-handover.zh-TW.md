@@ -560,12 +560,12 @@ Windows managed runtime 使用 WSL 2 內的 rootless Podman machine；Linux 使�
 
 ### 12.4 文件漂移
 
-目前需注意兩個已知文件差異：
+本節原先列出的兩處差異都已在 `8b25186`（晚於本文基線）修掉，於 2026-09-12 對照確認：
 
-1. `docs/architecture.md` 的 repository-boundary tree 使用多個 `crates/*` 邏輯模組名稱，但實體 workspace 目前只有 `src-tauri`。
-2. `docs/architecture.md` orchestration 段落仍有 report 在第一個 durable result 後開啟並持續更新的舊敘述；目前產品規格要求 active work 留在 Progress、Results/Export 僅使用 terminal run。
+1. ~~`docs/architecture.md` 的 repository-boundary tree 使用多個 `crates/*` 邏輯模組名稱~~：該節現在明講 Rust 端只有 `src-tauri` 一個 workspace member，並改為列出每個邊界的**負責模組**；文中所有 backtick 路徑均實際存在。
+2. ~~`docs/architecture.md` orchestration 段落仍有 report 在第一個 durable result 後開啟並持續更新的舊敘述~~：§10 現在寫的是「active work 留在 Progress；報告由 terminal run 產生，檢查進行中不會開啟或更新」，全文已無 live／interim report 敘述。
 
-接手者修改相關區域時應直接校正原文件，不要再新增一份相反說明。
+接手者修改相關區域時應直接校正原文件，不要再新增一份相反說明；發現新的漂移就接在這裡，並註明查證日期與 commit。
 
 ## 13. 踩過的坑與可重用教訓
 

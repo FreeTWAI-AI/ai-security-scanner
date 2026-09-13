@@ -116,7 +116,20 @@ bootstrap/                   read-only provider bootstrap templates
 | managed, Docker, and Podman providers | `src-tauri/src/runtime.rs`, `container_runtime.rs`, `managed_runtime.rs` |
 | adapter protocol and built-in adapters | `src-tauri/src/adapter.rs`, `adapters/` |
 | canonical model and exporters | `src-tauri/src/beginner_report.rs`, `finding_narrative.rs`, `prioritization.rs`, `correlation.rs`, `exporters/` |
+| readable HTML/print rendering and its bilingual copy | `src-tauri/src/case_service.rs` |
 | package, redaction, hash, and verification | `src-tauri/src/export.rs`, `export_identity.rs` |
+
+Two things are deliberately written twice, because the app renders a page and
+the shared report is produced as a file. TypeScript composes a finding's
+sentences for the findings pane and Rust composes the same sentences for the
+report; the report's closed vocabularies are a Rust enum on one side and a
+TypeScript union on the other. Neither side's own tests can see the other
+drifting, so each pair has a test that reads both files:
+`tests/frontend/findingNarrativeParity.test.ts` for
+`src/findingNarrative.ts` against `src-tauri/src/finding_narrative.rs`, and
+`tests/frontend/reportEnumParity.test.ts` for `src/types.ts` against the Rust
+report types. Adding a variant or a sentence on one side without the other is
+the failure those guard against.
 
 Third-party source checkouts used for research are not runtime imports and must not be compiled into the application merely because they exist in the workspace.
 
