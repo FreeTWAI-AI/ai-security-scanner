@@ -36,6 +36,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/releasing.zh-TW.md",
   "docs/release/README.md",
   "docs/release/engine-image-supply-chain.md",
+  "docs/research/agentic-radar-evaluation.md",
   "docs/research/vibescan-evaluation.md",
   "docs/threat-model.md",
   "docs/usability/iam-naive-first-run.md",
