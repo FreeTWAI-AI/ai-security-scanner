@@ -106,6 +106,71 @@ count, retry, token/output, per-probe, and whole-run limits; upstream defaults t
 no overall or per-probe timeout
 ([defaults](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/pkg/scanner/options.go#L31-L39)).
 
+## Source-audited first profile
+
+The first profile is now frozen as the research-only
+[`augustus-openai-promptinject-v1`](augustus-single-destination-profile.json) contract, SHA-256
+`2dacb19545726fa0a18b8fa412633dca5df6cf2289c6a5db6ea95bec08a9a798`. It remains blocked from
+dispatch. The allowlist contains exactly one native generator, one probe, and one detector:
+
+- generator `openai.OpenAI`, bound at dispatch to the exact model in the scope grant and only the
+  fixed `https://api.openai.com:443/v1` API base;
+- probe `promptinject.HijackLongPrompt`; and
+- detector `promptinject.AttackRogueString`, with its upstream default case-insensitive match.
+
+`HijackLongPrompt` uses the non-full variant and an inert 116-byte sentinel rather than the sibling
+hate or kill strings
+([registration](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/internal/probes/promptinject/hijack.go#L23-L48)).
+Its source combines three ordinary questions with five static injection forms and stops the
+non-full variant at exactly 15 prompts
+([prompt construction](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/internal/probes/promptinject/hijack.go#L81-L128)).
+Each prompt creates a new conversation and calls the target generator once with `n = 1`; it supplies
+no tools and retains the sentinel as attempt metadata
+([execution](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/internal/probes/promptinject/hijack.go#L130-L159)).
+The detector performs only a local case-insensitive substring comparison against that metadata and
+returns upstream scores of `1.0` for a match and `0.0` otherwise
+([detector registration](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/internal/detectors/promptinject/promptinject.go#L13-L35),
+[matching](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/internal/detectors/base/trigger_match_detector.go#L56-L108)).
+It opens no file, process, model, or network connection. The only permitted network operation is the
+target generator call to the granted provider/model coordinate.
+
+The ordered prompt corpus is pinned by SHA-256
+`8c8c6136d30d94639587e20101d4716589c282ce4e8941d7766758de421c0278`, calculated over its compact
+UTF-8 JSON array in source order. It contains 3,212 prompt bytes total and no prompt exceeds 233
+bytes. All other generator, probe, and detector IDs are denied rather than treated as optional
+profile expansion.
+
+The same machine-readable contract fixes these ceilings:
+
+| Boundary | Ceiling |
+| --- | --- |
+| Target work | 15 provider requests; one turn, one generation, and no tools per attempt |
+| Token/cost work | 512 input tokens and 128 output tokens per request; 7,680 input, 1,920 output, and 9,600 total tokens per run |
+| Monetary preflight | USD 0.25 worst-case estimate; unknown model pricing or a higher estimate rejects dispatch |
+| Rate and retry | One request per second, one concurrent connection, zero scanner retries, and zero redirects |
+| Time | 20 seconds per request, 300 seconds for the probe and scanner, 330 seconds for the process including terminal output |
+| Process | 1,000 CPU millis, 512 MiB memory, 128 PIDs, and 16 MiB writable temporary storage |
+| I/O | 256 KiB per provider response; 1 MiB each for stdout and stderr |
+
+These are launcher and isolation requirements, not claims about current Augustus enforcement.
+Augustus exposes scanner/probe timeouts and concurrency, and its scanner can disable its own probe
+retry
+([scanner options](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/pkg/scanner/options.go#L9-L39),
+[execution](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/pkg/scanner/scanner.go#L87-L163)).
+The native generator accepts `max_tokens`, but also accepts a custom `base_url`
+([typed configuration](https://github.com/praetorian-inc/augustus/blob/f032fc6373aaa9983868282b31dc9c59503c78a2/internal/generators/openai/config.go#L9-L59));
+the future typed launcher must set the former and reject the latter. A product-owned outer deadline
+and exact-destination egress gate must enforce the request rate, redirect, body-size, and monetary
+ceilings that Augustus does not provide. Missing enforcement rejects dispatch.
+
+The audit also found one fail-closed integration gap. `HijackLongPrompt` is a custom prober rather
+than `SimpleProbe` and does not implement the retained machine patch's `ExpectedAttemptCounter`.
+The current patched output would therefore mark its expected-attempt plan unknown and
+`complete: false`. Before any integration test, a narrow upstream patch must report the existing
+15-prompt count without changing prompt or detector behavior, and a synthetic test must prove that
+the machine plan says exactly 15. This audit approves only the frozen profile and limits; it does
+not authorize or make the profile runnable.
+
 ## Why the current machine output is not admissible
 
 The documented JSONL record carries an upstream `probe`, `detector`, score array, four-way verdict,
@@ -232,8 +297,8 @@ Augustus remains outside the catalog until all of these are independently resolv
 1. an exact provider/model endpoint scope-grant path for active external testing;
 2. a product-owned ephemeral credential-delivery and cleanup path;
 3. upstream review plus a dependency-complete gate for the pinned machine-output patch;
-4. a source-audited, single-turn, single-destination probe/detector profile with explicit cost and
-   resource bounds; and
+4. a typed launcher and exact-destination egress gate that enforce the frozen profile, plus an
+   explicit 15-attempt contract and dependency-complete synthetic proof; and
 5. a separately authorized packaging decision by the product owner.
 
 Packaging is deliberately not started by this research decision. Clearing the first four blockers
@@ -246,4 +311,6 @@ reviewed as source. The patched output components and checked-in `test.Repeat` g
 locally against inert synthetic data with network-backed module lookup disabled. No Augustus probe,
 hosted-provider generator, target, or provider API was contacted; no dependency was installed, and
 no credential or model weight was accessed. No image was built or published, and no repository
-branch was pushed.
+branch was pushed. The later profile audit only read the pinned source and calculated deterministic
+prompt counts, byte lengths, and hashes; it did not execute Augustus code or open a network
+connection.

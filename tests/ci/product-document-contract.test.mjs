@@ -95,6 +95,8 @@ const AGENTIC_RADAR_RESEARCH_PATCH_SHA256 =
   "d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72";
 const AUGUSTUS_RESEARCH_PATCH_SHA256 =
   "963f7654cc043d097bf714169dae7ac445e7cdf79a3178652f4efc43309a10e2";
+const AUGUSTUS_RESEARCH_PROFILE_SHA256 =
+  "2dacb19545726fa0a18b8fa412633dca5df6cf2289c6a5db6ea95bec08a9a798";
 const AUGUSTUS_RESEARCH_FIXTURES = {
   "machine-complete.json": [
     true,
@@ -240,6 +242,8 @@ test("current product documents do not contain broken local Markdown links", asy
 test("Augustus research keeps hosted model testing fail closed", async () => {
   const decision = await load("docs/research/augustus-evaluation.md");
   const patchContent = await load("docs/research/patches/augustus-0.14.29-machine-json.patch");
+  const profileContent = await load("docs/research/augustus-single-destination-profile.json");
+  const profile = JSON.parse(profileContent);
 
   assert.match(decision, /f032fc6373aaa9983868282b31dc9c59503c78a2/u);
   assert.match(decision, /tagged `v0\.14\.29`/u);
@@ -250,6 +254,7 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(decision, /complete: false/u);
   assert.match(decision, /test\.Repeat/u);
   assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PATCH_SHA256, "u"));
+  assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PROFILE_SHA256, "u"));
   assert.match(decision, /4195d19e2223690ca565d8ca8469b74e1069fca0/u);
   assert.equal(
     createHash("sha256").update(patchContent).digest("hex"),
@@ -261,6 +266,97 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(patchContent, /test\.Repeat/u);
   assert.match(patchContent, /func \(sw \*StreamWriter\) Append\(a \*attempt\.Attempt\) error/u);
   assert.match(patchContent, /sw\.file\.Sync\(\)/u);
+  assert.equal(
+    createHash("sha256").update(profileContent).digest("hex"),
+    AUGUSTUS_RESEARCH_PROFILE_SHA256,
+  );
+  assert.equal(profile.schema_version, "1");
+  assert.equal(profile.profile_id, "augustus-openai-promptinject-v1");
+  assert.equal(profile.normative_status, "research_only_blocked");
+  assert.equal(profile.source_revision, "f032fc6373aaa9983868282b31dc9c59503c78a2");
+  assert.equal(profile.machine_patch_sha256, AUGUSTUS_RESEARCH_PATCH_SHA256);
+  assert.deepEqual(profile.destination, {
+    generator: "openai.OpenAI",
+    scheme: "https",
+    host: "api.openai.com",
+    port: 443,
+    api_base_path: "/v1",
+    model_binding: "exact_scope_grant",
+    custom_base_url_allowed: false,
+    redirects_allowed: false,
+    maximum_concurrent_connections: 1,
+  });
+  assert.deepEqual(
+    profile.allowlist.map(({ probe, detectors }) => ({ probe, detectors })),
+    [{
+      probe: "promptinject.HijackLongPrompt",
+      detectors: ["promptinject.AttackRogueString"],
+    }],
+  );
+  const allowed = profile.allowlist[0];
+  assert.deepEqual(allowed.detector_config, { case_sensitive: false });
+  assert.equal(allowed.expected_attempts, 15);
+  assert.equal(allowed.turns_per_attempt, 1);
+  assert.equal(allowed.generations_per_attempt, 1);
+  assert.equal(allowed.tools_allowed, false);
+  assert.deepEqual(allowed.prompt_corpus, {
+    canonicalization: "UTF-8 JSON array in source order with no insignificant whitespace",
+    sha256: "8c8c6136d30d94639587e20101d4716589c282ce4e8941d7766758de421c0278",
+    count: 15,
+    total_utf8_bytes: 3212,
+    maximum_prompt_utf8_bytes: 233,
+  });
+
+  const cost = profile.cost_limits;
+  assert.equal(cost.maximum_provider_requests, allowed.expected_attempts);
+  assert.equal(cost.maximum_total_input_tokens, cost.maximum_input_tokens_per_request * 15);
+  assert.equal(cost.maximum_total_output_tokens, cost.maximum_output_tokens_per_request * 15);
+  assert.equal(
+    cost.maximum_total_tokens,
+    cost.maximum_total_input_tokens + cost.maximum_total_output_tokens,
+  );
+  assert.equal(cost.maximum_estimated_charge_usd_micros, 250000);
+  assert.match(cost.pricing_requirement, /Refuse dispatch/u);
+
+  assert.deepEqual(profile.execution_limits, {
+    concurrency: 1,
+    maximum_requests_per_second: 1,
+    scanner_retry_count: 0,
+    request_timeout_seconds: 20,
+    probe_timeout_seconds: 300,
+    scanner_timeout_seconds: 300,
+    process_timeout_seconds: 330,
+    memory_mib: 512,
+    cpu_millis: 1000,
+    pids: 128,
+    writable_tmp_mib: 16,
+    maximum_response_body_bytes: 262144,
+    maximum_stdout_bytes: 1048576,
+    maximum_stderr_bytes: 1048576,
+  });
+  for (const denied of [
+    "all_other_generators",
+    "all_other_probes",
+    "all_other_detectors",
+    "custom_base_url",
+    "redirects",
+    "reconnaissance",
+    "buffs",
+    "runtime_hooks",
+    "tools",
+    "multi_turn",
+    "attacker_or_judge_models",
+    "detector_network_access",
+    "configuration_files",
+    "inline_configuration",
+    "wildcards",
+    "retries",
+  ]) {
+    assert.ok(profile.denied_capabilities.includes(denied), denied);
+  }
+  assert.ok(profile.dispatch_blockers.some((item) => /ExpectedAttemptCounter/u.test(item)));
+  assert.ok(profile.dispatch_blockers.some((item) => /scope-grant/u.test(item)));
+  assert.ok(profile.dispatch_blockers.some((item) => /credential-delivery/u.test(item)));
 
   const fixtures = new Map();
   for (const [name, [expectedComplete, expectedWarnings, expectedSha256]] of Object.entries(
