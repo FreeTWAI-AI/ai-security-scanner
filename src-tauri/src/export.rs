@@ -42,6 +42,14 @@ pub const SIGNING_IDENTITY_PATH: &str = "integrity/local-signing-identity.json";
 pub const INTEGRITY_ONLY_NOTICE: &str = "The Ed25519 signature establishes integrity of the signed manifest only. It does not prove scanner correctness, completeness, legal authorization, authorship, identity, audit status, or forensic validity.";
 pub const PRELIMINARY_EVIDENCE_NOTICE: &str = "This package contains preliminary scanner evidence, not an audit, certification, attestation, compliance determination, or forensic conclusion. Related control references are navigation coordinates only.";
 
+/// The title a Standard-redaction export writes in place of the case's own.
+///
+/// Named once because the report layer has to recognize it. The redaction is
+/// applied before a locale is chosen, so this one English title reaches both
+/// language reports, and an exact match is what tells the stand-in apart from
+/// a title a case really carries.
+pub const REDACTED_CASE_TITLE: &str = "Redacted assessment case";
+
 const IO_BUFFER_BYTES: usize = 64 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_RESERVED_DOCUMENT_BYTES: u64 = 16 * 1024 * 1024;
@@ -1104,7 +1112,7 @@ pub(crate) fn case_for_export(
     if redaction == RedactionProfile::Standard {
         let sensitive_replacements = standard_redaction_replacements(&exported);
         let iam_aliases = IamAliases::of(&exported);
-        exported.title = "Redacted assessment case".into();
+        exported.title = REDACTED_CASE_TITLE.into();
         exported.profile.organization_name = "[redacted]".into();
         exported.profile.notes = None;
         for (index, source) in exported.data_sources.iter_mut().enumerate() {
@@ -1328,7 +1336,7 @@ fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &Asses
             )
         })
         .collect::<BTreeMap<_, _>>();
-    report.project_title = "Redacted assessment case".into();
+    report.project_title = REDACTED_CASE_TITLE.into();
     redact_known_literals(&mut report.state.explanation, &replacements);
 
     for target in &mut report.requested.targets {
@@ -1863,7 +1871,7 @@ fn redact_scanner_finding_details(
 
 fn standard_redaction_replacements(case: &AssessmentCase) -> Vec<(String, String)> {
     let mut replacements = Vec::new();
-    add_redaction_replacement(&mut replacements, &case.title, "Redacted assessment case");
+    add_redaction_replacement(&mut replacements, &case.title, REDACTED_CASE_TITLE);
     add_redaction_replacement(
         &mut replacements,
         &case.profile.organization_name,

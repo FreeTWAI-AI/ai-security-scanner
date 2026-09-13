@@ -3237,6 +3237,53 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 }
             }
 
+            // The stand-in title the redaction writes when the case's own is
+            // withheld. It is printed where a document says what it is -- the
+            // tab, the cover, and the running head every page after the first
+            // repeats -- so on the Chinese redacted report it was the most
+            // repeated English on the paper.
+            for (locale_html, present, absent) in [
+                (
+                    &redacted_english,
+                    "Redacted assessment case",
+                    "\u{5df2}\u{906e}\u{853d}\u{7684}\u{8a55}\u{4f30}\u{6848}\u{4ef6}",
+                ),
+                (
+                    &redacted_chinese,
+                    "\u{5df2}\u{906e}\u{853d}\u{7684}\u{8a55}\u{4f30}\u{6848}\u{4ef6}",
+                    "Redacted assessment case",
+                ),
+            ] {
+                assert_eq!(
+                    locale_html.matches(present).count(),
+                    3,
+                    "the redacted title lost one of its three places"
+                );
+                assert_eq!(
+                    locale_html.matches(absent).count(),
+                    0,
+                    "the redacted title was printed in the other language"
+                );
+            }
+            // A title the case really carries is the user's own words, and a
+            // rule that reaches it would rewrite a name rather than a marker.
+            for html in [&ordered_html, &zh_html] {
+                assert_eq!(
+                    html.matches("All 21 engines, one report (InternalItEnvironment)")
+                        .count(),
+                    3,
+                    "the case's own title stopped reaching the tab, cover and running head"
+                );
+                assert_eq!(
+                    html.matches(
+                        "\u{5df2}\u{906e}\u{853d}\u{7684}\u{8a55}\u{4f30}\u{6848}\u{4ef6}"
+                    )
+                    .count(),
+                    0,
+                    "an unredacted case was titled as redacted"
+                );
+            }
+
             if let Some(dump) = std::env::var_os("AI_SCANNER_REPORT_DUMP_DIR").map(PathBuf::from) {
                 fs::create_dir_all(&dump).unwrap();
                 for (name, format, locale, redaction) in [

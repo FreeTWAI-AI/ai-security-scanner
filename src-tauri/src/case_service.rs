@@ -14472,7 +14472,7 @@ fn html_page_rule(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> 
             "@top-left{{content:{};font:8pt/1.3 sans-serif;font-weight:600;",
             "color:#344054;letter-spacing:.01em;{}}}"
         ),
-        css_string_literal(&running_head_title(&report.project_title)),
+        css_string_literal(&running_head_title(html_case_title(report, catalog))),
         head_rule,
     ));
     rule.push_str(&format!("@top-center{{content:\"\\00a0\";{head_rule}}}"));
@@ -14532,6 +14532,28 @@ fn html_page_rule(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> 
         "@top-right{content:\"\";border:0}}"
     ));
     rule
+}
+
+/// The case title as this locale should print it.
+///
+/// A case title is the user's own words and goes to the page untouched. A
+/// Standard-redacted export has none to print, so the redaction writes one of
+/// its own -- and it writes it before a locale is chosen, which left the
+/// English stand-in on the three places a document says what it is: the tab,
+/// the cover, and the running head of every page after the first. On a
+/// twenty-three page Chinese redacted report that was the most repeated
+/// English on the paper.
+///
+/// Unlike the bracket markers beside it this stand-in names nothing that has
+/// to join across exports. There is one case, so there is nothing to tell it
+/// apart from, and no number to keep.
+fn html_case_title(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> &str {
+    match report.project_title.as_str() {
+        crate::export::REDACTED_CASE_TITLE => {
+            catalog.text(crate::export::REDACTED_CASE_TITLE, "已遮蔽的評估案件")
+        }
+        title => title,
+    }
 }
 
 /// The project title, clamped to what a running head can hold.
@@ -18077,7 +18099,7 @@ fn html_report_bytes(
             "<title>{} — ai-security-scanner</title>"
         ),
         catalog.html_lang(),
-        html_escape(&report.project_title),
+        html_escape(html_case_title(&report, catalog)),
     );
     document.push_str(concat!(
         "<style>:root{--ink:#101828;--body:#344054;--muted:#667085;--line:#e4e7ec;",
@@ -18324,7 +18346,7 @@ fn html_report_bytes(
             "ai-security-scanner / local case export",
             "ai-security-scanner／本機案件匯出"
         ),
-        html_escape(&report.project_title),
+        html_escape(html_case_title(&report, catalog)),
         catalog.text("Selected run", "選定的掃描輪次"),
         html_escape(&report.run_id),
         catalog.text("Last saved", "最後保存"),
