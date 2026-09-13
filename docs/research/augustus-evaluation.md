@@ -163,6 +163,40 @@ the future typed launcher must set the former and reject the latter. A product-o
 and exact-destination egress gate must enforce the request rate, redirect, body-size, and monetary
 ceilings that Augustus does not provide. Missing enforcement rejects dispatch.
 
+## Frozen launcher and egress enforcement map
+
+The research-only
+[`augustus-launcher-egress-enforcement.json`](augustus-launcher-egress-enforcement.json) matrix,
+SHA-256 `cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df`, assigns every one of the
+profile's 50 leaf field paths to a concrete enforcement point and at least one rejection condition.
+The document contract compares those paths mechanically, so a future profile field cannot be added
+without an enforcement decision. The matrix is an implementation boundary, not an implementation:
+`dispatch_enabled` remains `false`, and no catalog, adapter, launcher, credential, or network path is
+created by it.
+
+The boundaries are deliberately split:
+
+| Enforcement boundary | Frozen responsibility |
+| --- | --- |
+| Profile admission | Verify the complete profile hash, schema, source revision, machine patch, prompt-corpus attestation, and empty blocker prerequisite before constructing a process or network plan. |
+| Typed launcher | Bind one exact model scope grant; construct only the fixed generator, probe, detector, options, deadlines, sandbox, and output capture; expose no free-form Augustus configuration. |
+| HTTP-aware egress gate | Independently constrain the frozen public destination, TLS/HTTP authority, `/v1` path, model, redirects, request rate/count, response bytes, and per-request output ceiling. |
+| Terminal verifier | Require the exact one-entry plan and reconcile all 15 expected attempts; any warning or count shortfall prevents a clean result. |
+
+The existing [managed SOCKS gateway](../../src-tauri/src/bin/egress_gateway.rs) is reusable for a
+frozen FQDN/IP set, port, connection concurrency, connection rate, and connection lifetime. It is
+not sufficient for this profile: a TCP connection is not a provider request, and the gateway cannot
+see the API path, request model, `max_tokens`, redirect response, decoded response-body size, token
+budget, or monetary budget. The existing provider-service admission path also has no AI
+model-endpoint source kind or exact-model scope grant. The matrix therefore rejects using those
+partial controls as proof that Augustus is dispatchable.
+
+Every identity, scope, provenance, configuration, prompt, tokenizer, price, and limit check that can
+be decided before contact must pass before an egress lease exists. A runtime limit violation must
+revoke target contact and prevent a clean result; a terminal plan or count mismatch remains
+incomplete. Credential delivery remains an unresolved independent blocker and is intentionally not
+designed here.
+
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
 retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed

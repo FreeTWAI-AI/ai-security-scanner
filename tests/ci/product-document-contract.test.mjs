@@ -97,6 +97,8 @@ const AUGUSTUS_RESEARCH_PATCH_SHA256 =
   "4f6c1e0d16014ac2a638ec50ebbab053b7a3c6a7320911fbff14b8541f45b59a";
 const AUGUSTUS_RESEARCH_PROFILE_SHA256 =
   "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4";
+const AUGUSTUS_RESEARCH_ENFORCEMENT_SHA256 =
+  "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df";
 const AUGUSTUS_RESEARCH_FIXTURES = {
   "machine-complete.json": [
     true,
@@ -243,7 +245,11 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   const decision = await load("docs/research/augustus-evaluation.md");
   const patchContent = await load("docs/research/patches/augustus-0.14.29-machine-json.patch");
   const profileContent = await load("docs/research/augustus-single-destination-profile.json");
+  const enforcementContent = await load(
+    "docs/research/augustus-launcher-egress-enforcement.json",
+  );
   const profile = JSON.parse(profileContent);
+  const enforcement = JSON.parse(enforcementContent);
 
   assert.match(decision, /f032fc6373aaa9983868282b31dc9c59503c78a2/u);
   assert.match(decision, /tagged `v0\.14\.29`/u);
@@ -255,6 +261,7 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(decision, /test\.Repeat/u);
   assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PATCH_SHA256, "u"));
   assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PROFILE_SHA256, "u"));
+  assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_ENFORCEMENT_SHA256, "u"));
   assert.match(decision, /13c96bc6a36f880e7f016e02da63eadd64b73674/u);
   assert.equal(
     createHash("sha256").update(patchContent).digest("hex"),
@@ -278,6 +285,66 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.equal(profile.normative_status, "research_only_blocked");
   assert.equal(profile.source_revision, "f032fc6373aaa9983868282b31dc9c59503c78a2");
   assert.equal(profile.machine_patch_sha256, AUGUSTUS_RESEARCH_PATCH_SHA256);
+  assert.equal(
+    createHash("sha256").update(enforcementContent).digest("hex"),
+    AUGUSTUS_RESEARCH_ENFORCEMENT_SHA256,
+  );
+  assert.equal(enforcement.schema_version, "1");
+  assert.equal(enforcement.normative_status, "research_only_blocked");
+  assert.equal(enforcement.profile_id, profile.profile_id);
+  assert.equal(enforcement.profile_sha256, AUGUSTUS_RESEARCH_PROFILE_SHA256);
+  assert.equal(enforcement.dispatch_enabled, false);
+
+  const leafPaths = (value, prefix = "") => {
+    if (Array.isArray(value)) {
+      if (value.length === 0 || value.every((item) => item === null || typeof item !== "object")) {
+        return [`${prefix}[]`];
+      }
+      return [...new Set(value.flatMap((item) => leafPaths(item, `${prefix}[]`)))];
+    }
+    if (value !== null && typeof value === "object") {
+      return Object.entries(value).flatMap(([key, item]) =>
+        leafPaths(item, prefix ? `${prefix}.${key}` : key));
+    }
+    return [prefix];
+  };
+  const mappedPaths = enforcement.rules.flatMap(({ profile_fields: fields }) => fields);
+  assert.equal(new Set(mappedPaths).size, mappedPaths.length, "each profile field has one owner");
+  assert.deepEqual(mappedPaths.toSorted(), leafPaths(profile).toSorted());
+  assert.equal(mappedPaths.length, 50);
+  assert.deepEqual(
+    enforcement.rules.map(({ rule_id: ruleId }) => ruleId),
+    [
+      "profile_identity_and_provenance",
+      "exact_destination_and_model_binding",
+      "base_url_and_redirect_denial",
+      "single_connection_execution",
+      "probe_detector_allowlist",
+      "attempt_shape",
+      "prompt_corpus_attestation",
+      "token_request_and_cost_budget",
+      "request_rate_retry_and_timeout",
+      "probe_scanner_and_process_deadlines",
+      "process_resource_sandbox",
+      "response_and_process_output_bounds",
+      "denied_capabilities",
+      "unresolved_dispatch_blockers",
+    ],
+  );
+  for (const rule of enforcement.rules) {
+    assert.ok(rule.profile_fields.length > 0, rule.rule_id);
+    assert.ok(rule.required_action.length > 0, rule.rule_id);
+    assert.ok(rule.reject_conditions.length > 0, rule.rule_id);
+    assert.ok(
+      rule.enforcement_points.every((point) => /^(?:typed_launcher|egress_gate)\./u.test(point)),
+      rule.rule_id,
+    );
+  }
+  assert.match(enforcement.current_gateway_assessment.decision, /Dispatch remains disabled/u);
+  assert.match(
+    enforcement.current_gateway_assessment.insufficient_controls.join(" "),
+    /TCP connection.*HTTP provider request.*redirect.*token budget.*monetary ceiling/su,
+  );
   assert.deepEqual(profile.destination, {
     generator: "openai.OpenAI",
     scheme: "https",

@@ -1,0 +1,275 @@
+{
+  "schema_version": "1",
+  "normative_status": "research_only_blocked",
+  "profile_id": "augustus-openai-promptinject-v1",
+  "profile_sha256": "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4",
+  "dispatch_enabled": false,
+  "rules": [
+    {
+      "rule_id": "profile_identity_and_provenance",
+      "profile_fields": [
+        "schema_version",
+        "profile_id",
+        "normative_status",
+        "source_revision",
+        "machine_patch_sha256"
+      ],
+      "enforcement_points": [
+        "typed_launcher.profile_admission"
+      ],
+      "required_action": "Load one embedded, schema-checked profile; bind it to the exact audited Augustus source and machine patch before constructing any process or network plan.",
+      "reject_conditions": [
+        "The profile is missing, has unknown fields, has a different profile or schema identifier, or its content hash differs from profile_sha256.",
+        "The admitted Augustus source revision or retained machine patch digest differs from the frozen values.",
+        "normative_status remains research_only_blocked; this matrix therefore rejects every dispatch until a separately reviewed profile changes that state."
+      ]
+    },
+    {
+      "rule_id": "exact_destination_and_model_binding",
+      "profile_fields": [
+        "destination.generator",
+        "destination.scheme",
+        "destination.host",
+        "destination.port",
+        "destination.api_base_path",
+        "destination.model_binding"
+      ],
+      "enforcement_points": [
+        "typed_launcher.scope_binding",
+        "typed_launcher.generator_construction",
+        "egress_gate.destination_policy",
+        "egress_gate.http_request_policy"
+      ],
+      "required_action": "Resolve the exact model from an unexpired endpoint scope grant, construct only openai.OpenAI for https://api.openai.com:443/v1, freeze a bounded public DNS answer, and independently confine TLS plus HTTP requests to that authority, path prefix, and model.",
+      "reject_conditions": [
+        "No exact, unexpired active-testing grant binds this run to one model at the frozen provider endpoint.",
+        "The generator, scheme, canonical host, port, API base path, or request model differs from the frozen profile.",
+        "DNS is empty or unbounded, resolves to a sensitive, metadata, loopback, link-local, private, or scanner-network address, or changes outside the frozen address set.",
+        "The gate cannot verify the TLS server name, HTTP authority, API path, and request model independently of scanner-supplied metadata."
+      ]
+    },
+    {
+      "rule_id": "base_url_and_redirect_denial",
+      "profile_fields": [
+        "destination.custom_base_url_allowed",
+        "destination.redirects_allowed"
+      ],
+      "enforcement_points": [
+        "typed_launcher.generator_construction",
+        "egress_gate.http_response_policy"
+      ],
+      "required_action": "Leave the upstream custom base URL unset and disable redirect following; treat every redirect response as a terminal transport shortfall rather than following its Location.",
+      "reject_conditions": [
+        "Any typed input, argv, configuration, environment value, or upstream default can set or replace the API base URL.",
+        "The HTTP client follows a redirect, or the gate cannot observe and reject every redirect before another request is sent."
+      ]
+    },
+    {
+      "rule_id": "single_connection_execution",
+      "profile_fields": [
+        "destination.maximum_concurrent_connections",
+        "execution_limits.concurrency"
+      ],
+      "enforcement_points": [
+        "typed_launcher.scanner_options",
+        "egress_gate.connection_policy"
+      ],
+      "required_action": "Set scanner concurrency to one and independently cap the destination to one live connection so neither probe scheduling nor transport reuse can create parallel target work.",
+      "reject_conditions": [
+        "The launcher cannot set and verify scanner concurrency as exactly one.",
+        "The egress policy permits more than one simultaneous connection, or its policy is shared with another run or destination."
+      ]
+    },
+    {
+      "rule_id": "probe_detector_allowlist",
+      "profile_fields": [
+        "allowlist[].probe",
+        "allowlist[].detectors[]",
+        "allowlist[].detector_config.case_sensitive"
+      ],
+      "enforcement_points": [
+        "typed_launcher.argument_builder",
+        "typed_launcher.plan_verifier"
+      ],
+      "required_action": "Select exactly promptinject.HijackLongPrompt and promptinject.AttackRogueString, preserve the pinned detector's case-insensitive default, and compare the ordered machine plan to this one-entry allowlist.",
+      "reject_conditions": [
+        "A probe or detector is missing, additional, duplicated, reordered, selected by wildcard, or resolved under a different identifier.",
+        "Runtime detector tuning is present or the pinned detector default is no longer case-insensitive.",
+        "The machine plan is absent, unknown, or differs from the exact allowlist before target contact."
+      ]
+    },
+    {
+      "rule_id": "attempt_shape",
+      "profile_fields": [
+        "allowlist[].expected_attempts",
+        "allowlist[].turns_per_attempt",
+        "allowlist[].generations_per_attempt",
+        "allowlist[].tools_allowed"
+      ],
+      "enforcement_points": [
+        "typed_launcher.plan_verifier",
+        "typed_launcher.terminal_verifier"
+      ],
+      "required_action": "Require an exact 15-attempt machine plan with one turn, one generation, and no tools per attempt; reconcile started, completed, processed, and emitted counts against that plan.",
+      "reject_conditions": [
+        "Expected-attempt metadata is absent, non-positive, or not exactly 15.",
+        "Any attempt requests multiple turns, multiple generations, a tool, or a secondary model.",
+        "Terminal counts do not account for all 15 attempts; retain genuine findings only as incomplete evidence and never produce a clean result."
+      ]
+    },
+    {
+      "rule_id": "prompt_corpus_attestation",
+      "profile_fields": [
+        "allowlist[].prompt_corpus.canonicalization",
+        "allowlist[].prompt_corpus.sha256",
+        "allowlist[].prompt_corpus.count",
+        "allowlist[].prompt_corpus.total_utf8_bytes",
+        "allowlist[].prompt_corpus.maximum_prompt_utf8_bytes"
+      ],
+      "enforcement_points": [
+        "typed_launcher.profile_admission"
+      ],
+      "required_action": "Recompute the compact UTF-8 JSON corpus attestation from the admitted pinned source in source order and require its digest, count, total bytes, and maximum prompt bytes to match the profile.",
+      "reject_conditions": [
+        "The canonicalization method is unsupported or any corpus digest, ordering, count, total-byte, or maximum-byte value differs.",
+        "The admitted artifact cannot prove that the executed prompt source is the attested source."
+      ]
+    },
+    {
+      "rule_id": "token_request_and_cost_budget",
+      "profile_fields": [
+        "cost_limits.maximum_provider_requests",
+        "cost_limits.maximum_input_tokens_per_request",
+        "cost_limits.maximum_total_input_tokens",
+        "cost_limits.maximum_output_tokens_per_request",
+        "cost_limits.maximum_total_output_tokens",
+        "cost_limits.maximum_total_tokens",
+        "cost_limits.maximum_estimated_charge_usd_micros",
+        "cost_limits.pricing_requirement"
+      ],
+      "enforcement_points": [
+        "typed_launcher.cost_preflight",
+        "typed_launcher.generator_construction",
+        "egress_gate.http_request_policy"
+      ],
+      "required_action": "Using a trusted current price and tokenizer for the exact granted model, prove every fixed prompt fits the per-request input ceiling, set max_tokens to 128, prove the arithmetic totals, and let an HTTP-aware gate hard-stop after 15 provider requests.",
+      "reject_conditions": [
+        "The exact model price or tokenizer is unknown, stale, untrusted, or incompatible with the provider request format.",
+        "Any prompt exceeds 512 input tokens, max_tokens is absent or above 128, or the derived 7,680 input, 1,920 output, or 9,600 total token ceiling does not hold.",
+        "The worst-case charge exceeds USD 0.25, arithmetic overflows, or the gate cannot count HTTP requests independently and stop before request 16.",
+        "A TCP connection count is offered as a substitute for provider-request accounting."
+      ]
+    },
+    {
+      "rule_id": "request_rate_retry_and_timeout",
+      "profile_fields": [
+        "execution_limits.maximum_requests_per_second",
+        "execution_limits.scanner_retry_count",
+        "execution_limits.request_timeout_seconds"
+      ],
+      "enforcement_points": [
+        "typed_launcher.scanner_options",
+        "egress_gate.http_request_policy"
+      ],
+      "required_action": "Set scanner retries to zero and enforce at most one provider request in every rolling second with a 20-second end-to-end request deadline at the HTTP request boundary.",
+      "reject_conditions": [
+        "Any scanner, SDK, transport, or intermediary retry remains enabled or cannot be bounded to zero.",
+        "The gate meters connections instead of HTTP requests, permits bursts above one request per second, or cannot abort a request at 20 seconds."
+      ]
+    },
+    {
+      "rule_id": "probe_scanner_and_process_deadlines",
+      "profile_fields": [
+        "execution_limits.probe_timeout_seconds",
+        "execution_limits.scanner_timeout_seconds",
+        "execution_limits.process_timeout_seconds"
+      ],
+      "enforcement_points": [
+        "typed_launcher.scanner_options",
+        "typed_launcher.process_supervisor"
+      ],
+      "required_action": "Set both upstream probe and scanner deadlines to 300 seconds and enforce a product-owned 330-second process deadline that terminates the isolated process and its network lease.",
+      "reject_conditions": [
+        "Either upstream timeout is unset, zero, greater than 300 seconds, or not observable in the constructed scanner options.",
+        "The product cannot terminate and reap the exact process plus revoke egress by 330 seconds."
+      ]
+    },
+    {
+      "rule_id": "process_resource_sandbox",
+      "profile_fields": [
+        "execution_limits.memory_mib",
+        "execution_limits.cpu_millis",
+        "execution_limits.pids",
+        "execution_limits.writable_tmp_mib"
+      ],
+      "enforcement_points": [
+        "typed_launcher.runtime_sandbox"
+      ],
+      "required_action": "Create a disposable isolated runtime with ceilings of 512 MiB memory, 1,000 CPU millis, 128 PIDs, and 16 MiB product-owned writable temporary storage; keep all other mounts read-only or absent.",
+      "reject_conditions": [
+        "Any ceiling is unavailable, relaxed, inherited from an untrusted input, or cannot be verified on the created runtime.",
+        "A broad host directory, runtime socket, credential-bearing mount, or additional writable path is present."
+      ]
+    },
+    {
+      "rule_id": "response_and_process_output_bounds",
+      "profile_fields": [
+        "execution_limits.maximum_response_body_bytes",
+        "execution_limits.maximum_stdout_bytes",
+        "execution_limits.maximum_stderr_bytes"
+      ],
+      "enforcement_points": [
+        "egress_gate.http_response_policy",
+        "typed_launcher.output_capture"
+      ],
+      "required_action": "Abort a provider response above 262,144 bytes and bound stdout and stderr independently to 1,048,576 bytes while reserving space for the terminal machine document.",
+      "reject_conditions": [
+        "The gate cannot count decoded response bytes before forwarding them to the scanner.",
+        "Either process stream exceeds its ceiling, capture is truncated without a terminal failure, or the terminal machine document cannot be durably and completely parsed."
+      ]
+    },
+    {
+      "rule_id": "denied_capabilities",
+      "profile_fields": [
+        "denied_capabilities[]"
+      ],
+      "enforcement_points": [
+        "typed_launcher.argument_builder",
+        "typed_launcher.environment_builder",
+        "typed_launcher.plan_verifier",
+        "egress_gate.destination_policy"
+      ],
+      "required_action": "Expose no free-form Augustus configuration and construct a closed invocation that denies every listed generator, probe, detector, base URL, redirect, recon, buff, hook, tool, multi-turn, secondary-model, detector-network, file/config, wildcard, and retry capability.",
+      "reject_conditions": [
+        "Any denied capability is requested, enabled by default, present in argv or environment, observed in the machine plan, or able to reach an additional destination.",
+        "Unknown argv, environment, configuration, registry, or upstream default state cannot be proven inert."
+      ]
+    },
+    {
+      "rule_id": "unresolved_dispatch_blockers",
+      "profile_fields": [
+        "dispatch_blockers[]"
+      ],
+      "enforcement_points": [
+        "typed_launcher.profile_admission"
+      ],
+      "required_action": "Treat the blocker array as a deny-only admission ledger; it cannot be cleared by argv, environment, a successful process exit, or a locally passing synthetic test.",
+      "reject_conditions": [
+        "One or more dispatch blockers remain; the current frozen profile contains five and is therefore not executable.",
+        "A caller attempts to suppress, ignore, or reinterpret a blocker without a separately reviewed profile change."
+      ]
+    }
+  ],
+  "current_gateway_assessment": {
+    "reusable_controls": [
+      "The managed SOCKS gateway can freeze a bounded FQDN and public IP set on port 443.",
+      "It can enforce connection concurrency, connection-rate, connection-time, policy-expiry, and scanner-network isolation limits."
+    ],
+    "insufficient_controls": [
+      "Its unit of accounting is a TCP connection, not an HTTP provider request.",
+      "It cannot enforce the /v1 path, request model, max_tokens, redirect denial, decoded response-body size, provider-request count, token budget, or monetary ceiling.",
+      "The existing provider-service admission path has no AI model-endpoint source kind or exact model scope grant."
+    ],
+    "decision": "Do not treat the current gateway as satisfying this matrix. Dispatch remains disabled until the typed launcher and the missing HTTP-aware egress controls are implemented and independently tested."
+  }
+}
