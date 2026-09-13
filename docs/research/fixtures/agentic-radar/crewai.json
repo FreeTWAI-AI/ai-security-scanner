@@ -3,25 +3,32 @@
   "scanner_version": "0.14.1",
   "framework": "crewai",
   "status": "workflow_found",
+  "complete": false,
+  "warnings": [
+    {
+      "code": "analyzer_diagnostic",
+      "message": "crewai_tools is not installed in the current environment."
+    },
+    {
+      "code": "analyzer_diagnostic",
+      "message": "crewai_tools is not installed in the current environment."
+    },
+    {
+      "code": "analyzer_diagnostic",
+      "message": "crewai_tools is not installed in the current environment."
+    },
+    {
+      "code": "analyzer_diagnostic",
+      "message": "Agent tools parameter is not a list: <ast.Name object>"
+    },
+    {
+      "code": "analyzer_diagnostic",
+      "message": "CrewAI package is not installed. Skipping agent metadata. Install the package to use this feature."
+    }
+  ],
   "graph": {
     "name": "mcp_1",
     "nodes": [
-      {
-        "node_type": "basic",
-        "name": "START",
-        "description": null,
-        "label": "START",
-        "category": null,
-        "vulnerabilities": []
-      },
-      {
-        "node_type": "agent",
-        "name": "my_agent",
-        "description": null,
-        "label": "my_agent",
-        "category": null,
-        "vulnerabilities": []
-      },
       {
         "node_type": "mcp_server",
         "name": "server_params",
@@ -37,14 +44,25 @@
         "label": "END",
         "category": null,
         "vulnerabilities": []
+      },
+      {
+        "node_type": "basic",
+        "name": "START",
+        "description": null,
+        "label": "START",
+        "category": null,
+        "vulnerabilities": []
+      },
+      {
+        "node_type": "agent",
+        "name": "my_agent",
+        "description": null,
+        "label": "my_agent",
+        "category": null,
+        "vulnerabilities": []
       }
     ],
     "edges": [
-      {
-        "start": "my_agent",
-        "end": "END",
-        "condition": null
-      },
       {
         "start": "my_agent",
         "end": "server_params",
@@ -53,6 +71,11 @@
       {
         "start": "START",
         "end": "my_agent",
+        "condition": null
+      },
+      {
+        "start": "my_agent",
+        "end": "END",
         "condition": null
       }
     ],

@@ -1,14 +1,14 @@
-From a622b9d62ea9fbab3c25f1ee7dd7ea59de8c1714 Mon Sep 17 00:00:00 2001
+From 1a3e4d81e3b122a69a529f1553a0b7239b64750d Mon Sep 17 00:00:00 2001
 From: Ted Huang <233386770+teddashh@users.noreply.github.com>
-Date: Sun, 13 Sep 2026 02:05:21 -0400
+Date: Sun, 13 Sep 2026 03:05:04 -0400
 Subject: [PATCH] feat: make graph JSON safe for machine consumers
 
 ---
  .../analysis/openai_agents/analyze.py         |   6 +-
- agentic_radar/cli.py                          |  46 +++-
- agentic_radar/graph.py                        |   8 +
- tests/graph_json_export_test.py               | 196 ++++++++++++++++++
- 4 files changed, 246 insertions(+), 10 deletions(-)
+ agentic_radar/cli.py                          |  69 ++++-
+ agentic_radar/graph.py                        |  15 ++
+ tests/graph_json_export_test.py               | 251 ++++++++++++++++++
+ 4 files changed, 330 insertions(+), 11 deletions(-)
  create mode 100644 tests/graph_json_export_test.py
 
 diff --git a/agentic_radar/analysis/openai_agents/analyze.py b/agentic_radar/analysis/openai_agents/analyze.py
@@ -37,29 +37,44 @@ index d41edd6..8edcffc 100644
          graph_definition = create_graph_definition(
              graph_name=Path(root_directory).name,
 diff --git a/agentic_radar/cli.py b/agentic_radar/cli.py
-index 823ef34..3925b59 100644
+index 823ef34..3eeceea 100644
 --- a/agentic_radar/cli.py
 +++ b/agentic_radar/cli.py
-@@ -4,7 +4,7 @@ import shlex
+@@ -1,10 +1,13 @@
+ import datetime
+ import os
++import re
+ import shlex
  import time
++from contextlib import redirect_stdout
  from enum import Enum
++from io import StringIO
  from pathlib import Path
 -from typing import Optional
 +from typing import Literal, Optional
  
  import typer
  from dotenv import load_dotenv
-@@ -20,7 +20,8 @@ from agentic_radar.analysis import (
+@@ -20,7 +23,8 @@ from agentic_radar.analysis import (
      N8nAnalyzer,
      OpenAIAgentsAnalyzer,
  )
 -from agentic_radar.graph import Agent
-+from agentic_radar.graph import Agent, GraphExport
++from agentic_radar.graph import Agent, GraphExport, GraphExportWarning
 +from agentic_radar.graph import GraphDefinition as AnalyzedGraphDefinition
  from agentic_radar.mapper import map_vulnerabilities
  from agentic_radar.prompt_hardening.harden import harden_agent_prompts
  from agentic_radar.prompt_hardening.pipeline import PromptHardeningPipeline
-@@ -116,7 +117,7 @@ def scan(
+@@ -38,6 +42,8 @@ load_dotenv()
+ 
+ app = typer.Typer()
+ 
++OBJECT_ADDRESS = re.compile(r" object at 0x[0-9a-fA-F]+>")
++
+ 
+ class AgenticFramework(str, Enum):
+     langgraph = "langgraph"
+@@ -116,7 +122,7 @@ def scan(
      elif framework == AgenticFramework.n8n:
          analyzer = N8nAnalyzer()
      elif framework == AgenticFramework.openai_agents:
@@ -68,10 +83,23 @@ index 823ef34..3925b59 100644
      elif framework == AgenticFramework.autogen:
          analyzer = AutogenAgentChatAnalyzer()
      else:
-@@ -143,19 +144,29 @@ def analyze_and_generate_report(
+@@ -142,20 +148,43 @@ def analyze_and_generate_report(
+     export_graph_json: bool = False,
  ):
      print(f"Analyzing {input_directory} for {framework} graphs")
-     graph = analyzer.analyze(input_directory)
+-    graph = analyzer.analyze(input_directory)
++    warnings = []
++    if export_graph_json:
++        analyzer_output = StringIO()
++        with redirect_stdout(analyzer_output):
++            graph = analyzer.analyze(input_directory)
++        warnings = [
++            GraphExportWarning(message=OBJECT_ADDRESS.sub(" object>", line.strip()))
++            for line in analyzer_output.getvalue().splitlines()
++            if line.strip()
++        ]
++    else:
++        graph = analyzer.analyze(input_directory)
 +    sanitize_graph(graph)
  
      if len(graph.nodes) <= 2:  # Only start and end nodes are present
@@ -81,6 +109,7 @@ index 823ef34..3925b59 100644
 +                framework=framework,
 +                output_file=output_file,
 +                status="no_supported_workflow",
++                warnings=warnings,
 +            )
 +            raise typer.Exit(code=0)
          print(
@@ -99,11 +128,12 @@ index 823ef34..3925b59 100644
 +            framework=framework,
 +            output_file=output_file,
 +            status="workflow_found",
++            warnings=warnings,
 +        )
          raise typer.Exit(code=0)
  
      print("Mapping vulnerabilities")
-@@ -194,6 +205,25 @@ def analyze_and_generate_report(
+@@ -194,6 +223,28 @@ def analyze_and_generate_report(
      print(f"Report {output_file} generated")
  
  
@@ -112,12 +142,15 @@ index 823ef34..3925b59 100644
 +    framework: str,
 +    output_file: str,
 +    status: Literal["workflow_found", "no_supported_workflow"],
++    warnings: list[GraphExportWarning],
 +):
 +    output_file = output_file.replace(".html", ".json")
 +    export = GraphExport(
 +        scanner_version=__version__,
 +        framework=framework,
 +        status=status,
++        complete=not warnings,
++        warnings=warnings,
 +        graph=graph,
 +    )
 +    with open(output_file, "w", encoding="utf-8") as f:
@@ -130,13 +163,18 @@ index 823ef34..3925b59 100644
      "test",
      help="Test agents in an agentic workflow for various vulnerabilities. Requires OPENAI_API_KEY or AZURE_OPENAI_API_KEY set as an environment variable.",
 diff --git a/agentic_radar/graph.py b/agentic_radar/graph.py
-index a3ed4a1..0280972 100644
+index a3ed4a1..65385e1 100644
 --- a/agentic_radar/graph.py
 +++ b/agentic_radar/graph.py
-@@ -72,3 +72,11 @@ class GraphDefinition(BaseModel):
+@@ -72,3 +72,18 @@ class GraphDefinition(BaseModel):
      edges: List[EdgeDefinition]
      agents: List[Agent] = Field(default_factory=list)
      tools: List[NodeDefinition] = Field(default_factory=list)
++
++
++class GraphExportWarning(BaseModel):
++    code: Literal["analyzer_diagnostic"] = "analyzer_diagnostic"
++    message: str
 +
 +
 +class GraphExport(BaseModel):
@@ -144,13 +182,15 @@ index a3ed4a1..0280972 100644
 +    scanner_version: str
 +    framework: str
 +    status: Literal["workflow_found", "no_supported_workflow"]
++    complete: bool
++    warnings: List[GraphExportWarning]
 +    graph: GraphDefinition
 diff --git a/tests/graph_json_export_test.py b/tests/graph_json_export_test.py
 new file mode 100644
-index 0000000..69e8b00
+index 0000000..79c3285
 --- /dev/null
 +++ b/tests/graph_json_export_test.py
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,251 @@
 +import json
 +
 +import pytest
@@ -170,10 +210,13 @@ index 0000000..69e8b00
 +
 +
 +class StaticAnalyzer:
-+    def __init__(self, graph: GraphDefinition):
++    def __init__(self, graph: GraphDefinition, diagnostics=()):
 +        self.graph = graph
++        self.diagnostics = diagnostics
 +
 +    def analyze(self, _root_directory: str) -> GraphDefinition:
++        for diagnostic in self.diagnostics:
++            print(diagnostic)
 +        return self.graph.model_copy(deep=True)
 +
 +
@@ -239,6 +282,8 @@ index 0000000..69e8b00
 +    assert payload["scanner_version"] == cli.__version__
 +    assert payload["framework"] == framework
 +    assert payload["status"] == "workflow_found"
++    assert payload["complete"] is True
++    assert payload["warnings"] == []
 +    assert payload["graph"]["name"] == "fixture"
 +    assert payload["graph"]["nodes"][1]["node_type"] == "agent"
 +    if framework == "openai-agents":
@@ -275,6 +320,8 @@ index 0000000..69e8b00
 +    assert result.exit_code == 0, result.stdout
 +    payload = json.loads((tmp_path / "empty.json").read_text(encoding="utf-8"))
 +    assert payload["status"] == "no_supported_workflow"
++    assert payload["complete"] is True
++    assert payload["warnings"] == []
 +    assert payload["graph"]["nodes"] == [
 +        {
 +            "node_type": "basic",
@@ -295,9 +342,56 @@ index 0000000..69e8b00
 +    ]
 +
 +
++def test_json_export_marks_analyzer_diagnostics_incomplete(monkeypatch, tmp_path):
++    diagnostics = [
++        "Cannot parse Python module: broken.py. Error: invalid syntax",
++        "Agent tools parameter is not a list: <ast.Name object at 0xABCDEF>",
++    ]
++    monkeypatch.setattr(
++        cli,
++        "LangGraphAnalyzer",
++        lambda: StaticAnalyzer(workflow_graph(), diagnostics),
++    )
++    requested_output = tmp_path / "partial.html"
++
++    result = runner.invoke(
++        cli.app,
++        [
++            "scan",
++            "langgraph",
++            "--input-dir",
++            str(tmp_path),
++            "--output-file",
++            str(requested_output),
++            "--export-graph-json",
++        ],
++    )
++
++    assert result.exit_code == 0, result.stdout
++    payload = json.loads((tmp_path / "partial.json").read_text(encoding="utf-8"))
++    assert payload["status"] == "workflow_found"
++    assert payload["complete"] is False
++    assert payload["warnings"] == [
++        {
++            "code": "analyzer_diagnostic",
++            "message": "Cannot parse Python module: broken.py. Error: invalid syntax",
++        },
++        {
++            "code": "analyzer_diagnostic",
++            "message": "Agent tools parameter is not a list: <ast.Name object>",
++        },
++    ]
++    assert all(diagnostic not in result.stdout for diagnostic in diagnostics)
++
++
 +def test_html_output_keeps_the_existing_no_workflow_failure(monkeypatch, tmp_path):
 +    empty_graph = GraphDefinition(name="fixture", nodes=[], edges=[])
-+    monkeypatch.setattr(cli, "LangGraphAnalyzer", lambda: StaticAnalyzer(empty_graph))
++    diagnostic = "Cannot parse Python module: broken.py. Error: invalid syntax"
++    monkeypatch.setattr(
++        cli,
++        "LangGraphAnalyzer",
++        lambda: StaticAnalyzer(empty_graph, [diagnostic]),
++    )
 +    output = tmp_path / "empty.html"
 +
 +    result = runner.invoke(
@@ -313,6 +407,7 @@ index 0000000..69e8b00
 +    )
 +
 +    assert result.exit_code == 1
++    assert diagnostic in result.stdout
 +    assert "didn't find any agentic workflow" in result.stdout
 +    assert not output.exists()
 +

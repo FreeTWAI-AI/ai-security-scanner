@@ -3,6 +3,8 @@
   "scanner_version": "0.14.1",
   "framework": "langgraph",
   "status": "workflow_found",
+  "complete": true,
+  "warnings": [],
   "graph": {
     "name": "MCP",
     "nodes": [

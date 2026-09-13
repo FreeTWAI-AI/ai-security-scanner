@@ -52,34 +52,42 @@ const AGENTIC_RADAR_RESEARCH_FIXTURES = {
   "autogen.json": [
     "autogen",
     "workflow_found",
-    "c3f66da0493ffaa2dcf85680fad1f4c104cf766429c7048bb24c239861d45411",
+    true,
+    "640bc21afd1f7d3f588d68c38c188be922ee2be626e73fc2530207c25fd1b34e",
   ],
   "crewai.json": [
     "crewai",
     "workflow_found",
-    "e85bc1db3b40306a6a628fa66b4707e553933fead7cf8ef5981fae41f020e1c4",
+    false,
+    "f8c7db002564e9968ac39cad5bd8a48b945190428a14acfa4d1446c1a02a47a8",
   ],
   "langgraph.json": [
     "langgraph",
     "workflow_found",
-    "7c56fbc7662b068fcf9d194bf5234c902af1c74c8a25d9a00dcccab6a478a6d3",
+    true,
+    "62e9fb05cd4d6896359f2c1fc8179358ba74a31c98ec5506f3caaebd568fe046",
   ],
   "n8n.json": [
     "n8n",
     "workflow_found",
-    "f266b59815482a675f951ecd6425785612862a1ae8810831f774f97023217584",
+    true,
+    "303b48d29c05c8b5020e77964c3c43080f201abac2d5cb7697f6c29800e2c275",
   ],
   "no-supported-workflow.json": [
     "langgraph",
     "no_supported_workflow",
-    "3b11f0e3eea835961bdd83ea810e9e74df703ad1e1aabcc08254a8d55b3572fa",
+    true,
+    "5c243e84dbb28ec1142a1335cea56519a0f415c43c45de8fb710d6098d103618",
   ],
   "openai-agents.json": [
     "openai-agents",
     "workflow_found",
-    "050501da928effaf5b0e55013a1d87adc0b5a3ec63e86b7d3bf0558a9e1e646b",
+    true,
+    "f344d79b24d604a2ea24a216e273da766d6d309fe857fcf2d3a2812e57611127",
   ],
 };
+const AGENTIC_RADAR_RESEARCH_PATCH_SHA256 =
+  "d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72";
 
 function localMarkdownTargets(markdown) {
   const targets = [];
@@ -197,9 +205,21 @@ test("current product documents do not contain broken local Markdown links", asy
   }
 });
 
-test("Agentic Radar research fixtures retain the audited machine-output contract", async () => {
+test("Agentic Radar research patch and fixtures retain the audited machine-output contract", async () => {
+  const patchContent = await load(
+    "docs/research/patches/agentic-radar-0.14.1-machine-json.patch",
+  );
+  assert.equal(
+    createHash("sha256").update(patchContent).digest("hex"),
+    AGENTIC_RADAR_RESEARCH_PATCH_SHA256,
+  );
+  assert.match(
+    await load("docs/research/agentic-radar-evaluation.md"),
+    new RegExp(AGENTIC_RADAR_RESEARCH_PATCH_SHA256, "u"),
+  );
+
   const fixtures = new Map();
-  for (const [name, [framework, status, expectedSha256]] of Object.entries(
+  for (const [name, [framework, status, complete, expectedSha256]] of Object.entries(
     AGENTIC_RADAR_RESEARCH_FIXTURES,
   )) {
     const relativePath = `docs/research/fixtures/agentic-radar/${name}`;
@@ -216,6 +236,18 @@ test("Agentic Radar research fixtures retain the audited machine-output contract
     assert.equal(fixture.scanner_version, "0.14.1", name);
     assert.equal(fixture.framework, framework, name);
     assert.equal(fixture.status, status, name);
+    assert.equal(fixture.complete, complete, name);
+    assert.equal(
+      fixture.complete,
+      fixture.warnings.length === 0,
+      `${name} must fail closed`,
+    );
+    for (const warning of fixture.warnings) {
+      assert.deepEqual(Object.keys(warning).sort(), ["code", "message"]);
+      assert.equal(warning.code, "analyzer_diagnostic");
+      assert.equal(typeof warning.message, "string");
+      assert.notEqual(warning.message.trim(), "");
+    }
     assert.equal(typeof fixture.graph, "object", name);
     for (const record of [...fixture.graph.nodes, ...fixture.graph.tools, ...fixture.graph.agents]) {
       assert.deepEqual(
@@ -249,6 +281,10 @@ test("Agentic Radar research fixtures retain the audited machine-output contract
     0,
     "CrewAI fixture must retain its observed metadata shortfall",
   );
+  assert.equal(crewAi.warnings.length, 5);
+  assert.ok(crewAi.warnings.some(({ message }) => /Skipping agent metadata/u.test(message)));
+  assert.ok(crewAi.warnings.some(({ message }) => /<ast\.Name object>/u.test(message)));
+  assert.ok(crewAi.warnings.every(({ message }) => !/0x[0-9a-f]+/iu.test(message)));
   assert.ok(crewAi.graph.nodes.some(({ node_type }) => node_type === "agent"));
 
   const empty = fixtures.get("no-supported-workflow.json");

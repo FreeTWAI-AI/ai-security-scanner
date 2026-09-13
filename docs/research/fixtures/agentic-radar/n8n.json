@@ -3,6 +3,8 @@
   "scanner_version": "0.14.1",
   "framework": "n8n",
   "status": "workflow_found",
+  "complete": true,
+  "warnings": [],
   "graph": {
     "name": "Personal Assistant MCP server",
     "nodes": [

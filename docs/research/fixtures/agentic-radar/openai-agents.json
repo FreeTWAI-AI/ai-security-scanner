@@ -3,6 +3,8 @@
   "scanner_version": "0.14.1",
   "framework": "openai-agents",
   "status": "workflow_found",
+  "complete": true,
+  "warnings": [],
   "graph": {
     "name": "filesystem_example",
     "nodes": [

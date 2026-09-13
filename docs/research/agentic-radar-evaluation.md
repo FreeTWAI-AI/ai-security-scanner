@@ -7,8 +7,9 @@ or publication, or make this inventory-only analysis a completed security check.
 
 Decision: when Agentic Radar is integrated, consume its static workflow graph as typed inventory
 observations. Do not turn its tool-category warnings or agent-mitigation assessments into findings.
-The pinned revision already has a JSON graph exporter, so a product-maintained output-emitter patch
-is not needed.
+The pinned revision already has a JSON graph exporter, so the product does not need a second graph
+builder. A narrow orchestration patch is still required to make that output safe for a machine
+consumer.
 
 This static review is pinned to
 [`splx-ai/agentic-radar@65a7e4bd01e2034c7cb52e9620eeed287688cc53`](https://github.com/splx-ai/agentic-radar/tree/65a7e4bd01e2034c7cb52e9620eeed287688cc53)
@@ -133,34 +134,40 @@ can distinguish “no supported workflow found” from execution failure.
 ## Intended upstream issue and pull request
 
 The issue should ask upstream to document and version the existing JSON contract rather than add a
-second emitter. It should record three machine-consumer gaps: the output omits framework and scanner
-version, the no-workflow case has no JSON state, and OpenAI Agents may perform hosted analysis before
-static JSON export. The existing CLI tests exercise HTML output for the five frameworks but do not
-cover `--export-graph-json`
+second graph builder. It should record four machine-consumer gaps: the output omits framework and
+scanner version, the no-workflow case has no JSON state, analyzer diagnostics are not represented as
+structured completeness data, and OpenAI Agents may perform hosted analysis before static JSON
+export. The existing CLI tests exercise HTML output for the five frameworks but do not cover
+`--export-graph-json`
 ([tests](https://github.com/splx-ai/agentic-radar/blob/65a7e4bd01e2034c7cb52e9620eeed287688cc53/tests/cli_test.py#L30-L100)).
 
 A narrow pull request should stay in output and orchestration code: add a versioned JSON envelope
 with framework and scanner version, emit an explicit empty-workflow state with a successful process
-exit, ensure JSON export does not initialize hosted-model analysis, and add fixture-backed CLI tests
-for all five framework values. It must serialize the same parser-produced graph and must not change
-parsers, vulnerability matching, severity, evidence, or remediation logic. Until that contract is
-available and pinned, this repository may evaluate a minimal equivalent patch in the ignored
-research checkout, but it must not add the catalog entry, adapter, or packaged artifact.
+exit, capture analyzer diagnostics as structured warnings with fail-closed completeness, ensure JSON
+export does not initialize hosted-model analysis, and add fixture-backed CLI tests for all five
+framework values. It must serialize the same parser-produced graph and must not change parsers,
+vulnerability matching, severity, evidence, or remediation logic. Until that contract is available
+and pinned, this repository may evaluate a minimal equivalent patch in the ignored research
+checkout, but it must not add the catalog entry, adapter, or packaged artifact.
 
 ## Local patch evaluation
 
 On 2026-09-13, that minimal patch was evaluated against the pinned source in the ignored research
 checkout. The exact [`agentic-radar-0.14.1-machine-json.patch`](patches/agentic-radar-0.14.1-machine-json.patch)
-has SHA-256 `b32a6126472012e53794a5888e4af05285096e350eb38f469145ac429806c6b9`.
+has SHA-256 `d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72`.
 It was generated from local research commit
-`a622b9d62ea9fbab3c25f1ee7dd7ea59de8c1714`, whose parent is the audited upstream commit.
+`1a3e4d81e3b122a69a529f1553a0b7239b64750d`, whose parent is the audited upstream commit.
 
 The patch changes only these behaviors:
 
 - wraps the existing parser-produced graph in schema version `1`, scanner version, selected
-  framework, and `workflow_found` or `no_supported_workflow` status;
+  framework, `workflow_found` or `no_supported_workflow` status, a `complete` boolean, and
+  structured warnings;
 - emits the empty-workflow state with process exit 0 only for the JSON path, while preserving the
-  existing HTML exit-1 behavior; and
+  existing HTML exit-1 behavior;
+- captures non-empty analyzer diagnostic lines only for the JSON path, sets `complete` to false
+  whenever any are present, and removes volatile CPython object addresses without changing the
+  remaining diagnostic text; and
 - makes OpenAI Agents vulnerability assessment optional, retaining its existing default for HTML
   while disabling it for static JSON export.
 
@@ -169,16 +176,17 @@ The reviewed source-file hashes are:
 | File | Upstream SHA-256 | Patched SHA-256 |
 | --- | --- | --- |
 | `agentic_radar/analysis/openai_agents/analyze.py` | `9d608a2c18ee308fb3e3322d0a01541310eb63f5027de7eed6d68a9a8aa70cdc` | `8e6b284e2ff65ace79887f2e69c0c3ac318dff6679b7dae369f88338ac7c914c` |
-| `agentic_radar/cli.py` | `a9ff61e626b21ba58ea677b15834d0986609c4ba8d5a6ebff593b689c8ada0a2` | `c0a7bcf69da7dd54d0e7ddc779ce22eb4565b4ff2a578ee76977237a5a6ec520` |
-| `agentic_radar/graph.py` | `760e6badf7b0d61af20a62a4bf0eb3bac67d04d9d39f1cefdb8aa2ffc5030b0d` | `95c25ead6df18e2cb37030499fa4dd10e8ffd8d06779a689b3457b42d5059bcd` |
+| `agentic_radar/cli.py` | `a9ff61e626b21ba58ea677b15834d0986609c4ba8d5a6ebff593b689c8ada0a2` | `e982af1348d006811bfd8efa1f0d2b521bc7cd0914e1df4f587a53ed2a7c7914` |
+| `agentic_radar/graph.py` | `760e6badf7b0d61af20a62a4bf0eb3bac67d04d9d39f1cefdb8aa2ffc5030b0d` | `2928ce0926aa819a589995ada093199fffe1da960f6d4a295d24051eb49f7fa7` |
 
 The added focused test file has SHA-256
-`eb1440eebc1767e0759c3b166bafe66b1197ccde21bffc4815634179fa85e8e8`. Its eight tests cover all
+`980292e25b4b4b66f85fa04dc90964b296c688551446fec96637edbbedfdfdb4`. Its nine tests cover all
 five framework selectors, the exact versioned envelope, bypass of generic vulnerability mapping,
-the explicit empty state, preservation of the HTML failure behavior, and the OpenAI Agents
-no-hosted-assessment branch. Ruff and formatting checks passed, mypy reported no issues in 90 source
-files, and all eight focused tests passed. The tests used in-memory graphs and temporary output
-directories; they did not execute Agentic Radar against a project or contact a target.
+the explicit empty state, diagnostic capture and fail-closed completeness, preservation of the HTML
+failure behavior, and the OpenAI Agents no-hosted-assessment branch. Ruff and focused formatting
+checks passed, mypy reported no issues in 90 source files, and all nine focused tests passed. The
+tests used in-memory graphs and temporary output directories; they did not execute Agentic Radar
+against a project or contact a target.
 
 This patch is retained as research evidence only. It has not been applied to product code, admitted
 to the engine catalog, packaged, published, or submitted upstream. Its removal condition is an
@@ -193,9 +201,14 @@ credential variables inside a network namespace that exposed only loopback. The 
 outputs, hashes, input paths, and field-level review are retained in the
 [Agentic Radar research fixture manifest](fixtures/agentic-radar/README.md).
 
-The run confirmed the envelope and no-hosted-assessment behavior, but it also exposed a remaining
-contract gap: CrewAI can omit agent metadata after optional-dependency warnings while still emitting
-`workflow_found`, and the envelope has no structured completeness or warning field. `workflow_found`
-is therefore only a structural upstream status. Before catalog and adapter admission, the machine
-contract must preserve such coverage shortfalls as data so the product cannot report incomplete
-inventory as complete.
+The repeated controlled run confirmed the fail-closed envelope: CrewAI still emits
+`workflow_found`, but its five analyzer diagnostics are now structured warnings and force
+`complete: false` while the partial graph remains available. The other four framework examples and
+the empty-workflow case emitted `complete: true` with empty warning arrays. `workflow_found` remains
+only a structural upstream status; a future adapter must use `complete` independently and preserve
+warnings as coverage diagnostics.
+
+The CrewAI graph's node and edge array order varied between two isolated invocations because its
+in-memory graph uses sets. This does not change completeness or graph membership, but it confirms
+that a future adapter must identify and deduplicate observations by stable content rather than array
+position.
