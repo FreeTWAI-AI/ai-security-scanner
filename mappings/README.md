@@ -12,9 +12,23 @@ certification statement, control-effectiveness test, or substitute for expert as
 Mappings are deliberately allowlisted by engine and exact source rule.
 Bounded prefixes are used only for the standardized `CVE-` identifier family,
 the reviewed `trufflehog:` adapter namespace, whose emitted results are
-credential findings, and the reviewed Greenbone NVT OID arc
+credential findings, the reviewed Greenbone NVT OID arc
 `1.3.6.1.4.1.25623.`, which is the IANA Private Enterprise Number Greenbone
-assigns to every Community Feed vulnerability test.
+assigns to every Community Feed vulnerability test, and the reviewed garak
+probe namespace.
+
+garak names a result `{probe}/{detector}`, where the probe is
+`{module}.{Class}` from `garak/probes/` and the detector is whichever judge
+scored it. The OWASP category belongs to the attack the probe performs, not to
+the judge, and enumerating detector pairings would mean predicting garak's own
+plugin resolution. So a garak mapping names either a whole probe module,
+written `module.`, or a single probe class, written `module.Class/`. Both
+terminators are required: without the trailing `/`, `divergence.Repeat` also
+matches `divergence.RepeatedToken`, which tests stability rather than leakage.
+A module-wide entry is only written where upstream's own module docstring
+states what may be added to it, and a module holding more than one kind of
+attack is mapped class by class instead.
+
 Unknown rules remain unmapped; the product never guesses a control from a
 finding title, severity, or target-controlled text. Inventory and discovery
 observations such as Syft, CloudQuery, Naabu, and httpx output are not mapped

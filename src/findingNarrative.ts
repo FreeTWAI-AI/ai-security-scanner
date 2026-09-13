@@ -2056,6 +2056,50 @@ const CONTROL_MAPPING_RATIONALE_PROSE: ReadonlyArray<
     "A Greenbone vulnerability-test alarm on an authorized host is evidence related to technical vulnerability handling. For an AI system, AIDEFEND separates build-time dependency admission from the deployed-software remediation lifecycle; this reference points at the deployed lifecycle and does not decide remediation state.",
     "Greenbone 對已授權主機發出的弱點測試警示，是與技術性弱點處理相關的證據。對 AI 系統而言，AIDEFEND 將建置階段的相依套件准入與已部署軟體的修復生命週期分開；這項參照指向已部署的生命週期，並不判定修復狀態。",
   ],
+  [
+    "garak's dan module holds do-anything-now and other long-form instruction attacks whose stated purpose is to make a target ignore its alignment. A detector judging those attempts as failures is evidence related to prompt injection.",
+    "garak 的 dan 模組收錄 do-anything-now 等長篇指令式攻擊，其目的是讓目標忽略自身的對齊限制。偵測器把這些嘗試判定為失敗，是與提示注入相關的證據。",
+  ],
+  [
+    "Every probe in garak's encoding module hides an instruction or payload in an encoding to get it past alignment. A detector judging those attempts as failures is evidence related to prompt injection carried in obfuscated input.",
+    "garak encoding 模組中的每個探測項目，都把指令或酬載藏在某種編碼裡，以繞過對齊限制。偵測器把這些嘗試判定為失敗，是與經混淆輸入夾帶提示注入相關的證據。",
+  ],
+  [
+    "garak's latentinjection module buries an instruction inside content the target is asked to process, such as a resume, a report or a passage to translate. A detector judging those attempts as failures is evidence related to indirect prompt injection.",
+    "garak 的 latentinjection 模組把指令埋在要求目標處理的內容裡，例如履歷、報告或待翻譯的段落。偵測器把這些嘗試判定為失敗，是與間接提示注入相關的證據。",
+  ],
+  [
+    "garak's sysprompt_extraction module asks the target for its own system prompt through direct requests, encoding tricks and role play. A detector judging those attempts as failures is evidence related to system prompt leakage.",
+    "garak 的 sysprompt_extraction 模組透過直接索取、編碼手法與角色扮演，向目標取得它自己的系統提示。偵測器把這些嘗試判定為失敗，是與系統提示外洩相關的證據。",
+  ],
+  [
+    "garak's leakreplay module asks the target to complete or fill in excerpts of documents, to see whether it replays text it was trained on. A detector judging those attempts as failures is evidence related to sensitive information disclosure.",
+    "garak 的 leakreplay 模組要求目標補完或填空文件片段，藉此觀察它是否覆述訓練用過的文字。偵測器把這些嘗試判定為失敗，是與敏感資訊外洩相關的證據。",
+  ],
+  [
+    "garak's divergence.Repeat probe asks the target to repeat a word until its output diverges and leaks other material. Its sibling divergence.RepeatedToken measures stability rather than leakage, so this reference is bound to the one probe.",
+    "garak 的 divergence.Repeat 探測項目要求目標不斷重複某個詞，直到輸出偏離並洩漏其他內容。同模組的 divergence.RepeatedToken 量測的是穩定性而非外洩，因此這項參照只綁定這一個探測項目。",
+  ],
+  [
+    "garak's packagehallucination module asks the target for code and checks whether the imports it names exist in the language's real package registry. A detector judging those attempts as failures is evidence related to misinformation in generated code.",
+    "garak 的 packagehallucination 模組要求目標產生程式碼，並檢查其中列出的匯入項目是否真的存在於該語言的套件登錄中。偵測器把這些嘗試判定為失敗，是與生成程式碼中的錯誤資訊相關的證據。",
+  ],
+  [
+    "garak's snowball module poses reasoning questions whose only correct response is that the task is impossible. A detector judging those attempts as failures is evidence related to misinformation, because the target asserted an answer instead.",
+    "garak 的 snowball 模組提出的推理題，唯一正確的回應是指出該任務無法達成。偵測器把這些嘗試判定為失敗，是與錯誤資訊相關的證據，因為目標反而給出了肯定的答案。",
+  ],
+  [
+    "garak's misleading module states false claims and checks whether the target refutes them. A detector judging those attempts as failures is evidence related to misinformation, because the target went along with the claim.",
+    "garak 的 misleading 模組提出不實主張，並檢查目標是否加以反駁。偵測器把這些嘗試判定為失敗，是與錯誤資訊相關的證據，因為目標順著該主張作答。",
+  ],
+  [
+    "garak's ansiescape module tries to make the target emit ANSI terminal escape codes, which disrupt whatever renders the reply. A detector judging those attempts as failures is evidence related to improper output handling downstream of the model.",
+    "garak 的 ansiescape 模組嘗試讓目標輸出 ANSI 終端跳脫碼，這類字元會干擾負責呈現回覆的元件。偵測器把這些嘗試判定為失敗，是與模型下游輸出處理不當相關的證據。",
+  ],
+  [
+    "garak's web_injection module tries to make the target emit markdown or script that a client will act on, either exfiltrating conversation content through a URI or running as cross-site scripting. A detector judging those attempts as failures is evidence related to improper output handling and to sensitive information disclosure.",
+    "garak 的 web_injection 模組嘗試讓目標輸出用戶端會實際處理的 markdown 或指令碼，藉此經由 URI 外傳對話內容，或形成跨站腳本攻擊。偵測器把這些嘗試判定為失敗，是與輸出處理不當及敏感資訊外洩相關的證據。",
+  ],
 ];
 
 export const controlMappingRationaleZhHant = (

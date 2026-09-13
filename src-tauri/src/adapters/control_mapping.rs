@@ -851,14 +851,15 @@ mod tests {
         "syft",
         "kubescape",
         "kube-bench",
+        "garak",
     ];
 
     #[test]
     fn embedded_catalog_is_bounded_and_only_uses_known_engines() {
         validate_catalog(ENGINES).expect("valid embedded mappings");
         let provenance = catalog_provenance().expect("embedded provenance");
-        assert_eq!(provenance.mapping_version, "2026-09-12.1");
-        assert_eq!(provenance.reviewed_at, "2026-09-12");
+        assert_eq!(provenance.mapping_version, "2026-09-13.1");
+        assert_eq!(provenance.reviewed_at, "2026-09-13");
         assert_eq!(provenance.review_process, REVIEW_PROCESS_V1);
         assert_eq!(provenance.catalog_sha256.len(), 64);
     }
@@ -996,6 +997,45 @@ mod tests {
                     );
                     checked += 1;
                 }
+                // The garak adapter builds `{probe}/{detector}`, and a probe is
+                // always `{module}.{Class}` from `garak/probes/`. So a mapping
+                // may name a whole probe module (`dan.`) or one probe class
+                // (`divergence.Repeat/`), and nothing else can match. The
+                // terminator carries the weight: without the slash,
+                // `divergence.Repeat` also swallows `divergence.RepeatedToken`,
+                // which measures stability rather than leakage and belongs to
+                // no control here.
+                "garak" => {
+                    assert_eq!(
+                        match_kind, "prefix",
+                        "garak source rules name a probe namespace, not one probe/detector pair; \
+                         {source_rule:?} is declared as {match_kind}"
+                    );
+                    let module_scoped = source_rule.ends_with('.')
+                        && source_rule.matches('.').count() == 1
+                        && !source_rule.contains('/');
+                    let class_scoped = source_rule.ends_with('/')
+                        && source_rule.matches('/').count() == 1
+                        && source_rule.matches('.').count() == 1;
+                    assert!(
+                        module_scoped || class_scoped,
+                        "a garak mapping matches a probe module as `module.` or a probe class \
+                         as `module.Class/`; {source_rule:?} matches neither, so it would \
+                         either miss every real probe or reach past the one it names"
+                    );
+                    assert!(
+                        source_rule
+                            .split(['.', '/'])
+                            .next()
+                            .is_some_and(|module| !module.is_empty()
+                                && module.bytes().all(|byte| byte.is_ascii_lowercase()
+                                    || byte.is_ascii_digit()
+                                    || byte == b'_')),
+                        "garak probe modules are lowercase Python module names; \
+                         {source_rule:?} cannot match real output"
+                    );
+                    checked += 1;
+                }
                 _ => {}
             }
         }
@@ -1022,10 +1062,10 @@ mod tests {
         );
         assert!(overprivileged_policy.iter().all(|item| {
             item.relationship == "related"
-                && item.mapping_version == "2026-09-12.1"
+                && item.mapping_version == "2026-09-13.1"
                 && item.mapping_provenance.as_ref().is_some_and(|provenance| {
                     provenance.catalog_sha256
-                        == "13bad6391588067335e3225ea3b8ced41cc8d8fe5054f47125e98c8cef4b5afb"
+                        == "12dd26a5fc4a627c85ca30f1c78184dfd51ed5e5f925eea961b97447b3628906"
                 })
                 && !item.rationale.to_ascii_lowercase().contains("compliant")
         }));

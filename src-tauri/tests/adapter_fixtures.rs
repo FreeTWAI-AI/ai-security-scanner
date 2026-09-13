@@ -2700,7 +2700,7 @@ fn versioned_control_references_are_allowlisted_relationships_not_assurance_clai
         );
         assert!(references.iter().all(|reference| {
             reference.relationship == "related"
-                && reference.mapping_version == "2026-09-12.1"
+                && reference.mapping_version == "2026-09-13.1"
                 && matches!(
                     reference.framework.as_str(),
                     "NIST CSF"
@@ -6023,6 +6023,8 @@ fn garak_reports_probe_failure_rates_and_keeps_clean_probes_out_of_the_findings(
         [
             "dan.AutoDANCached/mitigation.MitigationBypass",
             "dan.Dan_11_0/dan.DAN",
+            "divergence.Repeat/divergence.RepeatDiverges",
+            "divergence.RepeatedToken/divergence.RepeatedToken",
             "encoding.InjectBase64/encoding.DecodeMatch",
             "encoding.InjectROT13/encoding.DecodeApprox",
         ],
@@ -6094,6 +6096,17 @@ fn garak_reports_probe_failure_rates_and_keeps_clean_probes_out_of_the_findings(
         "garak judged 1 of 10 evaluated attempts as failures. The probe generated 25 \
          attempts in total, so not every attempt reached the detector."
     );
+    // Two probes from one module whose names share a prefix. They are separate
+    // results here for the same reason they carry different control references
+    // below: one is a training-data leak, the other a stability stress test.
+    assert_eq!(
+        details("divergence.Repeat/divergence.RepeatDiverges"),
+        "garak judged 2 of 20 evaluated attempts as failures."
+    );
+    assert_eq!(
+        details("divergence.RepeatedToken/divergence.RepeatedToken"),
+        "garak judged 1 of 6 evaluated attempts as failures."
+    );
 
     // The prompt is garak's own test input. The reply is the target's content,
     // and no evidence surface carries it -- the fixture puts a marked reply in
@@ -6103,6 +6116,98 @@ fn garak_reports_probe_failure_rates_and_keeps_clean_probes_out_of_the_findings(
         !rendered.contains("FIXTURE MODEL REPLY"),
         "a model reply reached the normalized output"
     );
+}
+
+/// The catalog reaches garak through a probe namespace, and every OWASP LLM
+/// control it names is declared for AI systems. Both halves are load-bearing.
+///
+/// Namespace, because garak identifies a result as `probe/detector`: the
+/// category belongs to the attack the probe ran, not to the judge that scored
+/// it, and the detector a probe is paired with is garak's own plugin decision.
+/// The hazard that creates is a prefix reaching past the probe it names, so
+/// the fixture carries `divergence.Repeat` next to `divergence.RepeatedToken`
+/// — one is a training-data leak, the other a stability stress test with no
+/// control here, and only the mapping's trailing slash keeps them apart.
+///
+/// AI-system applicability, because a case that has not said it covers an AI
+/// system gets no OWASP LLM relationship at all rather than a default one.
+#[test]
+fn garak_maps_the_probe_namespace_to_owasp_llm_only_for_a_declared_ai_system() {
+    let control_ids = |output: &AdapterOutput| {
+        output
+            .findings
+            .iter()
+            .map(|finding| {
+                (
+                    finding.evidence[0]
+                        .source_rule
+                        .clone()
+                        .expect("garak evidence names its probe and detector"),
+                    finding
+                        .control_references
+                        .iter()
+                        .map(|reference| reference.control_id.clone())
+                        .collect::<BTreeSet<_>>(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+
+    let undeclared = control_ids(&normalize_fixture("garak"));
+    assert!(
+        undeclared.values().all(BTreeSet::is_empty),
+        "an undeclared case was given an AI framework relationship anyway: {undeclared:?}"
+    );
+
+    let declared = control_ids(&normalize_ai_system_fixture("garak"));
+    let expected = BTreeMap::from([
+        (
+            "dan.AutoDANCached/mitigation.MitigationBypass",
+            vec!["LLM01:2025"],
+        ),
+        ("dan.Dan_11_0/dan.DAN", vec!["LLM01:2025"]),
+        (
+            "divergence.Repeat/divergence.RepeatDiverges",
+            vec!["LLM02:2025"],
+        ),
+        ("divergence.RepeatedToken/divergence.RepeatedToken", vec![]),
+        (
+            "encoding.InjectBase64/encoding.DecodeMatch",
+            vec!["LLM01:2025"],
+        ),
+        (
+            "encoding.InjectROT13/encoding.DecodeApprox",
+            vec!["LLM01:2025"],
+        ),
+    ]);
+    assert_eq!(
+        declared,
+        expected
+            .into_iter()
+            .map(|(rule, ids)| (
+                rule.to_owned(),
+                ids.into_iter().map(str::to_owned).collect::<BTreeSet<_>>()
+            ))
+            .collect::<BTreeMap<_, _>>(),
+        "a garak probe namespace resolved to a different set of OWASP LLM categories"
+    );
+
+    // The relationship the report prints must stay a relationship. garak
+    // publishes a failure count and no severity, so a control reference that
+    // read as a control result would be the whole invention this catalog
+    // exists to avoid.
+    let references = normalize_ai_system_fixture("garak")
+        .findings
+        .into_iter()
+        .flat_map(|finding| finding.control_references)
+        .collect::<Vec<_>>();
+    assert_eq!(references.len(), 5);
+    assert!(references.iter().all(|reference| {
+        reference.relationship == "related"
+            && reference.framework == "OWASP Top 10 for LLM Applications"
+            && reference.framework_version == "2025"
+            && reference.mapping_version == "2026-09-13.1"
+    }));
 }
 
 /// A garak report whose counts cannot be true, and one that never evaluated

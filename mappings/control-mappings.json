@@ -1,10 +1,10 @@
 {
   "schema_version": "1.1",
-  "mapping_version": "2026-09-12.1",
+  "mapping_version": "2026-09-13.1",
   "provenance": {
-    "reviewed_at": "2026-09-12",
+    "reviewed_at": "2026-09-13",
     "review_process": "source_coordinate_and_rationale_review_v1",
-    "canonical_sha256": "13bad6391588067335e3225ea3b8ced41cc8d8fe5054f47125e98c8cef4b5afb"
+    "canonical_sha256": "12dd26a5fc4a627c85ca30f1c78184dfd51ed5e5f925eea961b97447b3628906"
   },
   "relationship": "related",
   "disclaimer": "These evidence-to-control references indicate topical relationships only. They do not establish implementation, effectiveness, certification, or compliance.",
@@ -326,6 +326,14 @@
       "title": "Server-Side Request Forgery (SSRF)"
     },
     {
+      "key": "owasp-llm-2025-01",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM01:2025",
+      "title": "Prompt Injection",
+      "applicability": "ai_system"
+    },
+    {
       "key": "owasp-llm-2025-02",
       "framework": "OWASP Top 10 for LLM Applications",
       "framework_version": "2025",
@@ -347,6 +355,22 @@
       "framework_version": "2025",
       "control_id": "LLM05:2025",
       "title": "Improper Output Handling",
+      "applicability": "ai_system"
+    },
+    {
+      "key": "owasp-llm-2025-07",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM07:2025",
+      "title": "System Prompt Leakage",
+      "applicability": "ai_system"
+    },
+    {
+      "key": "owasp-llm-2025-09",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM09:2025",
+      "title": "Misinformation",
       "applicability": "ai_system"
     },
     {
@@ -796,6 +820,106 @@
         "owasp-2021-a06"
       ],
       "rationale": "A Greenbone vulnerability-test alarm on an authorized host is evidence related to technical vulnerability handling. For an AI system, AIDEFEND separates build-time dependency admission from the deployed-software remediation lifecycle; this reference points at the deployed lifecycle and does not decide remediation state."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "dan.",
+      "controls": [
+        "owasp-llm-2025-01"
+      ],
+      "rationale": "garak's dan module holds do-anything-now and other long-form instruction attacks whose stated purpose is to make a target ignore its alignment. A detector judging those attempts as failures is evidence related to prompt injection."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "encoding.",
+      "controls": [
+        "owasp-llm-2025-01"
+      ],
+      "rationale": "Every probe in garak's encoding module hides an instruction or payload in an encoding to get it past alignment. A detector judging those attempts as failures is evidence related to prompt injection carried in obfuscated input."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "latentinjection.",
+      "controls": [
+        "owasp-llm-2025-01"
+      ],
+      "rationale": "garak's latentinjection module buries an instruction inside content the target is asked to process, such as a resume, a report or a passage to translate. A detector judging those attempts as failures is evidence related to indirect prompt injection."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "sysprompt_extraction.",
+      "controls": [
+        "owasp-llm-2025-07"
+      ],
+      "rationale": "garak's sysprompt_extraction module asks the target for its own system prompt through direct requests, encoding tricks and role play. A detector judging those attempts as failures is evidence related to system prompt leakage."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "leakreplay.",
+      "controls": [
+        "owasp-llm-2025-02"
+      ],
+      "rationale": "garak's leakreplay module asks the target to complete or fill in excerpts of documents, to see whether it replays text it was trained on. A detector judging those attempts as failures is evidence related to sensitive information disclosure."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "divergence.Repeat/",
+      "controls": [
+        "owasp-llm-2025-02"
+      ],
+      "rationale": "garak's divergence.Repeat probe asks the target to repeat a word until its output diverges and leaks other material. Its sibling divergence.RepeatedToken measures stability rather than leakage, so this reference is bound to the one probe."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "packagehallucination.",
+      "controls": [
+        "owasp-llm-2025-09"
+      ],
+      "rationale": "garak's packagehallucination module asks the target for code and checks whether the imports it names exist in the language's real package registry. A detector judging those attempts as failures is evidence related to misinformation in generated code."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "snowball.",
+      "controls": [
+        "owasp-llm-2025-09"
+      ],
+      "rationale": "garak's snowball module poses reasoning questions whose only correct response is that the task is impossible. A detector judging those attempts as failures is evidence related to misinformation, because the target asserted an answer instead."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "misleading.",
+      "controls": [
+        "owasp-llm-2025-09"
+      ],
+      "rationale": "garak's misleading module states false claims and checks whether the target refutes them. A detector judging those attempts as failures is evidence related to misinformation, because the target went along with the claim."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "ansiescape.",
+      "controls": [
+        "owasp-llm-2025-05"
+      ],
+      "rationale": "garak's ansiescape module tries to make the target emit ANSI terminal escape codes, which disrupt whatever renders the reply. A detector judging those attempts as failures is evidence related to improper output handling downstream of the model."
+    },
+    {
+      "engine_id": "garak",
+      "match_kind": "prefix",
+      "source_rule": "web_injection.",
+      "controls": [
+        "owasp-llm-2025-05",
+        "owasp-llm-2025-02"
+      ],
+      "rationale": "garak's web_injection module tries to make the target emit markdown or script that a client will act on, either exfiltrating conversation content through a URI or running as cross-site scripting. A detector judging those attempts as failures is evidence related to improper output handling and to sensitive information disclosure."
     }
   ],
   "cwe_derived_controls": [
