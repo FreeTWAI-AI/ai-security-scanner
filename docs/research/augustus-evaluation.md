@@ -230,6 +230,15 @@ all-verified input returns an error. The module is not connected to the engine c
 orchestrator, process runtime, credential handling, gateway, or network path, so this implementation
 still cannot dispatch Augustus or contact a model endpoint.
 
+The pure Rust [`augustus_terminal`](../../src-tauri/src/augustus_terminal.rs) verifier now checks an
+already captured machine document against the pinned scanner provenance, an exact comparison-only
+run/endpoint/model binding, the single allowed probe and detector, the 15-attempt ledger, and the
+ordered prompt-corpus digest. It independently rejects false `complete` claims, plan or corpus
+drift, malformed counts, and invalid warning context. A valid incomplete document retains only
+bounded counts and structured warning identifiers; prompts, responses, arbitrary metadata, and
+scanner error text never enter the verification result. This module likewise has no dispatch,
+process, credential, gateway, or network connection.
+
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
 retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed

@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod adapters;
 pub mod artifact_store;
 pub mod augustus_preflight;
+pub mod augustus_terminal;
 pub mod beginner_report;
 pub mod bootstrap;
 pub mod case_service;

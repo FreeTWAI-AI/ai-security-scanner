@@ -107,6 +107,13 @@ attempt. `WriteMachineJSON` is separately tested with a writer that always fails
 incremental JSONL writer now propagates both append and durable-close failures. Any such error keeps
 the process non-zero, so a partial byte sequence cannot become evidence.
 
+The product's pure Rust
+[`augustus_terminal`](../../../../src-tauri/src/augustus_terminal.rs) verifier consumes these three
+fixtures without invoking Augustus. They pin a complete result, an incomplete detector-warning
+result, and an incomplete count shortfall. A synthetic document derived from the complete fixture
+also exercises the frozen 15-prompt corpus and proves that 14 reconciled rows cannot carry a clean
+terminal result.
+
 The prompt and response in these fixtures are identical synthetic text because `test.Repeat` echoes
 locally. Real target responses remain sensitive raw artifacts and must never be copied into normal
 finding text.
