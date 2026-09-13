@@ -234,6 +234,21 @@ struct AugustusProfileAllowlistDocument {
     allowlist: Vec<AugustusProfileAllowlistEntryFields>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AugustusProfileAttemptShapeEntryFields {
+    expected_attempts: u32,
+    turns_per_attempt: u32,
+    generations_per_attempt: u32,
+    tools_allowed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileAttemptShapeDocument {
+    schema_version: String,
+    profile_id: String,
+    allowlist: Vec<AugustusProfileAttemptShapeEntryFields>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AugustusFrozenDestination {
     generator: String,
@@ -494,6 +509,68 @@ impl AugustusPlanAllowlistEvidence {
 
     pub fn machine_plan_state(&self) -> AugustusPlanEnforcementState {
         self.machine_plan_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenAttemptShape {
+    expected_attempts: u32,
+    turns_per_attempt: u32,
+    generations_per_attempt: u32,
+    tools_allowed: bool,
+}
+
+impl AugustusFrozenAttemptShape {
+    pub fn expected_attempts(&self) -> u32 {
+        self.expected_attempts
+    }
+
+    pub fn turns_per_attempt(&self) -> u32 {
+        self.turns_per_attempt
+    }
+
+    pub fn generations_per_attempt(&self) -> u32 {
+        self.generations_per_attempt
+    }
+
+    pub fn tools_allowed(&self) -> bool {
+        self.tools_allowed
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusAttemptShapeRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 7 evidence for attempt count and per-attempt shape.
+///
+/// The frozen shape is policy metadata. No launcher-built plan or captured
+/// terminal reconciliation evidence is accepted here, so a clean 15-attempt
+/// execution cannot be inferred from the profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusAttemptShapeEvidence {
+    frozen_shape: Option<AugustusFrozenAttemptShape>,
+    launcher_plan_state: AugustusAttemptShapeRuntimeState,
+    terminal_reconciliation_evidence_state: AugustusAttemptShapeRuntimeState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusAttemptShapeEvidence {
+    pub fn frozen_shape(&self) -> Option<AugustusFrozenAttemptShape> {
+        self.frozen_shape
+    }
+
+    pub fn launcher_plan_state(&self) -> AugustusAttemptShapeRuntimeState {
+        self.launcher_plan_state
+    }
+
+    pub fn terminal_reconciliation_evidence_state(&self) -> AugustusAttemptShapeRuntimeState {
+        self.terminal_reconciliation_evidence_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1015,6 +1092,73 @@ fn produce_plan_allowlist_evidence(profile_json: &[u8]) -> AugustusPlanAllowlist
     }
 }
 
+/// Produces Rule 7 evidence without accepting a caller-declared plan or count.
+///
+/// The exact attempt shape is read from the embedded profile and uses the same
+/// expected-attempt constant as the terminal verifier. Because no admitted
+/// launcher plan or terminal reconciliation evidence exists, the current rule
+/// always rejects before contact.
+pub fn produce_augustus_attempt_shape_evidence() -> AugustusAttemptShapeEvidence {
+    produce_attempt_shape_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_attempt_shape_evidence(profile_json: &[u8]) -> AugustusAttemptShapeEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileAttemptShapeDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let entry = profile
+        .as_ref()
+        .and_then(|profile| match profile.allowlist.as_slice() {
+            [entry] => Some(entry),
+            _ => None,
+        });
+    let expected_attempts_match =
+        entry.is_some_and(|entry| entry.expected_attempts == AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS);
+    let per_attempt_shape_matches = entry.is_some_and(|entry| {
+        entry.turns_per_attempt == 1 && entry.generations_per_attempt == 1 && !entry.tools_allowed
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_shape = if profile_is_trusted && expected_attempts_match && per_attempt_shape_matches
+    {
+        entry.map(|entry| AugustusFrozenAttemptShape {
+            expected_attempts: entry.expected_attempts,
+            turns_per_attempt: entry.turns_per_attempt,
+            generations_per_attempt: entry.generations_per_attempt,
+            tools_allowed: entry.tools_allowed,
+        })
+    } else {
+        None
+    };
+
+    let mut rejection_condition_indices = Vec::with_capacity(3);
+    if !expected_attempts_match {
+        rejection_condition_indices.push(0);
+    }
+    if !per_attempt_shape_matches {
+        rejection_condition_indices.push(1);
+    }
+    rejection_condition_indices.push(2);
+
+    AugustusAttemptShapeEvidence {
+        frozen_shape,
+        launcher_plan_state: AugustusAttemptShapeRuntimeState::Absent,
+        terminal_reconciliation_evidence_state: AugustusAttemptShapeRuntimeState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 7,
+            rule_id: AugustusPreflightRuleId::AttemptShape,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices,
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1031,6 +1175,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let plan_allowlist = produce_augustus_plan_allowlist_evidence();
     input.rule_evidence[5].clone_from(plan_allowlist.rule_evidence());
+
+    let attempt_shape = produce_augustus_attempt_shape_evidence();
+    input.rule_evidence[6].clone_from(attempt_shape.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -1679,6 +1826,80 @@ mod tests {
             produce_augustus_plan_allowlist_evidence().rule_evidence()
         );
         assert_eq!(input.rule_evidence[5].rejection_condition_indices(), &[2]);
+    }
+
+    #[test]
+    fn current_attempt_shape_is_frozen_without_terminal_reconciliation() {
+        let evidence = produce_augustus_attempt_shape_evidence();
+        let shape = evidence.frozen_shape().expect("trusted frozen shape");
+
+        assert_eq!(shape.expected_attempts(), 15);
+        assert_eq!(shape.expected_attempts(), AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS);
+        assert_eq!(shape.turns_per_attempt(), 1);
+        assert_eq!(shape.generations_per_attempt(), 1);
+        assert!(!shape.tools_allowed());
+        assert_eq!(
+            evidence.launcher_plan_state(),
+            AugustusAttemptShapeRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.terminal_reconciliation_evidence_state(),
+            AugustusAttemptShapeRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 7,
+                rule_id: AugustusPreflightRuleId::AttemptShape,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![2],
+            }
+        );
+    }
+
+    #[test]
+    fn attempt_shape_drift_uses_its_exact_owning_condition() {
+        let mut attempt_count: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        attempt_count["allowlist"][0]["expected_attempts"] = json!(14);
+        let evidence = produce_attempt_shape_evidence(
+            &serde_json::to_vec(&attempt_count).expect("serializable attempt-count drift"),
+        );
+        assert_eq!(evidence.frozen_shape(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 2]
+        );
+
+        let mut generations: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        generations["allowlist"][0]["generations_per_attempt"] = json!(2);
+        let evidence = produce_attempt_shape_evidence(
+            &serde_json::to_vec(&generations).expect("serializable generation drift"),
+        );
+        assert_eq!(evidence.frozen_shape(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[1, 2]
+        );
+    }
+
+    #[test]
+    fn caller_cannot_mark_attempt_shape_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[7].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[6].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[6],
+            produce_augustus_attempt_shape_evidence().rule_evidence()
+        );
+        assert_eq!(input.rule_evidence[6].rejection_condition_indices(), &[2]);
     }
 
     #[test]

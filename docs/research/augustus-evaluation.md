@@ -218,7 +218,7 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
-These pairs remain isolated schema examples: product evaluation replaces their first six
+These pairs remain isolated schema examples: product evaluation replaces their first seven
 caller-carried evidence rows with mechanically derived evidence before it selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
@@ -247,9 +247,13 @@ using the same identifiers and count as the terminal verifier. The attempt count
 Rule 7 and does not change Rule 6 ownership. Because no launcher-built machine plan exists, Rule 6
 is `rejected` with condition 2; actual probe/detector or tuning drift adds only its owning condition
 0 or 1. The evaluator replaces rules 1 through 6, so caller statements cannot clear any of these
-admission failures. Malformed, drifted, or all-verified input returns an error. The module is not
-connected to the engine catalog, orchestrator, process runtime, credential handling, gateway, or
-network path, so this implementation still cannot dispatch Augustus or contact a model endpoint.
+admission failures. A sixth no-input producer retains the exact 15-attempt, one-turn,
+one-generation, no-tools shape from the trusted profile. The profile is not terminal evidence, so
+with no launcher plan or captured reconciliation ledger, Rule 7 is `rejected` with condition 2;
+attempt-count or per-attempt shape drift adds only condition 0 or 1. The evaluator replaces rules 1
+through 7. Malformed, drifted, or all-verified input returns an error. The module is not connected to
+the engine catalog, orchestrator, process runtime, credential handling, gateway, or network path,
+so this implementation still cannot dispatch Augustus or contact a model endpoint.
 
 The pure Rust [`augustus_terminal`](../../src-tauri/src/augustus_terminal.rs) verifier now checks an
 already captured machine document against the pinned scanner provenance, an exact comparison-only
