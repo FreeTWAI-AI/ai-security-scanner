@@ -197,6 +197,15 @@ revoke target contact and prevent a clean result; a terminal plan or count misma
 incomplete. Credential delivery remains an unresolved independent blocker and is intentionally not
 designed here.
 
+The companion synthetic
+[`precontact-rejections.json`](fixtures/augustus/precontact-rejections.json) contract, SHA-256
+`3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7`, fixes a unique pre-contact
+order and stable error code for all 14 rules. Its 35 vectors cover the matrix's 35 rejection
+conditions one-for-one. The first failing order wins, and every vector ends before an egress lease,
+provider request, target contact, or finding. For the profile as checked in, order 1 returns
+`augustus_profile_not_admitted`; later vectors are isolated contract examples, not evidence that an
+earlier blocker was cleared.
+
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
 retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed

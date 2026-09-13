@@ -1,13 +1,13 @@
-# Augustus machine-output research fixtures
+# Augustus machine-output and pre-contact research fixtures
 
-Normative status: these are synthetic machine-output fixtures for the pinned
+Normative status: these are synthetic research fixtures for the pinned
 [Augustus hosted-endpoint integration decision](../../augustus-evaluation.md). They are not product
 findings, an admitted engine contract, authorization to contact a model endpoint, or proof that a
 hosted model security check ran.
 
 ## Provenance
 
-The fixtures exercise
+The machine-output fixtures exercise
 `praetorian-inc/augustus@f032fc6373aaa9983868282b31dc9c59503c78a2` plus the exact
 [`augustus-0.14.29-machine-json.patch`](../../patches/augustus-0.14.29-machine-json.patch), whose
 SHA-256 is `4f6c1e0d16014ac2a638ec50ebbab053b7a3c6a7320911fbff14b8541f45b59a`.
@@ -34,12 +34,25 @@ machine plan contains exactly 15 attempts; a temporary overlay excluded only the
 | [`machine-detector-warning.json`](machine-detector-warning.json) | Detector error retained as a bounded warning; `complete: false` | `1fc37120cb27660f1958f30f6ccdbd03aa5d64ff446e637aff671d81342dd2f7` |
 | [`machine-count-mismatch.json`](machine-count-mismatch.json) | Two attempts expected but only one started and emitted; `complete: false` | `d94b8616c134194f7c8a0ce11e2d2167fd611a4b1117c067347cd4d006eade19` |
 
+## Pre-contact rejection vectors
+
+[`precontact-rejections.json`](precontact-rejections.json), SHA-256
+`3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7`, is a pure-data companion to
+the frozen launcher/egress enforcement matrix. It assigns all 14 rules a unique order and stable
+lowercase error code. Its 35 synthetic vectors cover every matrix rejection condition exactly once.
+Evaluation stops at the lowest failing order and returns only that rule's code; every vector expects
+zero provider requests, no egress lease, no target contact, and no findings.
+
+The vectors are not executable launcher inputs and do not claim that later rules can make the
+current profile runnable. The actual frozen profile stops at order 1 with
+`augustus_profile_not_admitted` because its normative status remains `research_only_blocked`.
+
 ## Contract audit
 
-All three files contain schema version `1`, scanner version `v0.14.29`, the exact upstream source
-revision, a stable run ID, `test.Repeat` plus the inert `local://test-repeat` endpoint identity, an
-ordered probe/detector plan, explicit probe and attempt counts, `complete`, structured warnings, and
-the unmodified upstream attempt records.
+All three machine-output files contain schema version `1`, scanner version `v0.14.29`, the exact
+upstream source revision, a stable run ID, `test.Repeat` plus the inert `local://test-repeat`
+endpoint identity, an ordered probe/detector plan, explicit probe and attempt counts, `complete`,
+structured warnings, and the unmodified upstream attempt records.
 
 The warning fixture deliberately retains the attempt's upstream `safe` verdict while the failed
 detector makes the run incomplete. This proves the adapter must require top-level completeness

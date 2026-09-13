@@ -1,0 +1,300 @@
+{
+  "schema_version": "1",
+  "normative_status": "synthetic_research_fixture",
+  "profile_id": "augustus-openai-promptinject-v1",
+  "profile_sha256": "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4",
+  "enforcement_matrix_sha256": "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df",
+  "evaluation_contract": {
+    "selection": "Evaluate rules by ascending pre_contact_order and return exactly the first failing rule.",
+    "isolation": "Each vector is synthetic and assumes every other rule is satisfied; it never asserts that the frozen profile is dispatchable.",
+    "unknown_or_duplicate_rule": "Reject the fixture contract as invalid and never dispatch.",
+    "all_vector_outcomes": {
+      "decision": "reject_before_contact",
+      "egress_lease_created": false,
+      "target_contact_attempted": false,
+      "provider_request_count": 0,
+      "finding_count": 0
+    }
+  },
+  "actual_frozen_profile_first_rejection": {
+    "pre_contact_order": 1,
+    "rule_id": "profile_identity_and_provenance",
+    "error_code": "augustus_profile_not_admitted",
+    "reason": "normative_status is research_only_blocked"
+  },
+  "rules": [
+    {
+      "pre_contact_order": 1,
+      "rule_id": "profile_identity_and_provenance",
+      "error_code": "augustus_profile_not_admitted",
+      "vectors": [
+        {
+          "vector_id": "profile_unknown_field",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The candidate profile contains an unrecognized top-level field."
+        },
+        {
+          "vector_id": "source_or_patch_digest_mismatch",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The admitted source revision differs from the frozen source revision."
+        },
+        {
+          "vector_id": "research_status_still_blocked",
+          "matrix_reject_condition_index": 2,
+          "synthetic_fault": "The candidate retains normative_status research_only_blocked."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 2,
+      "rule_id": "unresolved_dispatch_blockers",
+      "error_code": "augustus_dispatch_blocked",
+      "vectors": [
+        {
+          "vector_id": "dispatch_blocker_present",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The candidate retains one or more dispatch blockers."
+        },
+        {
+          "vector_id": "blocker_suppression_requested",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "A caller asks the preflight to ignore a retained blocker."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 3,
+      "rule_id": "exact_destination_and_model_binding",
+      "error_code": "augustus_scope_binding_rejected",
+      "vectors": [
+        {
+          "vector_id": "scope_grant_missing",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "No exact unexpired model-endpoint scope grant is available."
+        },
+        {
+          "vector_id": "destination_host_mismatch",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed destination host is api.example.invalid instead of api.openai.com."
+        },
+        {
+          "vector_id": "dns_resolves_loopback",
+          "matrix_reject_condition_index": 2,
+          "synthetic_fault": "The frozen DNS set contains 127.0.0.1."
+        },
+        {
+          "vector_id": "tls_http_identity_unverifiable",
+          "matrix_reject_condition_index": 3,
+          "synthetic_fault": "The proposed gate cannot independently verify TLS server name and HTTP authority."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 4,
+      "rule_id": "base_url_and_redirect_denial",
+      "error_code": "augustus_destination_policy_rejected",
+      "vectors": [
+        {
+          "vector_id": "custom_base_url_present",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed generator configuration sets a custom base_url."
+        },
+        {
+          "vector_id": "redirect_following_enabled",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed HTTP client follows redirect responses."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 5,
+      "rule_id": "denied_capabilities",
+      "error_code": "augustus_capability_rejected",
+      "vectors": [
+        {
+          "vector_id": "tools_capability_enabled",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed invocation enables a tool capability denied by the profile."
+        },
+        {
+          "vector_id": "unknown_environment_key_accepted",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed environment builder accepts an unknown Augustus configuration key."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 6,
+      "rule_id": "probe_detector_allowlist",
+      "error_code": "augustus_plan_allowlist_rejected",
+      "vectors": [
+        {
+          "vector_id": "additional_detector_selected",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed plan adds a second detector."
+        },
+        {
+          "vector_id": "detector_case_sensitivity_changed",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The pinned detector default is changed to case-sensitive matching."
+        },
+        {
+          "vector_id": "machine_plan_missing",
+          "matrix_reject_condition_index": 2,
+          "synthetic_fault": "The exact ordered machine plan cannot be produced before contact."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 7,
+      "rule_id": "attempt_shape",
+      "error_code": "augustus_attempt_shape_rejected",
+      "vectors": [
+        {
+          "vector_id": "expected_attempt_count_is_fourteen",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed machine plan declares 14 expected attempts."
+        },
+        {
+          "vector_id": "two_generations_per_attempt",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed generator requests two generations per attempt."
+        },
+        {
+          "vector_id": "terminal_reconciliation_unavailable",
+          "matrix_reject_condition_index": 2,
+          "synthetic_fault": "The proposed runtime cannot prove that all 15 terminal attempts will be reconciled before a clean result."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 8,
+      "rule_id": "prompt_corpus_attestation",
+      "error_code": "augustus_prompt_corpus_rejected",
+      "vectors": [
+        {
+          "vector_id": "prompt_corpus_digest_changed",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The compact ordered prompt corpus digest differs from the frozen digest."
+        },
+        {
+          "vector_id": "executed_source_not_attested",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The admitted artifact cannot bind its executed prompt source to the attested source."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 9,
+      "rule_id": "token_request_and_cost_budget",
+      "error_code": "augustus_cost_budget_rejected",
+      "vectors": [
+        {
+          "vector_id": "model_price_unavailable",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "No trusted current price exists for the exact granted model."
+        },
+        {
+          "vector_id": "max_tokens_is_one_hundred_twenty_nine",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed generator configuration sets max_tokens to 129."
+        },
+        {
+          "vector_id": "worst_case_charge_exceeds_ceiling",
+          "matrix_reject_condition_index": 2,
+          "synthetic_fault": "The calculated worst-case charge is 250001 USD micros."
+        },
+        {
+          "vector_id": "provider_count_uses_tcp_connections",
+          "matrix_reject_condition_index": 3,
+          "synthetic_fault": "The proposed provider-request counter counts TCP connections instead of HTTP requests."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 10,
+      "rule_id": "single_connection_execution",
+      "error_code": "augustus_concurrency_policy_rejected",
+      "vectors": [
+        {
+          "vector_id": "scanner_concurrency_is_two",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed scanner concurrency is two."
+        },
+        {
+          "vector_id": "egress_policy_is_shared",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed egress policy is shared with another run."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 11,
+      "rule_id": "request_rate_retry_and_timeout",
+      "error_code": "augustus_request_policy_rejected",
+      "vectors": [
+        {
+          "vector_id": "sdk_retry_enabled",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed provider SDK retains one automatic retry."
+        },
+        {
+          "vector_id": "rate_meter_uses_tcp_connections",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed rolling rate meter counts TCP connections instead of HTTP requests."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 12,
+      "rule_id": "probe_scanner_and_process_deadlines",
+      "error_code": "augustus_deadline_policy_rejected",
+      "vectors": [
+        {
+          "vector_id": "scanner_timeout_is_zero",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed scanner timeout is unbounded."
+        },
+        {
+          "vector_id": "process_supervisor_cannot_reap",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed process supervisor cannot prove exact termination and reaping by 330 seconds."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 13,
+      "rule_id": "process_resource_sandbox",
+      "error_code": "augustus_sandbox_policy_rejected",
+      "vectors": [
+        {
+          "vector_id": "memory_ceiling_unavailable",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed runtime cannot enforce a 512 MiB memory ceiling."
+        },
+        {
+          "vector_id": "runtime_socket_mounted",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed runtime mounts a host container-runtime socket."
+        }
+      ]
+    },
+    {
+      "pre_contact_order": 14,
+      "rule_id": "response_and_process_output_bounds",
+      "error_code": "augustus_output_bound_rejected",
+      "vectors": [
+        {
+          "vector_id": "decoded_response_counter_unavailable",
+          "matrix_reject_condition_index": 0,
+          "synthetic_fault": "The proposed response gate cannot count decoded response bytes before forwarding."
+        },
+        {
+          "vector_id": "stderr_truncation_accepted",
+          "matrix_reject_condition_index": 1,
+          "synthetic_fault": "The proposed capture accepts truncated stderr without a terminal failure."
+        }
+      ]
+    }
+  ]
+}

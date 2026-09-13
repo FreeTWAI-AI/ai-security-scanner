@@ -99,6 +99,8 @@ const AUGUSTUS_RESEARCH_PROFILE_SHA256 =
   "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4";
 const AUGUSTUS_RESEARCH_ENFORCEMENT_SHA256 =
   "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df";
+const AUGUSTUS_RESEARCH_REJECTION_VECTORS_SHA256 =
+  "3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7";
 const AUGUSTUS_RESEARCH_FIXTURES = {
   "machine-complete.json": [
     true,
@@ -479,6 +481,101 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.equal(fixtures.get("machine-complete.json").attempts[0].verdict, "safe");
   assert.equal(fixtures.get("machine-detector-warning.json").attempts[0].verdict, "safe");
   assert.equal(fixtures.get("machine-detector-warning.json").complete, false);
+});
+
+test("Augustus synthetic precontact rejections have stable order and codes", async () => {
+  const decision = await load("docs/research/augustus-evaluation.md");
+  const profileContent = await load("docs/research/augustus-single-destination-profile.json");
+  const enforcementContent = await load(
+    "docs/research/augustus-launcher-egress-enforcement.json",
+  );
+  const vectorContent = await load(
+    "docs/research/fixtures/augustus/precontact-rejections.json",
+  );
+  const matrix = JSON.parse(enforcementContent);
+  const vectors = JSON.parse(vectorContent);
+
+  assert.equal(
+    createHash("sha256").update(vectorContent).digest("hex"),
+    AUGUSTUS_RESEARCH_REJECTION_VECTORS_SHA256,
+  );
+  assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_REJECTION_VECTORS_SHA256, "u"));
+  assert.equal(vectors.schema_version, "1");
+  assert.equal(vectors.normative_status, "synthetic_research_fixture");
+  assert.equal(vectors.profile_id, "augustus-openai-promptinject-v1");
+  assert.equal(
+    vectors.profile_sha256,
+    createHash("sha256").update(profileContent).digest("hex"),
+  );
+  assert.equal(
+    vectors.enforcement_matrix_sha256,
+    createHash("sha256").update(enforcementContent).digest("hex"),
+  );
+  assert.deepEqual(vectors.evaluation_contract.all_vector_outcomes, {
+    decision: "reject_before_contact",
+    egress_lease_created: false,
+    target_contact_attempted: false,
+    provider_request_count: 0,
+    finding_count: 0,
+  });
+  assert.match(vectors.evaluation_contract.selection, /ascending.*first failing rule/iu);
+  assert.match(vectors.evaluation_contract.unknown_or_duplicate_rule, /never dispatch/iu);
+  assert.doesNotMatch(vectorContent, /api[_-]?key|bearer\s+|sk-[a-z0-9]/iu);
+
+  const orderedRuleCodes = [
+    [1, "profile_identity_and_provenance", "augustus_profile_not_admitted"],
+    [2, "unresolved_dispatch_blockers", "augustus_dispatch_blocked"],
+    [3, "exact_destination_and_model_binding", "augustus_scope_binding_rejected"],
+    [4, "base_url_and_redirect_denial", "augustus_destination_policy_rejected"],
+    [5, "denied_capabilities", "augustus_capability_rejected"],
+    [6, "probe_detector_allowlist", "augustus_plan_allowlist_rejected"],
+    [7, "attempt_shape", "augustus_attempt_shape_rejected"],
+    [8, "prompt_corpus_attestation", "augustus_prompt_corpus_rejected"],
+    [9, "token_request_and_cost_budget", "augustus_cost_budget_rejected"],
+    [10, "single_connection_execution", "augustus_concurrency_policy_rejected"],
+    [11, "request_rate_retry_and_timeout", "augustus_request_policy_rejected"],
+    [12, "probe_scanner_and_process_deadlines", "augustus_deadline_policy_rejected"],
+    [13, "process_resource_sandbox", "augustus_sandbox_policy_rejected"],
+    [14, "response_and_process_output_bounds", "augustus_output_bound_rejected"],
+  ];
+  assert.deepEqual(
+    vectors.rules.map(({ pre_contact_order: order, rule_id: ruleId, error_code: errorCode }) =>
+      [order, ruleId, errorCode]),
+    orderedRuleCodes,
+  );
+  assert.equal(new Set(vectors.rules.map(({ error_code: code }) => code)).size, 14);
+  assert.ok(vectors.rules.every(({ error_code: code }) => /^augustus_[a-z0-9_]+$/u.test(code)));
+  assert.deepEqual(
+    new Set(vectors.rules.map(({ rule_id: ruleId }) => ruleId)),
+    new Set(matrix.rules.map(({ rule_id: ruleId }) => ruleId)),
+  );
+
+  const matrixByRule = new Map(matrix.rules.map((rule) => [rule.rule_id, rule]));
+  const vectorIds = [];
+  for (const rule of vectors.rules) {
+    const matrixRule = matrixByRule.get(rule.rule_id);
+    assert.ok(matrixRule, rule.rule_id);
+    assert.deepEqual(
+      rule.vectors
+        .map(({ matrix_reject_condition_index: index }) => index)
+        .toSorted((a, b) => a - b),
+      matrixRule.reject_conditions.map((_, index) => index),
+      `${rule.rule_id} must cover every matrix rejection condition once`,
+    );
+    for (const vector of rule.vectors) {
+      vectorIds.push(vector.vector_id);
+      assert.match(vector.vector_id, /^[a-z0-9_]+$/u);
+      assert.ok(vector.synthetic_fault.length > 0 && vector.synthetic_fault.length <= 256);
+    }
+  }
+  assert.equal(vectorIds.length, 35);
+  assert.equal(new Set(vectorIds).size, vectorIds.length);
+  assert.deepEqual(vectors.actual_frozen_profile_first_rejection, {
+    pre_contact_order: orderedRuleCodes[0][0],
+    rule_id: orderedRuleCodes[0][1],
+    error_code: orderedRuleCodes[0][2],
+    reason: "normative_status is research_only_blocked",
+  });
 });
 
 test("Agentic Radar research patch and fixtures retain the audited machine-output contract", async () => {
