@@ -202,8 +202,14 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
       unavailable: 0,
     },
     inventory: {
-      total: 1,
-      counts: { services: 1, software_components: 0, cloud_resources: 0 },
+      total: 3,
+      counts: {
+        services: 1,
+        software_components: 0,
+        cloud_resources: 0,
+        workflow_components: 1,
+        workflow_relationships: 1,
+      },
       asset_ids: ["asset-1"],
       representative_sample: [{
         kind: "service",
@@ -242,11 +248,48 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
           pointer: "/items/0",
           observed_at: "2026-08-30T12:00:03Z",
         }],
+      }, {
+        kind: "workflow_component",
+        asset_id: "asset-1",
+        component_type: "agent",
+        name: "Assistant",
+        model: "local-model",
+        is_guardrail: false,
+        sources: [{
+          observation_id: "inventory-2",
+          engine_id: "agentic-radar",
+          engine_run_id: "task-2",
+          artifact_id: "artifact-inventory-2",
+          artifact_sha256: "c".repeat(64),
+          pointer: "/graph/agents/0",
+          observed_at: "2026-08-30T12:00:04Z",
+        }],
+      }, {
+        kind: "workflow_relationship",
+        asset_id: "asset-1",
+        source: "START",
+        target: "Assistant",
+        condition: null,
+        sources: [{
+          observation_id: "inventory-3",
+          engine_id: "agentic-radar",
+          engine_run_id: "task-2",
+          artifact_id: "artifact-inventory-2",
+          artifact_sha256: "c".repeat(64),
+          pointer: "/graph/edges/0",
+          observed_at: "2026-08-30T12:00:04Z",
+        }],
       }],
       by_asset: [{
         asset_id: "asset-1",
-        total: 1,
-        counts: { services: 1, software_components: 0, cloud_resources: 0 },
+        total: 3,
+        counts: {
+          services: 1,
+          software_components: 0,
+          cloud_resources: 0,
+          workflow_components: 1,
+          workflow_relationships: 1,
+        },
         representative_sample: [],
       }],
     },
@@ -347,6 +390,8 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
     services: 1,
     softwareComponents: 0,
     cloudResources: 0,
+    workflowComponents: 1,
+    workflowRelationships: 1,
   });
   assert.deepEqual(report.inventory?.items[0], {
     kind: "service",
@@ -365,6 +410,39 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
       artifactSha256: "b".repeat(64),
       pointer: "/items/0",
       observedAt: "2026-08-30T12:00:03Z",
+    }],
+  });
+  assert.deepEqual(report.inventory?.items[1], {
+    kind: "workflow_component",
+    assetId: "asset-1",
+    componentType: "agent",
+    name: "Assistant",
+    model: "local-model",
+    isGuardrail: false,
+    sources: [{
+      observationId: "inventory-2",
+      engineId: "agentic-radar",
+      engineRunId: "task-2",
+      artifactId: "artifact-inventory-2",
+      artifactSha256: "c".repeat(64),
+      pointer: "/graph/agents/0",
+      observedAt: "2026-08-30T12:00:04Z",
+    }],
+  });
+  assert.deepEqual(report.inventory?.items[2], {
+    kind: "workflow_relationship",
+    assetId: "asset-1",
+    source: "START",
+    target: "Assistant",
+    condition: undefined,
+    sources: [{
+      observationId: "inventory-3",
+      engineId: "agentic-radar",
+      engineRunId: "task-2",
+      artifactId: "artifact-inventory-2",
+      artifactSha256: "c".repeat(64),
+      pointer: "/graph/edges/0",
+      observedAt: "2026-08-30T12:00:04Z",
     }],
   });
   assert.equal(report.coverageGaps[0]?.nextActionCode, "start_expected_service_and_retry");

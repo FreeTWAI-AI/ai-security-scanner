@@ -292,6 +292,17 @@ type NativeBeginnerInventoryItem = {
   resource_type: string;
   native_id: string | null;
   display_name: string | null;
+} | {
+  kind: "workflow_component";
+  component_type: string;
+  name: string;
+  model: string | null;
+  is_guardrail: boolean | null;
+} | {
+  kind: "workflow_relationship";
+  source: string;
+  target: string;
+  condition: string | null;
 });
 
 interface NativeBeginnerInventory {
@@ -300,6 +311,8 @@ interface NativeBeginnerInventory {
     services: number;
     software_components: number;
     cloud_resources: number;
+    workflow_components?: number;
+    workflow_relationships?: number;
   };
   asset_ids: string[];
   representative_sample: NativeBeginnerInventoryItem[];
@@ -2473,6 +2486,21 @@ const adaptBeginnerInventoryItem = (
     packageType: item.package_type ?? undefined,
     purl: item.purl ?? undefined,
   };
+  if (item.kind === "workflow_component") return {
+    ...common,
+    kind: item.kind,
+    componentType: item.component_type,
+    name: item.name,
+    model: item.model ?? undefined,
+    isGuardrail: item.is_guardrail ?? undefined,
+  };
+  if (item.kind === "workflow_relationship") return {
+    ...common,
+    kind: item.kind,
+    source: item.source,
+    target: item.target,
+    condition: item.condition ?? undefined,
+  };
   return {
     ...common,
     kind: item.kind,
@@ -2486,6 +2514,8 @@ const adaptBeginnerInventoryCounts = (counts: NativeBeginnerInventory["counts"])
   services: counts.services,
   softwareComponents: counts.software_components,
   cloudResources: counts.cloud_resources,
+  workflowComponents: counts.workflow_components ?? 0,
+  workflowRelationships: counts.workflow_relationships ?? 0,
 });
 
 export const adaptBeginnerMasterReport = (

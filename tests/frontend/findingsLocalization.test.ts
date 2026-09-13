@@ -60,7 +60,7 @@ test("problem grouping, review decisions, evidence, and navigation remain wired"
 
 test("the legacy result-kind fallback keeps every inventory engine out of clean security results", () => {
   const fallback = regionFrom(source, "const legacyCheckResultKind", 12);
-  for (const engine of ["cloudquery", "steampipe", "syft", "naabu", "httpx"]) {
+  for (const engine of ["cloudquery", "steampipe", "syft", "naabu", "httpx", "agentic-radar"]) {
     assert.match(fallback, new RegExp(`"${engine}"`, "u"), engine);
   }
   assert.match(fallback, /return "inventory"/u);

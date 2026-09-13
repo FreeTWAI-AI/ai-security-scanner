@@ -57,6 +57,22 @@ const FIXED_ENGINE_WARNINGS: ReadonlyArray<readonly [string, string]> = [
   ["Steampipe output was not its supported JSON document; the raw artifact was retained, and the inventory query should be retried", "Steampipe 輸出不是支援的 JSON 文件；原始成品已保留，請重試盤點查詢"],
   ["Steampipe output lacked its rows array; the raw artifact was retained, and the inventory query should be retried", "Steampipe 輸出缺少 rows 陣列；原始成品已保留，請重試盤點查詢"],
   ["Steampipe rows exceeded the record safety boundary; later inventory rows remain only as raw evidence", "Steampipe 資料列超過記錄安全界線；後續盤點資料列只保留為原始證據"],
+  ["Agentic Radar output was not its supported JSON document; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出不是支援的 JSON 文件；工作流程盤點不完整"],
+  ["Agentic Radar output did not match the pinned schema and scanner version; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出不符合支援的結構描述與掃描器版本；工作流程盤點不完整"],
+  ["Agentic Radar output lacked its framework; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出缺少框架；工作流程盤點不完整"],
+  ["Agentic Radar output named an unsupported framework; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出指名不支援的框架；工作流程盤點不完整"],
+  ["Agentic Radar output lacked its status; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出缺少狀態；工作流程盤點不完整"],
+  ["Agentic Radar output named an unsupported status; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出指名不支援的狀態；工作流程盤點不完整"],
+  ["Agentic Radar completeness did not agree with its structured warnings; the partial graph was retained, but workflow inventory is incomplete", "Agentic Radar 的完整性狀態與結構化警告不一致；工作流程盤點不完整"],
+  ["Agentic Radar warnings exceeded the adapter safety boundary; later diagnostics remain only in the raw artifact", "Agentic Radar 警告超過結果處理安全界線；額外診斷未納入"],
+  ["Agentic Radar output lacked its graph object; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 輸出缺少 graph 物件；工作流程盤點不完整"],
+  ["Agentic Radar graph lacked its nodes array; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 圖缺少 nodes 陣列；工作流程盤點不完整"],
+  ["Agentic Radar graph lacked its edges array; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 圖缺少 edges 陣列；工作流程盤點不完整"],
+  ["Agentic Radar graph lacked its agents array; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 圖缺少 agents 陣列；工作流程盤點不完整"],
+  ["Agentic Radar graph lacked its tools array; the raw artifact was retained, and workflow inventory is incomplete", "Agentic Radar 圖缺少 tools 陣列；工作流程盤點不完整"],
+  ["Agentic Radar graph membership did not agree with its workflow status; the graph was retained, but workflow inventory is incomplete", "Agentic Radar 圖內容與工作流程狀態不一致；工作流程盤點不完整"],
+  ["Agentic Radar agents exceeded the record safety boundary; later agent metadata remains only in the raw artifact", "Agentic Radar agents 超過記錄安全界線；額外代理中繼資料未納入"],
+  ["Agentic Radar edges exceeded the record safety boundary; later relationships remain only in the raw artifact", "Agentic Radar edges 超過記錄安全界線；額外關係未納入"],
   ["Runtime object ownership is unavailable. Retry uses a new isolated attempt.", "無法確認執行階段物件的所有權；重試會使用新的隔離嘗試。"],
   ["Scan batch stopped. Unfinished work: not tested.", "掃描批次已停止；未完成工作：未檢測。"],
   ["Scan cancelled. Remaining planned work: not tested.", "掃描已取消；其餘規劃工作：未檢測。"],
@@ -201,6 +217,20 @@ const normalizeLegacyEngineWarning = (warning: string): string => {
 };
 
 const directEngineWarningEnglish = (warning: string): string => {
+  if (warning.startsWith("Agentic Radar")) {
+    return warning
+      .replace("did not match the pinned", "did not match the supported")
+      .replace("adapter safety boundary", "result safety boundary")
+      .replace("; the raw artifact was retained, and workflow inventory is incomplete", "; workflow inventory is incomplete")
+      .replace("; the partial graph was retained, but workflow inventory is incomplete", "; workflow inventory is incomplete")
+      .replace("; the partial graph was retained", "; workflow inventory is incomplete")
+      .replace("; the graph was retained, but workflow inventory is incomplete", "; workflow inventory is incomplete")
+      .replace("; later diagnostics remain only in the raw artifact", "; additional diagnostics excluded")
+      .replace("; later components remain only in the raw artifact", "; additional components excluded")
+      .replace("; later agent metadata remains only in the raw artifact", "; additional agent metadata excluded")
+      .replace("; later relationships remain only in the raw artifact", "; additional relationships excluded")
+      .replace("; they were ignored, and workflow inventory is incomplete", "; claims excluded; workflow inventory is incomplete");
+  }
   if (warning === "Greenbone result lacked an upstream result type and a positive severity; it was retained only as raw evidence and this run cannot be treated as a clean result") {
     return "Greenbone result excluded: upstream result type and positive severity missing. Check result incomplete.";
   }
@@ -382,6 +412,25 @@ export const recognizedEngineWarningZhTW = (warning: string): string | undefined
   const fixed = FIXED_ENGINE_WARNINGS.find(([english]) => english === normalized)?.[1];
   if (fixed) return directEngineWarningZhTW(fixed);
   const rules: ReadonlyArray<readonly [RegExp, (...values: string[]) => string]> = [
+    [/^Agentic Radar warning at (.+) was malformed; the partial graph was retained$/u, (pointer) => `${pointer} 的 Agentic Radar 警告格式錯誤；工作流程盤點不完整`],
+    [/^Agentic Radar warning at (.+) used an unsupported code; the partial graph was retained$/u, (pointer) => `${pointer} 的 Agentic Radar 警告使用不支援的代碼；工作流程盤點不完整`],
+    [/^Agentic Radar warning at (.+) lacked a bounded message; the partial graph was retained$/u, (pointer) => `${pointer} 的 Agentic Radar 警告缺少有界訊息；工作流程盤點不完整`],
+    [/^Agentic Radar reported incomplete workflow inventory: (.+)$/u, (message) => `Agentic Radar 回報工作流程盤點不完整：${message}`],
+    [/^Agentic Radar (.+) exceeded the record safety boundary; later components remain only in the raw artifact$/u, (collection) => `Agentic Radar ${collection} 超過記錄安全界線；額外元件未納入`],
+    [/^Agentic Radar component at (.+) was not an object and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 元件不是物件，因此未正規化`],
+    [/^Agentic Radar component at (.+) lacked its node type and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 元件缺少節點類型，因此未正規化`],
+    [/^Agentic Radar component at (.+) used an unsupported node type and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 元件使用不支援的節點類型，因此未正規化`],
+    [/^Agentic Radar component at (.+) lacked its name and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 元件缺少名稱，因此未正規化`],
+    [/^Agentic Radar agent at (.+) was not an object and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 代理不是物件，因此未正規化`],
+    [/^Agentic Radar agent at (.+) lacked its name and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 代理缺少名稱，因此未正規化`],
+    [/^Agentic Radar agent at (.+) had no bounded model identifier$/u, (pointer) => `${pointer} 的 Agentic Radar 代理沒有有界的模型識別碼`],
+    [/^Agentic Radar agent at (.+) had an invalid guardrail flag$/u, (pointer) => `${pointer} 的 Agentic Radar 代理含有無效的護欄旗標`],
+    [/^Agentic Radar relationship at (.+) was not an object and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 關係不是物件，因此未正規化`],
+    [/^Agentic Radar relationship at (.+) lacked an endpoint and was not normalized$/u, (pointer) => `${pointer} 的 Agentic Radar 關係缺少端點，因此未正規化`],
+    [/^Agentic Radar relationship at (.+) had no bounded condition$/u, (pointer) => `${pointer} 的 Agentic Radar 關係沒有有界的條件`],
+    [/^Agentic Radar relationship at (.+) had an invalid condition$/u, (pointer) => `${pointer} 的 Agentic Radar 關係含有無效的條件`],
+    [/^Agentic Radar record at (.+) carried vulnerability claims; they were ignored, and workflow inventory is incomplete$/u, (pointer) => `${pointer} 的 Agentic Radar 記錄帶有漏洞宣稱；該宣稱已排除，工作流程盤點不完整`],
+    [/^Agentic Radar record at (.+) lacked its empty vulnerability array; workflow inventory is incomplete$/u, (pointer) => `${pointer} 的 Agentic Radar 記錄缺少空白的漏洞陣列；工作流程盤點不完整`],
     [/^(.+) produced no raw artifacts to normalize$/u, (engine) => `${engine} 未產生可正規化的原始成品`],
     [/^(.+) output is inventory evidence; no security issue was invented from inventory rows$/u, (engine) => `${engine} 輸出是資產清冊證據；未從清冊資料列臆造安全問題`],
     [/^artifact (.+) exceeded the per-file byte limit and was not parsed$/u, (id) => `成品 ${id} 超過單檔位元組限制，因此未解析`],

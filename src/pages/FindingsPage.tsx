@@ -197,8 +197,8 @@ const copy = {
   typedInventoryEyebrow: { en: "INVENTORY", zhTW: "盤點" },
   typedInventoryTitle: { en: "What the scanners inventoried", zhTW: "掃描工具盤點到的項目" },
   typedInventoryDescription: {
-    en: "These are services, software components, and cloud resources—not security problems or remediation advice.",
-    zhTW: "這些是服務、軟體元件與雲端資源，不是資安問題或修復建議。",
+    en: "These are services, software components, cloud resources, and workflow structure—not security problems or remediation advice.",
+    zhTW: "這些是服務、軟體元件、雲端資源與工作流程結構，不是資安問題或修復建議。",
   },
   typedInventorySummary: {
     en: "{total} inventory items across {assets} assets",
@@ -207,6 +207,14 @@ const copy = {
   inventoryServices: { en: "Services", zhTW: "服務" },
   inventoryComponents: { en: "Software components", zhTW: "軟體元件" },
   inventoryCloudResources: { en: "Cloud resources", zhTW: "雲端資源" },
+  inventoryWorkflowComponents: { en: "Workflow components", zhTW: "工作流程元件" },
+  inventoryWorkflowRelationships: { en: "Workflow relationships", zhTW: "工作流程關係" },
+  inventoryComponentType: { en: "Type", zhTW: "類型" },
+  inventoryModel: { en: "Model", zhTW: "模型" },
+  inventoryGuardrail: { en: "Guardrail", zhTW: "護欄" },
+  inventoryYes: { en: "yes", zhTW: "是" },
+  inventoryNo: { en: "no", zhTW: "否" },
+  inventoryCondition: { en: "Condition", zhTW: "條件" },
   inventoryExamples: { en: "Representative examples", zhTW: "代表性範例" },
   inventoryAllItems: { en: "Show all {count} inventory items", zhTW: "顯示全部 {count} 個盤點項目" },
   inventoryAssetSummary: { en: "{count} items for this asset", zhTW: "此資產共有 {count} 個項目" },
@@ -833,7 +841,7 @@ const legacyCheckResultKind = (
 ): "security_check" | "inventory" | "connectivity" => {
   const normalized = checkId.trim().toLocaleLowerCase("en-US");
   if (normalized.startsWith("native localhost tcp check on ")) return "connectivity";
-  if (["cloudquery", "steampipe", "syft", "naabu", "httpx"].some((engine) =>
+  if (["cloudquery", "steampipe", "syft", "naabu", "httpx", "agentic-radar"].some((engine) =>
     normalized === engine || normalized.startsWith(`${engine}-`))) return "inventory";
   return "security_check";
 };
@@ -1992,12 +2000,26 @@ export function FindingsPage({
         detail: [item.packageType, item.purl].filter(Boolean).join(" · "),
       };
     }
-    return {
+    if (item.kind === "cloud_resource") return {
       title: item.displayName ?? item.nativeId ?? item.resourceType,
       detail: [
         item.resourceType,
         item.nativeId ? `${text(copy.inventoryNativeId)} ${item.nativeId}` : undefined,
       ].filter(Boolean).join(" · "),
+    };
+    if (item.kind === "workflow_component") return {
+      title: item.name,
+      detail: [
+        `${text(copy.inventoryComponentType)} ${item.componentType}`,
+        item.model ? `${text(copy.inventoryModel)} ${item.model}` : undefined,
+        item.isGuardrail === undefined
+          ? undefined
+          : `${text(copy.inventoryGuardrail)} ${text(item.isGuardrail ? copy.inventoryYes : copy.inventoryNo)}`,
+      ].filter(Boolean).join(" · "),
+    };
+    return {
+      title: `${item.source} → ${item.target}`,
+      detail: item.condition ? `${text(copy.inventoryCondition)} ${item.condition}` : "",
     };
   };
   const renderInventoryItem = (item: BeginnerInventoryItem, key: string) => {
@@ -2036,6 +2058,12 @@ export function FindingsPage({
         <MetricCard label={text(copy.inventoryServices)} value={typedInventory.counts.services} icon="database" />
         <MetricCard label={text(copy.inventoryComponents)} value={typedInventory.counts.softwareComponents} icon="file" />
         <MetricCard label={text(copy.inventoryCloudResources)} value={typedInventory.counts.cloudResources} icon="database" />
+        {typedInventory.counts.workflowComponents > 0 ? (
+          <MetricCard label={text(copy.inventoryWorkflowComponents)} value={typedInventory.counts.workflowComponents} icon="file" />
+        ) : null}
+        {typedInventory.counts.workflowRelationships > 0 ? (
+          <MetricCard label={text(copy.inventoryWorkflowRelationships)} value={typedInventory.counts.workflowRelationships} icon="database" />
+        ) : null}
       </div>
       <div className="section-heading"><h3>{text(copy.inventoryExamples)}</h3></div>
       <div className="evidence-list">

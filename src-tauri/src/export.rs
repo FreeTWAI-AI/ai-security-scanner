@@ -1258,6 +1258,21 @@ fn redact_inventory_observation(observation: &mut InventoryObservation) {
                 .as_ref()
                 .map(|_| "[redacted display name]".into());
         }
+        InventoryObservationKind::WorkflowComponent { name, model, .. } => {
+            *name = "[redacted workflow component]".into();
+            *model = model.as_ref().map(|_| "[redacted model]".into());
+        }
+        InventoryObservationKind::WorkflowRelationship {
+            source,
+            target,
+            condition,
+        } => {
+            *source = "[redacted relationship source]".into();
+            *target = "[redacted relationship target]".into();
+            *condition = condition
+                .as_ref()
+                .map(|_| "[redacted relationship condition]".into());
+        }
     }
 }
 
@@ -1647,6 +1662,21 @@ fn redact_beginner_inventory_item(item: &mut BeginnerInventoryItem) {
             *display_name = display_name
                 .as_ref()
                 .map(|_| "[redacted display name]".into());
+        }
+        BeginnerInventoryItemKind::WorkflowComponent { name, model, .. } => {
+            *name = "[redacted workflow component]".into();
+            *model = model.as_ref().map(|_| "[redacted model identifier]".into());
+        }
+        BeginnerInventoryItemKind::WorkflowRelationship {
+            source,
+            target,
+            condition,
+        } => {
+            *source = "[redacted relationship endpoint]".into();
+            *target = "[redacted relationship endpoint]".into();
+            *condition = condition
+                .as_ref()
+                .map(|_| "[redacted relationship condition]".into());
         }
     }
 }
@@ -4283,6 +4313,11 @@ mod tests {
         const PURL: &str = "pkg:generic/INVENTORY_PURL_SENTINEL@1";
         const CLOUD_ID: &str = "INVENTORY_CLOUD_ID_SENTINEL";
         const CLOUD_NAME: &str = "INVENTORY_CLOUD_NAME_SENTINEL";
+        const WORKFLOW_NAME: &str = "INVENTORY_WORKFLOW_NAME_SENTINEL";
+        const WORKFLOW_MODEL: &str = "INVENTORY_WORKFLOW_MODEL_SENTINEL";
+        const WORKFLOW_SOURCE: &str = "INVENTORY_WORKFLOW_SOURCE_SENTINEL";
+        const WORKFLOW_TARGET: &str = "INVENTORY_WORKFLOW_TARGET_SENTINEL";
+        const WORKFLOW_CONDITION: &str = "INVENTORY_WORKFLOW_CONDITION_SENTINEL";
         const POINTER: &str = "/INVENTORY_POINTER_SENTINEL/0";
         const NEWER: &str = "INVENTORY_NEWER_RUN_SENTINEL";
 
@@ -4337,6 +4372,25 @@ mod tests {
                 },
             ),
             observation(
+                "inventory-w-workflow-component",
+                "run-1",
+                InventoryObservationKind::WorkflowComponent {
+                    component_type: "agent".into(),
+                    name: WORKFLOW_NAME.into(),
+                    model: Some(WORKFLOW_MODEL.into()),
+                    is_guardrail: Some(false),
+                },
+            ),
+            observation(
+                "inventory-v-workflow-relationship",
+                "run-1",
+                InventoryObservationKind::WorkflowRelationship {
+                    source: WORKFLOW_SOURCE.into(),
+                    target: WORKFLOW_TARGET.into(),
+                    condition: Some(WORKFLOW_CONDITION.into()),
+                },
+            ),
+            observation(
                 "inventory-a-newer",
                 "run-2",
                 InventoryObservationKind::SoftwareComponent {
@@ -4356,6 +4410,8 @@ mod tests {
                 .map(|observation| observation.id.as_str())
                 .collect::<Vec<_>>(),
             [
+                "inventory-v-workflow-relationship",
+                "inventory-w-workflow-component",
                 "inventory-x-service",
                 "inventory-y-component",
                 "inventory-z-cloud",
@@ -4364,13 +4420,26 @@ mod tests {
         );
         let unredacted_report =
             beginner_report_for_export(&case, "run-1", RedactionProfile::None).unwrap();
-        assert_eq!(unredacted_report.inventory.total, 3);
+        assert_eq!(unredacted_report.inventory.total, 5);
         assert_eq!(unredacted_report.inventory.counts.services, 1);
         assert_eq!(unredacted_report.inventory.counts.software_components, 1);
         assert_eq!(unredacted_report.inventory.counts.cloud_resources, 1);
+        assert_eq!(unredacted_report.inventory.counts.workflow_components, 1);
+        assert_eq!(unredacted_report.inventory.counts.workflow_relationships, 1);
         let unredacted_report_json = serde_json::to_string(&unredacted_report).unwrap();
         for sentinel in [
-            ENDPOINT, COMPONENT, VERSION, PURL, CLOUD_ID, CLOUD_NAME, POINTER,
+            ENDPOINT,
+            COMPONENT,
+            VERSION,
+            PURL,
+            CLOUD_ID,
+            CLOUD_NAME,
+            WORKFLOW_NAME,
+            WORKFLOW_MODEL,
+            WORKFLOW_SOURCE,
+            WORKFLOW_TARGET,
+            WORKFLOW_CONDITION,
+            POINTER,
         ] {
             assert!(
                 unredacted_report_json.contains(sentinel),
@@ -4380,7 +4449,19 @@ mod tests {
         assert!(!unredacted_report_json.contains(NEWER));
         let unredacted_json = serde_json::to_string(&unredacted_case).unwrap();
         for sentinel in [
-            ENDPOINT, COMPONENT, VERSION, PURL, CLOUD_ID, CLOUD_NAME, POINTER, NEWER,
+            ENDPOINT,
+            COMPONENT,
+            VERSION,
+            PURL,
+            CLOUD_ID,
+            CLOUD_NAME,
+            WORKFLOW_NAME,
+            WORKFLOW_MODEL,
+            WORKFLOW_SOURCE,
+            WORKFLOW_TARGET,
+            WORKFLOW_CONDITION,
+            POINTER,
+            NEWER,
         ] {
             assert!(
                 unredacted_json.contains(sentinel),
@@ -4391,14 +4472,26 @@ mod tests {
         let redacted_case = case_for_export(&case, RedactionProfile::Standard);
         let redacted_json = serde_json::to_string(&redacted_case).unwrap();
         for sentinel in [
-            ENDPOINT, COMPONENT, VERSION, PURL, CLOUD_ID, CLOUD_NAME, POINTER, NEWER,
+            ENDPOINT,
+            COMPONENT,
+            VERSION,
+            PURL,
+            CLOUD_ID,
+            CLOUD_NAME,
+            WORKFLOW_NAME,
+            WORKFLOW_MODEL,
+            WORKFLOW_SOURCE,
+            WORKFLOW_TARGET,
+            WORKFLOW_CONDITION,
+            POINTER,
+            NEWER,
         ] {
             assert!(
                 !redacted_json.contains(sentinel),
                 "standard case leaked {sentinel}"
             );
         }
-        assert_eq!(redacted_case.inventory_observations.len(), 4);
+        assert_eq!(redacted_case.inventory_observations.len(), 6);
         for (original, redacted) in unredacted_case
             .inventory_observations
             .iter()
@@ -4483,6 +4576,41 @@ mod tests {
                     )
                 })
         );
+        assert!(
+            redacted_case
+                .inventory_observations
+                .iter()
+                .any(|observation| {
+                    matches!(
+                        &observation.kind,
+                        InventoryObservationKind::WorkflowComponent {
+                            component_type,
+                            name,
+                            model: Some(model),
+                            is_guardrail: Some(false),
+                        } if component_type == "agent"
+                            && name == "[redacted workflow component]"
+                            && model == "[redacted model]"
+                    )
+                })
+        );
+        assert!(
+            redacted_case
+                .inventory_observations
+                .iter()
+                .any(|observation| {
+                    matches!(
+                        &observation.kind,
+                        InventoryObservationKind::WorkflowRelationship {
+                            source,
+                            target,
+                            condition: Some(condition),
+                        } if source == "[redacted relationship source]"
+                            && target == "[redacted relationship target]"
+                            && condition == "[redacted relationship condition]"
+                    )
+                })
+        );
 
         let redacted_report =
             beginner_report_for_export(&case, "run-1", RedactionProfile::Standard).unwrap();
@@ -4500,14 +4628,26 @@ mod tests {
         );
         let redacted_report_json = serde_json::to_string(&redacted_report).unwrap();
         for sentinel in [
-            ENDPOINT, COMPONENT, VERSION, PURL, CLOUD_ID, CLOUD_NAME, POINTER, NEWER,
+            ENDPOINT,
+            COMPONENT,
+            VERSION,
+            PURL,
+            CLOUD_ID,
+            CLOUD_NAME,
+            WORKFLOW_NAME,
+            WORKFLOW_MODEL,
+            WORKFLOW_SOURCE,
+            WORKFLOW_TARGET,
+            WORKFLOW_CONDITION,
+            POINTER,
+            NEWER,
         ] {
             assert!(
                 !redacted_report_json.contains(sentinel),
                 "standard beginner report leaked {sentinel}"
             );
         }
-        assert_eq!(redacted_report.inventory.items.len(), 3);
+        assert_eq!(redacted_report.inventory.items.len(), 5);
         assert_eq!(redacted_report.inventory.representative_sample.len(), 3);
         assert_eq!(
             redacted_report.inventory.by_asset[0]
@@ -4556,6 +4696,29 @@ mod tests {
                 } => {
                     assert_eq!(native_id.as_deref(), Some("[redacted native ID]"));
                     assert_eq!(display_name.as_deref(), Some("[redacted display name]"));
+                }
+                BeginnerInventoryItemKind::WorkflowComponent {
+                    component_type,
+                    name,
+                    model,
+                    is_guardrail,
+                } => {
+                    assert_eq!(component_type, "agent");
+                    assert_eq!(name, "[redacted workflow component]");
+                    assert_eq!(model.as_deref(), Some("[redacted model identifier]"));
+                    assert_eq!(*is_guardrail, Some(false));
+                }
+                BeginnerInventoryItemKind::WorkflowRelationship {
+                    source,
+                    target,
+                    condition,
+                } => {
+                    assert_eq!(source, "[redacted relationship endpoint]");
+                    assert_eq!(target, "[redacted relationship endpoint]");
+                    assert_eq!(
+                        condition.as_deref(),
+                        Some("[redacted relationship condition]")
+                    );
                 }
             }
         }

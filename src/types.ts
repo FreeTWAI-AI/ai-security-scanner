@@ -1015,12 +1015,25 @@ export type BeginnerInventoryItem = {
   resourceType: string;
   nativeId?: string;
   displayName?: string;
+} | {
+  kind: "workflow_component";
+  componentType: string;
+  name: string;
+  model?: string;
+  isGuardrail?: boolean;
+} | {
+  kind: "workflow_relationship";
+  source: string;
+  target: string;
+  condition?: string;
 });
 
 export interface BeginnerInventoryCounts {
   services: number;
   softwareComponents: number;
   cloudResources: number;
+  workflowComponents: number;
+  workflowRelationships: number;
 }
 
 export interface BeginnerInventory {

@@ -10293,6 +10293,28 @@ fn validate_inventory_observation_fields(
             optional("inventory resource native ID", native_id.as_deref())?;
             optional("inventory resource display name", display_name.as_deref())?;
         }
+        InventoryObservationKind::WorkflowComponent {
+            component_type,
+            name,
+            model,
+            is_guardrail: _,
+        } => {
+            validate_inventory_text("inventory workflow component type", component_type, 512)?;
+            validate_inventory_text("inventory workflow component name", name, 512)?;
+            optional("inventory workflow component model", model.as_deref())?;
+        }
+        InventoryObservationKind::WorkflowRelationship {
+            source,
+            target,
+            condition,
+        } => {
+            validate_inventory_text("inventory workflow relationship source", source, 512)?;
+            validate_inventory_text("inventory workflow relationship target", target, 512)?;
+            optional(
+                "inventory workflow relationship condition",
+                condition.as_deref(),
+            )?;
+        }
     }
     Ok(())
 }
@@ -16173,6 +16195,68 @@ fn html_inventory_item_summary(item: &BeginnerInventoryItem, catalog: HtmlReport
             }
             catalog.text("Cloud resource", "雲端資源")
         }
+        BeginnerInventoryItemKind::WorkflowComponent {
+            component_type,
+            name,
+            model,
+            is_guardrail,
+        } => {
+            details.push(format!(
+                "{} <code>{}</code>",
+                catalog.text("Name", "名稱"),
+                html_escape(name)
+            ));
+            details.push(format!(
+                "{} <code>{}</code>",
+                catalog.text("component type", "元件類型"),
+                html_escape(component_type)
+            ));
+            if let Some(model) = model {
+                details.push(format!(
+                    "{} <code>{}</code>",
+                    catalog.text("model", "模型"),
+                    html_escape(model)
+                ));
+            }
+            if let Some(is_guardrail) = is_guardrail {
+                details.push(
+                    catalog
+                        .text(
+                            if *is_guardrail {
+                                "guardrail yes"
+                            } else {
+                                "guardrail no"
+                            },
+                            if *is_guardrail {
+                                "護欄：是"
+                            } else {
+                                "護欄：否"
+                            },
+                        )
+                        .to_owned(),
+                );
+            }
+            catalog.text("Workflow component", "工作流程元件")
+        }
+        BeginnerInventoryItemKind::WorkflowRelationship {
+            source,
+            target,
+            condition,
+        } => {
+            details.push(format!(
+                "<code>{}</code> → <code>{}</code>",
+                html_escape(source),
+                html_escape(target)
+            ));
+            if let Some(condition) = condition {
+                details.push(format!(
+                    "{} <code>{}</code>",
+                    catalog.text("condition", "條件"),
+                    html_escape(condition)
+                ));
+            }
+            catalog.text("Workflow relationship", "工作流程關係")
+        }
     };
     format!("<strong>{kind}</strong> — {}", details.join(" · "))
 }
@@ -16268,6 +16352,34 @@ fn html_typed_inventory_section(
             items,
         ));
     }
+    let workflow_counts = [
+        (
+            "Workflow components",
+            "工作流程元件",
+            report.inventory.counts.workflow_components,
+        ),
+        (
+            "Workflow relationships",
+            "工作流程關係",
+            report.inventory.counts.workflow_relationships,
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, _, count)| *count > 0)
+    .map(|(en, zh, count)| {
+        format!(
+            "<strong>{}:</strong> {}",
+            catalog.text(en, zh),
+            catalog.format_number(count)
+        )
+    })
+    .collect::<Vec<_>>()
+    .join(" · ");
+    let workflow_counts = if workflow_counts.is_empty() {
+        String::new()
+    } else {
+        format!("<p>{workflow_counts}</p>")
+    };
 
     format!(
         concat!(
@@ -16275,6 +16387,7 @@ fn html_typed_inventory_section(
             "<p><strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
             "<strong>{}:</strong> {} · <strong>{}:</strong> {} · ",
             "<strong>{}:</strong> {} · <strong>{}:</strong> {}</p>",
+            "{}",
             "<p><strong>{}:</strong> {}</p>",
             "<h3>{}</h3><ul class=\"inventory-sample\">{}</ul>",
             "<details class=\"inventory-complete\"><summary><strong>{}</strong></summary>{}</details></section>"
@@ -16296,6 +16409,7 @@ fn html_typed_inventory_section(
         catalog.format_number(report.inventory.asset_ids.len()),
         catalog.text("Representative records", "代表性紀錄"),
         catalog.format_number(report.inventory.representative_sample.len().min(3)),
+        workflow_counts,
         catalog.text("Inventoried asset list", "已盤點資產清單"),
         readable_target_list(
             &report.inventory.asset_ids,

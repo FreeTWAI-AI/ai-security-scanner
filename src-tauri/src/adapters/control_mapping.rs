@@ -852,6 +852,7 @@ mod tests {
         "kubescape",
         "kube-bench",
         "garak",
+        "agentic-radar",
     ];
 
     #[test]
@@ -1179,12 +1180,19 @@ mod tests {
     /// internal-host path was silently empty. Ask the producer side instead —
     /// every engine whose results become security findings must be represented.
     ///
-    /// The exemptions are the five engines whose output is inventory rather
+    /// The exemptions are the six engines whose output is inventory rather
     /// than findings (`beginner_report::task_result_kind`). They are excluded
     /// by name so that adding an engine to that list is a visible decision.
     #[test]
     fn every_finding_producing_engine_has_at_least_one_mapping_entry() {
-        const INVENTORY_ONLY: [&str; 5] = ["cloudquery", "steampipe", "syft", "naabu", "httpx"];
+        const INVENTORY_ONLY: [&str; 6] = [
+            "cloudquery",
+            "steampipe",
+            "syft",
+            "naabu",
+            "httpx",
+            "agentic-radar",
+        ];
         let catalog = catalog().expect("embedded control mapping catalog");
         let mapped = catalog
             .entries

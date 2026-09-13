@@ -3,7 +3,7 @@ use ai_security_scanner_lib::adapters::{BUILTIN_ENGINE_IDS, builtin_adapter_regi
 use ai_security_scanner_lib::correlation::correlation_report;
 use ai_security_scanner_lib::domain::{
     AssessmentCase, Asset, AssetIdentifier, AssetKind, AwsIamPolicySource, Confidence,
-    ConfidenceBasisCode, DataClass, Finding, FindingFamily, FindingStatus,
+    ConfidenceBasisCode, DataClass, EngineCategory, Finding, FindingFamily, FindingStatus,
     InventoryObservationKind, OrganizationProfile, RawArtifact, Severity, SeverityBasisCode,
     UnevaluatedTarget, UnevaluatedTargetCause,
 };
@@ -129,6 +129,11 @@ fn fixture(engine_id: &str) -> (&'static [u8], &'static str, &'static str) {
             "report.jsonl",
             "application/x-ndjson",
         ),
+        "agentic-radar" => (
+            include_bytes!("../../docs/research/fixtures/agentic-radar/n8n.json"),
+            "agentic-radar.json",
+            "application/json",
+        ),
         other => panic!("no adapter fixture for {other}"),
     }
 }
@@ -146,6 +151,13 @@ fn normalize_bytes(
             AssetKind::CloudAccount,
             Some("aws"),
             &[("aws_account_id", "123456789012")],
+        )]
+    } else if engine_id == "agentic-radar" {
+        vec![authorized_asset(
+            "asset-1",
+            AssetKind::Repository,
+            None,
+            &[],
         )]
     } else {
         vec![authorized_asset("asset-1", AssetKind::Other, None, &[])]
@@ -319,7 +331,7 @@ fn normalize_ai_generated_fixture(engine_id: &str) -> AdapterOutput {
 }
 
 #[test]
-fn registry_covers_exactly_the_twenty_two_catalog_engines() {
+fn registry_covers_exactly_the_twenty_three_catalog_engines() {
     let catalog = EngineRegistry::load_builtin().expect("valid catalog");
     let catalog_ids = catalog
         .manifests()
@@ -328,8 +340,8 @@ fn registry_covers_exactly_the_twenty_two_catalog_engines() {
         .collect::<BTreeSet<_>>();
     let adapter_ids = BUILTIN_ENGINE_IDS.iter().copied().collect::<BTreeSet<_>>();
 
-    assert_eq!(BUILTIN_ENGINE_IDS.len(), 22);
-    assert_eq!(adapter_ids.len(), 22);
+    assert_eq!(BUILTIN_ENGINE_IDS.len(), 23);
+    assert_eq!(adapter_ids.len(), 23);
     assert_eq!(adapter_ids, catalog_ids);
 
     let adapters = builtin_adapter_registry().expect("valid built-in adapter registry");
@@ -339,6 +351,19 @@ fn registry_covers_exactly_the_twenty_two_catalog_engines() {
         assert_eq!(adapter.adapter_version(), manifest.adapter_version);
     }
     assert!(adapters.get("not-in-catalog").is_none());
+
+    let agentic_radar = catalog
+        .get("agentic-radar")
+        .expect("Agentic Radar manifest");
+    assert_eq!(agentic_radar.category, EngineCategory::AiAgentFramework);
+    assert!(!agentic_radar.compatibility.runnable);
+    assert!(!agentic_radar.default_enabled);
+    assert!(agentic_radar.image.is_none());
+    assert!(agentic_radar.release_blocker().is_some());
+    assert_eq!(
+        agentic_radar.source_revision.as_deref(),
+        Some("65a7e4bd01e2034c7cb52e9620eeed287688cc53")
+    );
 }
 
 /// Engines whose native result shape has no severity field. Their findings and
@@ -1186,7 +1211,14 @@ fn trufflehog_findings_say_verification_was_not_attempted_rather_than_failed() {
 
 #[test]
 fn native_fixtures_normalize_without_inventing_inventory_findings() {
-    let inventory_engines = BTreeSet::from(["cloudquery", "steampipe", "syft", "naabu", "httpx"]);
+    let inventory_engines = BTreeSet::from([
+        "cloudquery",
+        "steampipe",
+        "syft",
+        "naabu",
+        "httpx",
+        "agentic-radar",
+    ]);
     for engine_id in BUILTIN_ENGINE_IDS {
         let output = normalize_fixture(engine_id);
         assert!(
@@ -1430,7 +1462,14 @@ fn maester_investigate_without_review_detail_remains_visible() {
 
 #[test]
 fn inventory_fixtures_preserve_typed_upstream_facts_and_exact_provenance() {
-    for engine_id in ["cloudquery", "steampipe", "syft", "naabu", "httpx"] {
+    for engine_id in [
+        "cloudquery",
+        "steampipe",
+        "syft",
+        "naabu",
+        "httpx",
+        "agentic-radar",
+    ] {
         let output = normalize_fixture(engine_id);
         assert!(output.complete, "{engine_id}: {:?}", output.warnings);
         assert!(output.findings.is_empty(), "{engine_id}");
@@ -1542,6 +1581,184 @@ fn inventory_fixtures_preserve_typed_upstream_facts_and_exact_provenance() {
         "SECRET_SENTINEL_MUST_NEVER_LEAK",
     ] {
         assert!(!httpx_json.contains(forbidden), "{httpx_json}");
+    }
+}
+
+#[test]
+fn agentic_radar_normalizes_only_the_static_workflow_graph() {
+    let output = normalize_fixture("agentic-radar");
+    assert!(output.complete, "{:?}", output.warnings);
+    assert!(output.warnings.is_empty());
+    assert!(output.findings.is_empty());
+    assert_eq!(output.observations.len(), 33);
+    assert_eq!(
+        output
+            .observations
+            .iter()
+            .filter(|observation| matches!(
+                observation.kind,
+                InventoryObservationKind::WorkflowComponent { .. }
+            ))
+            .count(),
+        20
+    );
+    assert_eq!(
+        output
+            .observations
+            .iter()
+            .filter(|observation| matches!(
+                observation.kind,
+                InventoryObservationKind::WorkflowRelationship { .. }
+            ))
+            .count(),
+        13
+    );
+    assert!(output.observations.iter().any(|observation| matches!(
+        &observation.kind,
+        InventoryObservationKind::WorkflowComponent {
+            component_type,
+            name,
+            model: None,
+            is_guardrail: None,
+        } if component_type == "mcp_server" && name == "MCP Client"
+    )));
+    assert!(output.observations.iter().any(|observation| matches!(
+        &observation.kind,
+        InventoryObservationKind::WorkflowRelationship {
+            source,
+            target,
+            condition: None,
+        } if source == "MCP Client" && target == "Personal Assistant"
+    )));
+
+    let serialized = format!(
+        "{}{}{:?}",
+        serde_json::to_string(&output.observations).unwrap(),
+        serde_json::to_string(&output.findings).unwrap(),
+        output.warnings
+    );
+    for excluded in [
+        "description",
+        "system_prompt",
+        "vulnerabilities",
+        "security_framework_mapping",
+        "mitigation",
+    ] {
+        assert!(!serialized.contains(excluded), "{serialized}");
+    }
+}
+
+#[test]
+fn agentic_radar_structured_warnings_retain_the_partial_graph_but_fail_closed() {
+    let output = normalize_bytes(
+        "agentic-radar",
+        include_bytes!("../../docs/research/fixtures/agentic-radar/crewai.json"),
+        "agentic-radar.json",
+        "application/json",
+        "run-agentic-radar-partial",
+    );
+    assert!(!output.complete);
+    assert!(output.findings.is_empty());
+    assert_eq!(output.observations.len(), 7);
+    assert!(output.warnings.iter().any(|warning| {
+        warning.contains("Agentic Radar reported incomplete workflow inventory")
+            && warning.contains("CrewAI package is not installed")
+    }));
+    assert!(output.observations.iter().any(|observation| matches!(
+        &observation.kind,
+        InventoryObservationKind::WorkflowRelationship {
+            source,
+            target,
+            condition: Some(condition),
+        } if source == "my_agent"
+            && target == "server_params"
+            && condition == "mcp_connection"
+    )));
+
+    let serialized = serde_json::to_string(&output.observations).unwrap();
+    assert!(!serialized.contains("localhost:8001"), "{serialized}");
+}
+
+#[test]
+fn agentic_radar_keeps_bounded_agent_metadata_and_accepts_its_exact_empty_state() {
+    let output = normalize_bytes(
+        "agentic-radar",
+        include_bytes!("../../docs/research/fixtures/agentic-radar/openai-agents.json"),
+        "agentic-radar.json",
+        "application/json",
+        "run-agentic-radar-agent",
+    );
+    assert!(output.complete, "{:?}", output.warnings);
+    assert!(output.findings.is_empty());
+    assert_eq!(output.observations.len(), 7);
+    assert!(output.observations.iter().any(|observation| matches!(
+        &observation.kind,
+        InventoryObservationKind::WorkflowComponent {
+            component_type,
+            name,
+            model: Some(model),
+            is_guardrail: Some(false),
+        } if component_type == "agent" && name == "Assistant" && model == "gpt-4o"
+    )));
+    let serialized = serde_json::to_string(&output.observations).unwrap();
+    assert!(!serialized.contains("system_prompt"), "{serialized}");
+    assert!(
+        !serialized.contains("Use the tools to read the filesystem"),
+        "{serialized}"
+    );
+
+    let empty = normalize_bytes(
+        "agentic-radar",
+        include_bytes!("../../docs/research/fixtures/agentic-radar/no-supported-workflow.json"),
+        "agentic-radar.json",
+        "application/json",
+        "run-agentic-radar-empty",
+    );
+    assert!(empty.complete, "{:?}", empty.warnings);
+    assert!(empty.findings.is_empty());
+    assert!(empty.observations.is_empty());
+}
+
+#[test]
+fn agentic_radar_never_promotes_generic_vulnerability_claims_to_findings() {
+    let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../docs/research/fixtures/agentic-radar/langgraph.json"
+    ))
+    .unwrap();
+    document["graph"]["nodes"][0]["vulnerabilities"] = serde_json::json!([{
+        "name": "MUST_NOT_BECOME_A_FINDING",
+        "severity": "critical",
+        "mitigation": "MUST_NOT_BECOME_ADVICE"
+    }]);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let output = normalize_bytes(
+        "agentic-radar",
+        &bytes,
+        "agentic-radar.json",
+        "application/json",
+        "run-agentic-radar-generic-warning",
+    );
+    assert!(!output.complete);
+    assert!(output.findings.is_empty());
+    assert!(!output.observations.is_empty());
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("vulnerability claims; they were ignored"))
+    );
+    let serialized = format!(
+        "{}{}{:?}",
+        serde_json::to_string(&output.observations).unwrap(),
+        serde_json::to_string(&output.findings).unwrap(),
+        output.warnings
+    );
+    for excluded in [
+        "MUST_NOT_BECOME_A_FINDING",
+        "MUST_NOT_BECOME_ADVICE",
+        "critical",
+    ] {
+        assert!(!serialized.contains(excluded), "{serialized}");
     }
 }
 

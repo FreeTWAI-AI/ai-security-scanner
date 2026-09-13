@@ -380,6 +380,14 @@
       "shallow": true
     },
     {
+      "id": "splx-ai/agentic-radar",
+      "path": ".upstreams/splx-ai/agentic-radar",
+      "remote": "https://github.com/splx-ai/agentic-radar",
+      "branch": "main",
+      "revision": "65a7e4bd01e2034c7cb52e9620eeed287688cc53",
+      "shallow": true
+    },
+    {
       "id": "sullo/nikto",
       "path": ".upstreams/sullo/nikto",
       "remote": "https://github.com/sullo/nikto",

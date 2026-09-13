@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
-const KNOWN_ENGINE_IDS: [&str; 22] = [
+const KNOWN_ENGINE_IDS: [&str; 23] = [
     "cloudquery",
     "steampipe",
     "prowler",
@@ -32,6 +32,7 @@ const KNOWN_ENGINE_IDS: [&str; 22] = [
     "kubescape",
     "kube-bench",
     "garak",
+    "agentic-radar",
 ];
 
 const AWS_ONLY_ENGINE_IDS: [&str; 4] = ["cloudquery", "steampipe", "scoutsuite", "cloudsplaining"];

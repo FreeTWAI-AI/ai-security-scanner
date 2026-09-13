@@ -57,6 +57,7 @@ pub const BUILTIN_ENGINE_IDS: &[&str] = &[
     "kubescape",
     "kube-bench",
     "garak",
+    "agentic-radar",
 ];
 
 const MAX_ARTIFACTS: usize = 64;
@@ -98,6 +99,7 @@ enum Profile {
     Kubescape,
     KubeBench,
     Garak,
+    AgenticRadar,
 }
 
 #[derive(Debug)]
@@ -564,6 +566,11 @@ pub fn builtin_adapter_registry() -> AppResult<AdapterRegistry> {
             "Kubernetes security engineer",
         ),
         ("garak", Profile::Garak, "AI security engineer"),
+        (
+            "agentic-radar",
+            Profile::AgenticRadar,
+            "AI security engineer",
+        ),
     ];
 
     let mut registry = AdapterRegistry::default();
@@ -767,6 +774,7 @@ fn normalize_artifacts(
                 | Profile::Naabu
                 | Profile::Httpx
                 | Profile::Syft
+                | Profile::AgenticRadar
         ) {
             let warnings_before_extract = output.warnings.len();
             let records =
@@ -1957,7 +1965,385 @@ fn extract_inventory_records(
         Profile::Naabu => extract_naabu_inventory(parsed, warnings),
         Profile::Httpx => extract_httpx_inventory(parsed, warnings),
         Profile::Syft => extract_syft_inventory(parsed, warnings),
+        Profile::AgenticRadar => extract_agentic_radar_inventory(parsed, warnings),
         _ => Vec::new(),
+    }
+}
+
+fn extract_agentic_radar_inventory(
+    parsed: &ParsedArtifact,
+    warnings: &mut Vec<String>,
+) -> Vec<InventoryRecord> {
+    let ParsedArtifact::Json(Value::Object(document)) = parsed else {
+        push_warning(
+            warnings,
+            "Agentic Radar output was not its supported JSON document; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    if document.get("schema_version").and_then(Value::as_str) != Some("1")
+        || document.get("scanner_version").and_then(Value::as_str) != Some("0.14.1")
+    {
+        push_warning(
+            warnings,
+            "Agentic Radar output did not match the pinned schema and scanner version; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    }
+    let Some(framework) = document.get("framework").and_then(Value::as_str) else {
+        push_warning(
+            warnings,
+            "Agentic Radar output lacked its framework; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    if !matches!(
+        framework,
+        "langgraph" | "crewai" | "n8n" | "openai-agents" | "autogen"
+    ) {
+        push_warning(
+            warnings,
+            "Agentic Radar output named an unsupported framework; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    }
+    let Some(status) = document.get("status").and_then(Value::as_str) else {
+        push_warning(
+            warnings,
+            "Agentic Radar output lacked its status; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    if !matches!(status, "workflow_found" | "no_supported_workflow") {
+        push_warning(
+            warnings,
+            "Agentic Radar output named an unsupported status; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    }
+
+    let complete = document.get("complete").and_then(Value::as_bool);
+    let upstream_warnings = document.get("warnings").and_then(Value::as_array);
+    match (complete, upstream_warnings) {
+        (Some(true), Some(values)) if values.is_empty() => {}
+        (Some(false), Some(values)) if !values.is_empty() => {}
+        _ => push_warning(
+            warnings,
+            "Agentic Radar completeness did not agree with its structured warnings; the partial graph was retained, but workflow inventory is incomplete",
+        ),
+    }
+    if let Some(upstream_warnings) = upstream_warnings {
+        if upstream_warnings.len() > MAX_WARNINGS {
+            push_warning(
+                warnings,
+                "Agentic Radar warnings exceeded the adapter safety boundary; later diagnostics remain only in the raw artifact",
+            );
+        }
+        for (index, value) in upstream_warnings.iter().take(MAX_WARNINGS).enumerate() {
+            let pointer = format!("/warnings/{index}");
+            let Some(object) = value.as_object() else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar warning at {pointer} was malformed; the partial graph was retained"
+                    ),
+                );
+                continue;
+            };
+            if object.get("code").and_then(Value::as_str) != Some("analyzer_diagnostic") {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar warning at {pointer} used an unsupported code; the partial graph was retained"
+                    ),
+                );
+                continue;
+            }
+            let Some(message) = inventory_string_any(object, &["message"]) else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar warning at {pointer} lacked a bounded message; the partial graph was retained"
+                    ),
+                );
+                continue;
+            };
+            push_warning(
+                warnings,
+                format!("Agentic Radar reported incomplete workflow inventory: {message}"),
+            );
+        }
+    }
+
+    let Some(graph) = document.get("graph").and_then(Value::as_object) else {
+        push_warning(
+            warnings,
+            "Agentic Radar output lacked its graph object; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    let Some(nodes) = graph.get("nodes").and_then(Value::as_array) else {
+        push_warning(
+            warnings,
+            "Agentic Radar graph lacked its nodes array; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    let Some(edges) = graph.get("edges").and_then(Value::as_array) else {
+        push_warning(
+            warnings,
+            "Agentic Radar graph lacked its edges array; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    let Some(agents) = graph.get("agents").and_then(Value::as_array) else {
+        push_warning(
+            warnings,
+            "Agentic Radar graph lacked its agents array; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+    let Some(tools) = graph.get("tools").and_then(Value::as_array) else {
+        push_warning(
+            warnings,
+            "Agentic Radar graph lacked its tools array; the raw artifact was retained, and workflow inventory is incomplete",
+        );
+        return Vec::new();
+    };
+
+    if (status == "workflow_found") != (nodes.len() > 2) {
+        push_warning(
+            warnings,
+            "Agentic Radar graph membership did not agree with its workflow status; the graph was retained, but workflow inventory is incomplete",
+        );
+    }
+
+    let mut components = BTreeMap::<String, InventoryRecord>::new();
+    for (collection_name, values) in [("nodes", nodes), ("tools", tools)] {
+        if values.len() > MAX_RECORDS {
+            push_warning(
+                warnings,
+                format!(
+                    "Agentic Radar {collection_name} exceeded the record safety boundary; later components remain only in the raw artifact"
+                ),
+            );
+        }
+        for (index, value) in values.iter().take(MAX_RECORDS).enumerate() {
+            let pointer = format!("/graph/{collection_name}/{index}");
+            let Some(object) = value.as_object() else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar component at {pointer} was not an object and was not normalized"
+                    ),
+                );
+                continue;
+            };
+            let Some(component_type) = agentic_radar_identity(object, "node_type") else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar component at {pointer} lacked its node type and was not normalized"
+                    ),
+                );
+                continue;
+            };
+            if !matches!(
+                component_type.as_str(),
+                "agent" | "basic" | "tool" | "custom_tool" | "mcp_server" | "default"
+            ) {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar component at {pointer} used an unsupported node type and was not normalized"
+                    ),
+                );
+                continue;
+            }
+            let Some(name) = agentic_radar_identity(object, "name") else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "Agentic Radar component at {pointer} lacked its name and was not normalized"
+                    ),
+                );
+                continue;
+            };
+            agentic_radar_reject_vulnerability_claims(object, &pointer, warnings);
+            let key = format!("{component_type}\0{name}");
+            components.entry(key).or_insert(InventoryRecord {
+                pointer,
+                asset_hint: None,
+                asset_provider: None,
+                kind: InventoryObservationKind::WorkflowComponent {
+                    component_type,
+                    name,
+                    model: None,
+                    is_guardrail: None,
+                },
+            });
+        }
+    }
+
+    if agents.len() > MAX_RECORDS {
+        push_warning(
+            warnings,
+            "Agentic Radar agents exceeded the record safety boundary; later agent metadata remains only in the raw artifact",
+        );
+    }
+    for (index, value) in agents.iter().take(MAX_RECORDS).enumerate() {
+        let pointer = format!("/graph/agents/{index}");
+        let Some(object) = value.as_object() else {
+            push_warning(
+                warnings,
+                format!(
+                    "Agentic Radar agent at {pointer} was not an object and was not normalized"
+                ),
+            );
+            continue;
+        };
+        let Some(name) = agentic_radar_identity(object, "name") else {
+            push_warning(
+                warnings,
+                format!("Agentic Radar agent at {pointer} lacked its name and was not normalized"),
+            );
+            continue;
+        };
+        let model = agentic_radar_identity(object, "llm");
+        if object.get("llm").is_some() && model.is_none() {
+            push_warning(
+                warnings,
+                format!("Agentic Radar agent at {pointer} had no bounded model identifier"),
+            );
+        }
+        let is_guardrail = object.get("is_guardrail").and_then(Value::as_bool);
+        if object.get("is_guardrail").is_some() && is_guardrail.is_none() {
+            push_warning(
+                warnings,
+                format!("Agentic Radar agent at {pointer} had an invalid guardrail flag"),
+            );
+        }
+        agentic_radar_reject_vulnerability_claims(object, &pointer, warnings);
+        components.insert(
+            format!("agent\0{name}"),
+            InventoryRecord {
+                pointer,
+                asset_hint: None,
+                asset_provider: None,
+                kind: InventoryObservationKind::WorkflowComponent {
+                    component_type: "agent".into(),
+                    name,
+                    model,
+                    is_guardrail,
+                },
+            },
+        );
+    }
+
+    let mut relationships = BTreeMap::<String, InventoryRecord>::new();
+    if edges.len() > MAX_RECORDS {
+        push_warning(
+            warnings,
+            "Agentic Radar edges exceeded the record safety boundary; later relationships remain only in the raw artifact",
+        );
+    }
+    for (index, value) in edges.iter().take(MAX_RECORDS).enumerate() {
+        let pointer = format!("/graph/edges/{index}");
+        let Some(object) = value.as_object() else {
+            push_warning(
+                warnings,
+                format!(
+                    "Agentic Radar relationship at {pointer} was not an object and was not normalized"
+                ),
+            );
+            continue;
+        };
+        let (Some(source), Some(target)) = (
+            agentic_radar_identity(object, "start"),
+            agentic_radar_identity(object, "end"),
+        ) else {
+            push_warning(
+                warnings,
+                format!(
+                    "Agentic Radar relationship at {pointer} lacked an endpoint and was not normalized"
+                ),
+            );
+            continue;
+        };
+        let condition = match object.get("condition") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => {
+                let condition = agentic_radar_text(value);
+                if condition.is_none() {
+                    push_warning(
+                        warnings,
+                        format!("Agentic Radar relationship at {pointer} had no bounded condition"),
+                    );
+                }
+                condition
+            }
+            Some(_) => {
+                push_warning(
+                    warnings,
+                    format!("Agentic Radar relationship at {pointer} had an invalid condition"),
+                );
+                None
+            }
+        };
+        let key = format!("{source}\0{target}\0{}", condition.as_deref().unwrap_or(""));
+        relationships.entry(key).or_insert(InventoryRecord {
+            pointer,
+            asset_hint: None,
+            asset_provider: None,
+            kind: InventoryObservationKind::WorkflowRelationship {
+                source,
+                target,
+                condition,
+            },
+        });
+    }
+
+    components
+        .into_values()
+        .chain(relationships.into_values())
+        .take(MAX_RECORDS)
+        .collect()
+}
+
+fn agentic_radar_identity(object: &Map<String, Value>, key: &str) -> Option<String> {
+    agentic_radar_text(object.get(key)?.as_str()?)
+}
+
+fn agentic_radar_text(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.chars().count() > MAX_SHORT_TEXT
+        || value.chars().any(char::is_control)
+    {
+        return None;
+    }
+    Some(value.to_owned())
+}
+
+fn agentic_radar_reject_vulnerability_claims(
+    object: &Map<String, Value>,
+    pointer: &str,
+    warnings: &mut Vec<String>,
+) {
+    match object.get("vulnerabilities") {
+        Some(Value::Array(values)) if values.is_empty() => {}
+        Some(Value::Array(_)) => push_warning(
+            warnings,
+            format!(
+                "Agentic Radar record at {pointer} carried vulnerability claims; they were ignored, and workflow inventory is incomplete"
+            ),
+        ),
+        _ => push_warning(
+            warnings,
+            format!(
+                "Agentic Radar record at {pointer} lacked its empty vulnerability array; workflow inventory is incomplete"
+            ),
+        ),
     }
 }
 
@@ -2371,7 +2757,12 @@ fn extract_records(
 ) -> Vec<SourceRecord> {
     if matches!(
         profile,
-        Profile::CloudQuery | Profile::Steampipe | Profile::Naabu | Profile::Httpx | Profile::Syft
+        Profile::CloudQuery
+            | Profile::Steampipe
+            | Profile::Naabu
+            | Profile::Httpx
+            | Profile::Syft
+            | Profile::AgenticRadar
     ) {
         return Vec::new();
     }
@@ -2398,7 +2789,8 @@ fn extract_records(
         | Profile::Steampipe
         | Profile::Naabu
         | Profile::Httpx
-        | Profile::Syft => Vec::new(),
+        | Profile::Syft
+        | Profile::AgenticRadar => Vec::new(),
     }
 }
 
@@ -6310,6 +6702,7 @@ fn impact_for(
             "the Kubernetes cluster or workload may have reduced isolation or administrative protection"
         }
         Profile::Garak => "the model endpoint may produce output it is supposed to refuse",
+        Profile::AgenticRadar => unreachable!("Agentic Radar emits inventory only"),
     };
     format!("{consequence}.")
 }
@@ -6335,6 +6728,7 @@ fn family_for(profile: Profile) -> FindingFamily {
         Profile::Trivy | Profile::Grype | Profile::Syft => FindingFamily::VulnerableComponent,
         Profile::Kubescape | Profile::KubeBench => FindingFamily::Kubernetes,
         Profile::Garak => FindingFamily::ModelBehavior,
+        Profile::AgenticRadar => unreachable!("Agentic Radar emits inventory only"),
     }
 }
 
@@ -6383,6 +6777,7 @@ fn remedy_for(profile: Profile) -> &'static str {
         Profile::Garak => {
             "Reproduce the probe, decide whether those replies actually breach this endpoint's usage policy, and if so add a guardrail in front of or behind the model"
         }
+        Profile::AgenticRadar => unreachable!("Agentic Radar emits inventory only"),
     }
 }
 

@@ -1325,7 +1325,7 @@ test("reachable-service inventory is not counted or triaged as a vulnerability",
   expect(container.querySelector("#finding-browser")).toBeNull();
 });
 
-test("typed inventory leads over legacy exposure rows and presents all three scanner-neutral kinds", () => {
+test("typed inventory leads over legacy exposure rows and presents every scanner-neutral kind", () => {
   const source = (id: string, engineId: string) => ({
     observationId: id,
     engineId,
@@ -1364,6 +1364,21 @@ test("typed inventory leads over legacy exposure rows and presents all three sca
     nativeId: "bucket-1",
     displayName: "Uploads & archives",
     sources: [source("cloud", "cloudquery")],
+  }, {
+    kind: "workflow_component",
+    assetId: "asset-1",
+    componentType: "agent",
+    name: "Trip planner",
+    model: "local-model",
+    isGuardrail: false,
+    sources: [source("workflow-component", "agentic-radar")],
+  }, {
+    kind: "workflow_relationship",
+    assetId: "asset-1",
+    source: "START",
+    target: "Trip planner",
+    condition: "approved route",
+    sources: [source("workflow-edge", "agentic-radar")],
   }];
   const legacyExposure = frozenFinding({
     title: "Legacy reachable service that must not duplicate typed inventory",
@@ -1385,15 +1400,27 @@ test("typed inventory leads over legacy exposure rows and presents all three sca
       unavailableDimensions: [],
     },
     inventory: {
-      total: 3,
-      counts: { services: 1, softwareComponents: 1, cloudResources: 1 },
+      total: 5,
+      counts: {
+        services: 1,
+        softwareComponents: 1,
+        cloudResources: 1,
+        workflowComponents: 1,
+        workflowRelationships: 1,
+      },
       assetIds: ["asset-1"],
       representativeSample: items,
       items,
       byAsset: [{
         assetId: "asset-1",
-        total: 3,
-        counts: { services: 1, softwareComponents: 1, cloudResources: 1 },
+        total: 5,
+        counts: {
+          services: 1,
+          softwareComponents: 1,
+          cloudResources: 1,
+          workflowComponents: 1,
+          workflowRelationships: 1,
+        },
         representativeSample: items,
       }],
     },
@@ -1402,10 +1429,14 @@ test("typed inventory leads over legacy exposure rows and presents all three sca
 
   const { container, unmount } = renderReport(value, [], [catalogRun("syft")]);
   expect(container.textContent).toContain("What the scanners inventoried");
-  expect(container.textContent).toContain("3 inventory items across 1 assets");
+  expect(container.textContent).toContain("5 inventory items across 1 assets");
   expect(container.textContent).toContain("10.0.0.5:443");
   expect(container.textContent).toContain("scanner <component>");
   expect(container.textContent).toContain("Uploads & archives");
+  expect(container.textContent).toContain("Trip planner");
+  expect(container.textContent).toContain("START → Trip planner");
+  expect(container.textContent).toContain("Workflow components1");
+  expect(container.textContent).toContain("Workflow relationships1");
   expect(container.textContent).toContain("Sources: 3 · httpx, naabu");
   expect(container.textContent).not.toContain("naabu, naabu");
   expect(container.textContent).not.toContain("Reachable services observed — not vulnerabilities");
@@ -1417,8 +1448,8 @@ test("typed inventory leads over legacy exposure rows and presents all three sca
   window.localStorage.setItem(localeStorageKey, "zh-TW");
   const zh = renderReport(value, [], [catalogRun("syft")]);
   expect(zh.container.textContent).toContain("掃描工具盤點到的項目");
-  expect(zh.container.textContent).toContain("共 3 個盤點項目，分布於 1 個資產");
-  expect(zh.container.textContent).toContain("這些是服務、軟體元件與雲端資源，不是資安問題或修復建議。");
+  expect(zh.container.textContent).toContain("共 5 個盤點項目，分布於 1 個資產");
+  expect(zh.container.textContent).toContain("這些是服務、軟體元件、雲端資源與工作流程結構，不是資安問題或修復建議。");
   window.localStorage.setItem(localeStorageKey, "en");
 });
 

@@ -3048,5 +3048,134 @@
         ]
       }
     }
+  },
+  {
+    "schema_version": "2.0.0",
+    "id": "agentic-radar",
+    "display_name": "Agentic Radar",
+    "category": "ai_agent_framework",
+    "description": "Statically inventories agents, tools, MCP servers, and their workflow relationships in one approved repository snapshot without treating generic category warnings as vulnerability findings.",
+    "repository_url": "https://github.com/splx-ai/agentic-radar",
+    "homepage_url": "https://github.com/splx-ai/agentic-radar",
+    "license_spdx": "Apache-2.0",
+    "distribution_mode": "build_from_pinned_source",
+    "image": null,
+    "source_revision": "65a7e4bd01e2034c7cb52e9620eeed287688cc53",
+    "engine_version": "0.14.1",
+    "rule_version": null,
+    "adapter_version": "0.1.3",
+    "supported_providers": [],
+    "supported_asset_kinds": [
+      "repository"
+    ],
+    "input_contracts": [
+      { "asset_kind": "repository", "input_profile": "repository_working_tree" }
+    ],
+    "required_permissions": [
+      "local_artifact_read"
+    ],
+    "active_external": false,
+    "default_enabled": false,
+    "estimated_memory_mb": 1024,
+    "estimated_disk_mb": 2048,
+    "network_destinations": [],
+    "output_formats": [
+      "json"
+    ],
+    "command": [
+      "--engine",
+      "agentic-radar",
+      "--workspace",
+      "/workspace",
+      "--output",
+      "/output"
+    ],
+    "status": "experimental",
+    "notices": [
+      "This release is not dispatchable. It carries no packaged image and declares itself non-runnable, so the registry refuses to plan or run it; the record exists so the thin adapter can validate pinned machine output.",
+      "Agentic Radar output is retained as workflow inventory only. Its generic category-based vulnerability messages are not normalized as findings because they carry no stable rule identifier, severity, or per-result evidence.",
+      "A structured warning or incomplete machine-output envelope preserves the partial graph but marks coverage incomplete; it never becomes a clean scan result."
+    ],
+    "license": {
+      "disposition": "allow",
+      "rationale": "Apache-2.0 permits redistribution with the upstream license and notices retained.",
+      "source_offer_path": null
+    },
+    "provenance": {
+      "engine": {
+        "version": "0.14.1",
+        "source_repository": "https://github.com/splx-ai/agentic-radar",
+        "source_revision": "65a7e4bd01e2034c7cb52e9620eeed287688cc53",
+        "source_ref": "v0.14.1",
+        "acquisition_source": "https://github.com/splx-ai/agentic-radar/commit/65a7e4bd01e2034c7cb52e9620eeed287688cc53",
+        "artifact_source_revision": null,
+        "source_association": "source_build_required"
+      },
+      "rules": {
+        "mode": "not_applicable",
+        "identifier": "No vulnerability rules are consumed; only the static workflow graph is normalized",
+        "revision": null,
+        "acquisition_source": null
+      },
+      "data": {
+        "mode": "runtime_bound",
+        "identifier": "repository working-tree snapshot",
+        "revision": "case_artifact_sha256",
+        "acquisition_source": "assessment_case"
+      },
+      "adapter": {
+        "id": "ai-security-scanner:agentic-radar",
+        "version": "0.1.3",
+        "acquisition_source": "workspace://src-tauri/src/adapters/mod.rs",
+        "source_revision": null,
+        "release_state": "workspace_unreleased"
+      }
+    },
+    "compatibility": {
+      "knowledge_date": "2026-09-13",
+      "support_until": "2026-12-12",
+      "maintenance_owner": "teddashh/ai-security-scanner maintainers",
+      "update_procedure": "docs/engine-maintenance.md",
+      "runnable": false,
+      "artifact_state": "managed_build_plan",
+      "blocked_by": [
+        "no packaged image: the pinned source and local machine-output patch have never been built or tested as a product image, or published",
+        "no typed framework-selection path exists to freeze one of the five supported analyzers and verify that the reported framework matches the reviewed request",
+        "the machine-output contract requires a local patch that is not part of an accepted upstream release"
+      ],
+      "knowledge_input": {
+        "kind": "runtime_bound",
+        "identifier": "repository working-tree snapshot",
+        "version": "case_artifact_sha256",
+        "acquisition_source": "assessment_case",
+        "pin_state": "runtime_bound"
+      },
+      "wrapper": {
+        "required": true,
+        "strategy": "Accept one immutable repository snapshot and one typed supported-framework selection, keep execution offline, emit the reviewed JSON envelope, and pass only that artifact to the adapter.",
+        "entrypoint": null
+      },
+      "packaging_plan": "engines/images/agentic-radar/plan.json"
+    },
+    "execution": {
+      "output": {
+        "primary_format": "json",
+        "path": "/output/agentic-radar.json",
+        "media_type": "application/json",
+        "adapter_state": "workspace_unreleased"
+      },
+      "resources": {
+        "memory_mb": 1024,
+        "disk_mb": 2048,
+        "cpu_millis": 1000,
+        "pids": 128,
+        "timeout_seconds": 1800
+      },
+      "network": {
+        "required": false,
+        "mode": "disabled",
+        "destinations": []
+      }
+    }
   }
 ]

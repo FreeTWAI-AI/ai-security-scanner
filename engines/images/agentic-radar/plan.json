@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "engine_id": "agentic-radar",
+  "plan_kind": "managed_build",
+  "knowledge_date": "2026-09-13",
+  "support_until": "2026-12-12",
+  "maintenance_owner": "teddashh/ai-security-scanner maintainers",
+  "update_procedure": "docs/engine-maintenance.md",
+  "publish_state": "managed_artifact_not_published",
+  "source": {
+    "repository": "https://github.com/splx-ai/agentic-radar",
+    "revision": "65a7e4bd01e2034c7cb52e9620eeed287688cc53",
+    "acquisition_source": "https://github.com/splx-ai/agentic-radar/commit/65a7e4bd01e2034c7cb52e9620eeed287688cc53",
+    "local_research_checkout": ".upstreams/splx-ai/agentic-radar"
+  },
+  "verified_upstream_artifact": null,
+  "final_artifact": {
+    "repository": "ghcr.io/teddashh/ai-security-scanner-engine-agentic-radar",
+    "tag": null,
+    "digest": null
+  },
+  "build_recipe": null,
+  "dockerfile": {
+    "emitted": false,
+    "reason": "Nothing has been built. This plan records the reviewed source pin and local machine-output patch behind the adapter, not an image; a Dockerfile would claim packaging work that has not been authorized or performed."
+  },
+  "wrapper": {
+    "required": true,
+    "strategy": "Accept one immutable repository snapshot and one typed supported-framework selection, keep execution offline, emit the reviewed JSON envelope, and pass only that artifact to the adapter.",
+    "entrypoint": null
+  },
+  "command": [
+    "--engine",
+    "agentic-radar",
+    "--workspace",
+    "/workspace",
+    "--output",
+    "/output"
+  ],
+  "output": {
+    "primary_format": "json",
+    "path": "/output/agentic-radar.json",
+    "media_type": "application/json",
+    "adapter_state": "workspace_unreleased"
+  },
+  "license": {
+    "disposition": "allow",
+    "rationale": "Apache-2.0 permits redistribution with the upstream license and notices retained.",
+    "source_offer_path": null
+  },
+  "blockers": [
+    "No image exists. The pinned source and local machine-output patch have never been built or tested as a product image, or published.",
+    "No typed framework-selection path exists to freeze one of the five supported analyzers and verify that the reported framework matches the reviewed request.",
+    "The machine-output contract requires a local patch that is not part of an accepted upstream release."
+  ]
+}

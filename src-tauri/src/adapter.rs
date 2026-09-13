@@ -564,6 +564,29 @@ pub fn validate_adapter_output(
                     text_fields.push(("cloud display name", value));
                 }
             }
+            crate::domain::InventoryObservationKind::WorkflowComponent {
+                component_type,
+                name,
+                model,
+                ..
+            } => {
+                text_fields.push(("workflow component type", component_type));
+                text_fields.push(("workflow component name", name));
+                if let Some(value) = model.as_deref() {
+                    text_fields.push(("workflow component model", value));
+                }
+            }
+            crate::domain::InventoryObservationKind::WorkflowRelationship {
+                source,
+                target,
+                condition,
+            } => {
+                text_fields.push(("workflow relationship source", source));
+                text_fields.push(("workflow relationship target", target));
+                if let Some(value) = condition.as_deref() {
+                    text_fields.push(("workflow relationship condition", value));
+                }
+            }
         }
         for (label, value) in text_fields {
             if value.is_empty()

@@ -342,6 +342,7 @@ pub enum EngineCategory {
     Host,
     SchemaAndExport,
     AiModelEndpoint,
+    AiAgentFramework,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1464,6 +1465,20 @@ pub enum InventoryObservationKind {
         native_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         display_name: Option<String>,
+    },
+    WorkflowComponent {
+        component_type: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_guardrail: Option<bool>,
+    },
+    WorkflowRelationship {
+        source: String,
+        target: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        condition: Option<String>,
     },
 }
 

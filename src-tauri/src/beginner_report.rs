@@ -136,10 +136,13 @@ pub struct BeginnerInventory {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct BeginnerInventoryCounts {
     pub services: usize,
     pub software_components: usize,
     pub cloud_resources: usize,
+    pub workflow_components: usize,
+    pub workflow_relationships: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -179,6 +182,17 @@ pub enum BeginnerInventoryItemKind {
         resource_type: String,
         native_id: Option<String>,
         display_name: Option<String>,
+    },
+    WorkflowComponent {
+        component_type: String,
+        name: String,
+        model: Option<String>,
+        is_guardrail: Option<bool>,
+    },
+    WorkflowRelationship {
+        source: String,
+        target: String,
+        condition: Option<String>,
     },
 }
 
@@ -881,6 +895,8 @@ enum InventoryAggregateKey {
     SoftwareCoordinates(Id, String, Option<String>, Option<String>),
     CloudNativeId(Id, String, String),
     CloudCoordinates(Id, String, Option<String>),
+    WorkflowComponent(Id, String, String, Option<String>, Option<bool>),
+    WorkflowRelationship(Id, String, String, Option<String>),
 }
 
 fn project_inventory(case: &AssessmentCase, run: &ScanRun) -> BeginnerInventory {
@@ -1043,6 +1059,43 @@ fn inventory_item(
                 },
             )
         }
+        InventoryObservationKind::WorkflowComponent {
+            component_type,
+            name,
+            model,
+            is_guardrail,
+        } => (
+            InventoryAggregateKey::WorkflowComponent(
+                observation.asset_id.clone(),
+                component_type.clone(),
+                name.clone(),
+                model.clone(),
+                *is_guardrail,
+            ),
+            BeginnerInventoryItemKind::WorkflowComponent {
+                component_type: component_type.clone(),
+                name: name.clone(),
+                model: model.clone(),
+                is_guardrail: *is_guardrail,
+            },
+        ),
+        InventoryObservationKind::WorkflowRelationship {
+            source,
+            target,
+            condition,
+        } => (
+            InventoryAggregateKey::WorkflowRelationship(
+                observation.asset_id.clone(),
+                source.clone(),
+                target.clone(),
+                condition.clone(),
+            ),
+            BeginnerInventoryItemKind::WorkflowRelationship {
+                source: source.clone(),
+                target: target.clone(),
+                condition: condition.clone(),
+            },
+        ),
     }
 }
 
@@ -1086,6 +1139,12 @@ fn beginner_inventory_counts(items: &[BeginnerInventoryItem]) -> BeginnerInvento
                 counts.software_components += 1;
             }
             BeginnerInventoryItemKind::CloudResource { .. } => counts.cloud_resources += 1,
+            BeginnerInventoryItemKind::WorkflowComponent { .. } => {
+                counts.workflow_components += 1;
+            }
+            BeginnerInventoryItemKind::WorkflowRelationship { .. } => {
+                counts.workflow_relationships += 1;
+            }
         }
     }
     counts
@@ -4162,7 +4221,7 @@ fn task_result_kind(task: &EngineRun) -> CheckResultKind {
         EngineTaskKind::CatalogEngine
             if matches!(
                 task.engine_id.to_ascii_lowercase().as_str(),
-                "cloudquery" | "steampipe" | "syft" | "naabu" | "httpx"
+                "cloudquery" | "steampipe" | "syft" | "naabu" | "httpx" | "agentic-radar"
             ) =>
         {
             CheckResultKind::Inventory
@@ -4176,9 +4235,16 @@ fn legacy_check_result_kind(check_id: &str) -> CheckResultKind {
     if normalized.starts_with("native localhost tcp check on ") {
         return CheckResultKind::Connectivity;
     }
-    if ["cloudquery", "steampipe", "syft", "naabu", "httpx"]
-        .iter()
-        .any(|engine| normalized == *engine || normalized.starts_with(&format!("{engine}-")))
+    if [
+        "cloudquery",
+        "steampipe",
+        "syft",
+        "naabu",
+        "httpx",
+        "agentic-radar",
+    ]
+    .iter()
+    .any(|engine| normalized == *engine || normalized.starts_with(&format!("{engine}-")))
     {
         return CheckResultKind::Inventory;
     }
@@ -5720,7 +5786,14 @@ mod tests {
 
     #[test]
     fn inventory_engines_are_not_completed_security_checks() {
-        for engine_id in ["cloudquery", "steampipe", "syft", "naabu", "httpx"] {
+        for engine_id in [
+            "cloudquery",
+            "steampipe",
+            "syft",
+            "naabu",
+            "httpx",
+            "agentic-radar",
+        ] {
             let mut task = catalog_task("completed", EngineRunStatus::Completed);
             task.engine_id = engine_id.into();
             let case = case_with_catalog_tasks(vec![task], true);
