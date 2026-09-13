@@ -1242,7 +1242,8 @@ export type FindingFamily =
   | "secret"
   | "infrastructure_as_code"
   | "vulnerable_component"
-  | "kubernetes";
+  | "kubernetes"
+  | "model_behavior";
 
 /**
  * Why this case raised a finding's priority above the scanner's own rating.
@@ -1266,7 +1267,8 @@ export type SeverityBasisCode =
   | "cis_kubernetes_benchmark"
   | "cloud_control_query"
   | "cloudsplaining_iam_policy_finding"
-  | "unrated_vulnerability_test_alarm";
+  | "unrated_vulnerability_test_alarm"
+  | "adversarial_probe_failure_rate";
 
 /** Why this product assigned confidence when the engine supplied none. */
 export type ConfidenceBasisCode =

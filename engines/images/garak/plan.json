@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "engine_id": "garak",
+  "plan_kind": "managed_build",
+  "knowledge_date": "2026-09-12",
+  "support_until": "2026-12-11",
+  "maintenance_owner": "teddashh/ai-security-scanner maintainers",
+  "update_procedure": "docs/engine-maintenance.md",
+  "publish_state": "managed_artifact_not_published",
+  "source": {
+    "repository": "https://github.com/NVIDIA/garak",
+    "revision": "93aa9cdec309ec4170559676f1826ea2a679920c",
+    "acquisition_source": "https://github.com/NVIDIA/garak/commit/93aa9cdec309ec4170559676f1826ea2a679920c",
+    "local_research_checkout": ".upstreams/NVIDIA/garak"
+  },
+  "verified_upstream_artifact": null,
+  "final_artifact": {
+    "repository": "ghcr.io/teddashh/ai-security-scanner-engine-garak",
+    "tag": null,
+    "digest": null
+  },
+  "build_recipe": null,
+  "dockerfile": {
+    "emitted": false,
+    "reason": "Nothing has been built. This plan records the reviewed source pin behind the adapter, not an image; a Dockerfile would claim a build that no one has run, tested, or published."
+  },
+  "wrapper": {
+    "required": true,
+    "strategy": "Accept only the model endpoint named in the scope grant, refuse every other destination, and hand the adapter only the run's own report.jsonl.",
+    "entrypoint": null
+  },
+  "command": [
+    "--engine",
+    "garak",
+    "--scope",
+    "/run/ai-security-scanner/scope.json",
+    "--output",
+    "/output"
+  ],
+  "output": {
+    "primary_format": "jsonl",
+    "path": "/output/report.jsonl",
+    "media_type": "application/x-ndjson",
+    "adapter_state": "workspace_unreleased"
+  },
+  "license": {
+    "disposition": "allow",
+    "rationale": "Apache-2.0 permits redistribution of the engine and its probes with the upstream notice retained.",
+    "source_offer_path": null
+  },
+  "blockers": [
+    "No image exists. The pinned source has never been built, tested, or published for this product.",
+    "No scope-grant path exists for an AI model endpoint, so no run could be authorized against one.",
+    "No credential path exists for a model endpoint that requires a key."
+  ]
+}

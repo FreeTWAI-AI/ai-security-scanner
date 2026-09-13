@@ -113,6 +113,12 @@ pub enum AssetKind {
     ContainerImage,
     ContainerRegistry,
     KubernetesCluster,
+    /// One deployed AI model reachable over an endpoint, as its own kind
+    /// rather than a web service: an adversarial probe suite is bound to the
+    /// model behind the URL, and routing it at every approved website because
+    /// they share a scheme is exactly the widening a scope grant exists to
+    /// prevent.
+    AiModelEndpoint,
     Other,
 }
 
@@ -335,6 +341,7 @@ pub enum EngineCategory {
     Kubernetes,
     Host,
     SchemaAndExport,
+    AiModelEndpoint,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1557,6 +1564,11 @@ pub enum FindingFamily {
     InfrastructureAsCode,
     VulnerableComponent,
     Kubernetes,
+    /// A deployed model answered an adversarial prompt the way the probe was
+    /// trying to make it answer. Nothing is misconfigured, unpatched or leaked,
+    /// so every other family's consequence and remedy would send the reader to
+    /// the wrong place: the thing to change is what the model is allowed to say.
+    ModelBehavior,
 }
 
 /// Why a finding has no scanner-supplied severity.
@@ -1577,6 +1589,10 @@ pub enum SeverityBasisCode {
     CloudControlQuery,
     CloudsplainingIamPolicyFinding,
     UnratedVulnerabilityTestAlarm,
+    /// An adversarial probe suite reported how many of its attempts a detector
+    /// judged as failures. The rate is the whole result; garak publishes no
+    /// severity for it, and one probe failing is not by itself a rated weakness.
+    AdversarialProbeFailureRate,
 }
 
 impl SeverityBasisCode {

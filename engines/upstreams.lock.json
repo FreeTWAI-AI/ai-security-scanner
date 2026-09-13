@@ -28,6 +28,14 @@
       "shallow": true
     },
     {
+      "id": "NVIDIA/garak",
+      "path": ".upstreams/NVIDIA/garak",
+      "remote": "https://github.com/NVIDIA/garak",
+      "branch": "",
+      "revision": "93aa9cdec309ec4170559676f1826ea2a679920c",
+      "shallow": true
+    },
+    {
       "id": "OpenSCAP/openscap",
       "path": ".upstreams/OpenSCAP/openscap",
       "remote": "https://github.com/OpenSCAP/openscap",

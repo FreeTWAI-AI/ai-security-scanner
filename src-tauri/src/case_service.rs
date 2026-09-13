@@ -13546,6 +13546,7 @@ impl HtmlReportCatalog {
             AssetKind::ContainerImage => self.text("Container image", "容器映像"),
             AssetKind::ContainerRegistry => self.text("Container registry", "容器映像登錄檔"),
             AssetKind::KubernetesCluster => self.text("Kubernetes cluster", "Kubernetes 叢集"),
+            AssetKind::AiModelEndpoint => self.text("AI model endpoint", "AI 模型端點"),
             AssetKind::Other => self.text("Other asset", "其他資產"),
         }
     }

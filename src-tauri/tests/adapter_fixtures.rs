@@ -124,6 +124,11 @@ fn fixture(engine_id: &str) -> (&'static [u8], &'static str, &'static str) {
             "kube-bench.json",
             "application/json",
         ),
+        "garak" => (
+            include_bytes!("fixtures/adapters/garak.jsonl"),
+            "report.jsonl",
+            "application/x-ndjson",
+        ),
         other => panic!("no adapter fixture for {other}"),
     }
 }
@@ -314,7 +319,7 @@ fn normalize_ai_generated_fixture(engine_id: &str) -> AdapterOutput {
 }
 
 #[test]
-fn registry_covers_exactly_the_twenty_one_catalog_engines() {
+fn registry_covers_exactly_the_twenty_two_catalog_engines() {
     let catalog = EngineRegistry::load_builtin().expect("valid catalog");
     let catalog_ids = catalog
         .manifests()
@@ -323,8 +328,8 @@ fn registry_covers_exactly_the_twenty_one_catalog_engines() {
         .collect::<BTreeSet<_>>();
     let adapter_ids = BUILTIN_ENGINE_IDS.iter().copied().collect::<BTreeSet<_>>();
 
-    assert_eq!(BUILTIN_ENGINE_IDS.len(), 21);
-    assert_eq!(adapter_ids.len(), 21);
+    assert_eq!(BUILTIN_ENGINE_IDS.len(), 22);
+    assert_eq!(adapter_ids.len(), 22);
     assert_eq!(adapter_ids, catalog_ids);
 
     let adapters = builtin_adapter_registry().expect("valid built-in adapter registry");
@@ -351,6 +356,7 @@ const UNRATED_SEVERITY_ENGINES: &[(&str, SeverityBasisCode)] = &[
         "trufflehog",
         SeverityBasisCode::UnverifiedCredentialDetector,
     ),
+    ("garak", SeverityBasisCode::AdversarialProbeFailureRate),
 ];
 
 #[test]
@@ -5621,8 +5627,8 @@ fn the_codes_a_localized_client_reads_agree_with_the_english_they_replace() {
     // no fixture produces is a translation nobody has ever seen render.
     assert_eq!(
         seen_basis.len(),
-        4,
-        "only {} of the four current finding severity bases are exercised: {seen_basis:?}",
+        5,
+        "only {} of the five current finding severity bases are exercised: {seen_basis:?}",
         seen_basis.len()
     );
 }
@@ -5982,5 +5988,89 @@ fn the_account_warning_survives_a_run_with_more_records_than_the_warning_cap() {
     assert_eq!(
         position, 0,
         "the actionable sentence is buried behind {position} per-record warnings"
+    );
+}
+
+/// garak's clean pairs are not findings, and its failing pairs carry the whole
+/// count rather than a rating nobody published.
+///
+/// The fixture's first eval row is `test.Test/always.Pass` with `fails: 0`:
+/// the probe ran and the detector judged nothing as a failure. Admitting it
+/// would put a probe that found nothing in the same list as one that failed
+/// every attempt, which is the difference the reader is here for.
+#[test]
+fn garak_reports_probe_failure_rates_and_keeps_clean_probes_out_of_the_findings() {
+    let output = normalize_fixture("garak");
+
+    assert!(output.complete, "{:?}", output.warnings);
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+
+    let by_rule = output
+        .findings
+        .iter()
+        .map(|finding| {
+            (
+                finding.evidence[0]
+                    .source_rule
+                    .clone()
+                    .expect("garak evidence names its probe and detector"),
+                finding,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        by_rule.keys().cloned().collect::<Vec<_>>(),
+        [
+            "dan.AutoDANCached/mitigation.MitigationBypass",
+            "dan.Dan_11_0/dan.DAN",
+            "encoding.InjectBase64/encoding.DecodeMatch",
+            "encoding.InjectROT13/encoding.DecodeApprox",
+        ],
+        "a probe/detector pair with no failures became a finding, or a failing one was dropped"
+    );
+
+    for finding in by_rule.values() {
+        assert_eq!(finding.severity, Severity::Unknown);
+        assert_eq!(
+            finding.severity_basis_code,
+            Some(SeverityBasisCode::AdversarialProbeFailureRate)
+        );
+        assert_eq!(finding.confidence, Confidence::Low);
+        assert_eq!(
+            finding.evidence[0].location.as_deref(),
+            Some("rest.RestGenerator:approved-model-endpoint"),
+            "the finding does not say which endpoint answered this way"
+        );
+    }
+
+    // The numerator alone is the misleading half: 3 failures out of 40 and 5
+    // out of 5 are the same number of failures and a different problem.
+    let details = |rule: &str| {
+        by_rule[rule].evidence[0]
+            .scanner_details
+            .as_ref()
+            .and_then(|details| details.description.clone())
+            .expect("garak evidence carries its counts")
+    };
+    assert_eq!(
+        details("dan.Dan_11_0/dan.DAN"),
+        "garak judged 5 of 5 evaluated attempts as failures."
+    );
+    assert_eq!(
+        details("encoding.InjectBase64/encoding.DecodeMatch"),
+        "garak judged 3 of 40 evaluated attempts as failures."
+    );
+    // `nones` and `total_processed` are the two ways a rate can be smaller than
+    // it looks; each has to survive into the evidence separately.
+    assert_eq!(
+        details("dan.AutoDANCached/mitigation.MitigationBypass"),
+        "garak judged 4 of 10 evaluated attempts as failures. 4 further attempts \
+         returned no detector score and were not evaluated. The probe generated 14 \
+         attempts in total, so not every attempt reached the detector."
+    );
+    assert_eq!(
+        details("encoding.InjectROT13/encoding.DecodeApprox"),
+        "garak judged 1 of 10 evaluated attempts as failures. The probe generated 25 \
+         attempts in total, so not every attempt reached the detector."
     );
 }

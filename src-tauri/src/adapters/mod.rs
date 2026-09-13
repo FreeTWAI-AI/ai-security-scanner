@@ -56,6 +56,7 @@ pub const BUILTIN_ENGINE_IDS: &[&str] = &[
     "syft",
     "kubescape",
     "kube-bench",
+    "garak",
 ];
 
 const MAX_ARTIFACTS: usize = 64;
@@ -96,6 +97,7 @@ enum Profile {
     Syft,
     Kubescape,
     KubeBench,
+    Garak,
 }
 
 #[derive(Debug)]
@@ -561,6 +563,7 @@ pub fn builtin_adapter_registry() -> AppResult<AdapterRegistry> {
             Profile::KubeBench,
             "Kubernetes security engineer",
         ),
+        ("garak", Profile::Garak, "AI security engineer"),
     ];
 
     let mut registry = AdapterRegistry::default();
@@ -2390,6 +2393,7 @@ fn extract_records(
         Profile::Grype => extract_grype(parsed, warnings),
         Profile::Kubescape => extract_kubescape(parsed, warnings),
         Profile::KubeBench => extract_kube_bench(parsed, warnings),
+        Profile::Garak => extract_garak(parsed, warnings),
         Profile::CloudQuery
         | Profile::Steampipe
         | Profile::Naabu
@@ -4305,6 +4309,175 @@ fn extract_gitleaks(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<
         .collect()
 }
 
+/// One finding per garak `eval` row that recorded at least one failure.
+///
+/// garak's report is a JSONL run log, not a finding list. The only rows that
+/// carry a verdict are `eval` rows, one per probe/detector pair, and what they
+/// carry is a count: how many of the attempts the detector judged as failures,
+/// how many it could not judge, and how many it saw. There is no severity in
+/// the shape and no per-attempt result to promote, so the count is the finding.
+///
+/// A pair with zero failures is not admitted. That row means the probe ran and
+/// the detector judged nothing as a failure, which is coverage evidence rather
+/// than a problem, and admitting it would put a clean probe in the same list as
+/// a failing one.
+///
+/// The rate matters more than any single attempt here. garak's detectors are
+/// keyword and classifier matchers over free text, and upstream is explicit
+/// that they over-trigger; one attempt is a lead, and "37 of 40" is the part
+/// worth acting on. Keeping the counts as the evidence is also why the severity
+/// stays Unknown: rating a probe failure would be this product's opinion about
+/// how much a model's answer matters, on a scale garak never published.
+fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<SourceRecord> {
+    if !matches!(parsed, ParsedArtifact::JsonLines(_)) {
+        push_warning(
+            warnings,
+            "garak output was not its supported JSONL run report; the raw artifact was retained, and the scan should be retried with the supported pinned JSONL output",
+        );
+        return Vec::new();
+    }
+    let rows = json_rows(parsed, warnings);
+    let target = garak_target(&rows);
+    let mut records = Vec::new();
+    for (pointer, value) in &rows {
+        let Some(object) = value.as_object() else {
+            continue;
+        };
+        if string_any(object, &["entry_type"]).as_deref() != Some("eval") {
+            continue;
+        }
+        let (Some(probe), Some(detector)) = (
+            exact_rule_string_any(object, &["probe"]),
+            exact_rule_string_any(object, &["detector"]),
+        ) else {
+            push_warning(
+                warnings,
+                format!(
+                    "garak eval row at {pointer} did not name both its probe and its detector; the raw record was retained"
+                ),
+            );
+            continue;
+        };
+        let Some(fails) = garak_count(object, "fails") else {
+            push_warning(
+                warnings,
+                format!(
+                    "garak eval row at {pointer} carried no failure count; the raw record was retained"
+                ),
+            );
+            continue;
+        };
+        if fails == 0 {
+            continue;
+        }
+        let evaluated = garak_count(object, "total_evaluated");
+        let processed = garak_count(object, "total_processed");
+        let unjudged = garak_count(object, "nones");
+        let rule_id = format!("{probe}/{detector}");
+        records.push(with_scanner_details(
+            record_with_derived_severity_and_confidence!(
+                pointer.clone(),
+                rule_id.clone(),
+                match evaluated {
+                    Some(evaluated) => format!(
+                        "garak probe {probe}: detector {detector} judged {fails} of {evaluated} attempts as failures"
+                    ),
+                    None => format!(
+                        "garak probe {probe}: detector {detector} judged {fails} attempts as failures"
+                    ),
+                },
+                // No garak result shape carries a severity, and the run log
+                // does not rank probes against each other. The failure rate is
+                // what the engine measured; this product's own prioritization
+                // ranks it rather than a level invented here.
+                DerivedSeverity {
+                    severity: Severity::Unknown,
+                    code: SeverityBasisCode::AdversarialProbeFailureRate,
+                },
+                target.clone(),
+                None,
+                // A detector hit is a matcher's opinion about generated text,
+                // not a confirmed policy breach, and garak's own documentation
+                // warns that its detectors produce false positives.
+                derived_confidence(ConfidenceBasisCode::UnverifiedPatternOrDetectorMatch),
+                EvidenceKind::ExternalValidation,
+                vec![],
+                vec![],
+            ),
+            Some(garak_counts_sentence(fails, evaluated, unjudged, processed)),
+            None,
+            None,
+            None,
+        ));
+    }
+    records
+}
+
+/// The model garak was pointed at, as garak's own run setup named it.
+///
+/// Read from the run's `start_run setup` row rather than composed here: the
+/// eval rows carry no target, and the finding has to say which endpoint
+/// answered this way or it cannot be acted on.
+///
+/// That row is a flattened config dump, so the keys are literal dotted strings
+/// rather than nested objects. `plugins.model_type` and `plugins.model_name`
+/// are the pre-0.14 spellings garak still lists as deprecated aliases, and an
+/// older report should not lose its target for having used them.
+fn garak_target(rows: &[(String, &Value)]) -> String {
+    rows.iter()
+        .filter_map(|(_, value)| value.as_object())
+        .find_map(|object| {
+            let name = string_any(object, &["plugins.target_name", "plugins.model_name"])?;
+            let kind = string_any(object, &["plugins.target_type", "plugins.model_type"])
+                .filter(|kind| !kind.is_empty());
+            Some(match kind {
+                Some(kind) => format!("{kind}:{name}"),
+                None => name,
+            })
+        })
+        .map(|target| safe_text(&target, 360))
+        .filter(|target| !target.is_empty())
+        .unwrap_or_else(|| "model endpoint".into())
+}
+
+fn garak_count(object: &Map<String, Value>, key: &str) -> Option<u64> {
+    object.get(key)?.as_u64()
+}
+
+/// garak's own counts, spelled out, because the numerator alone is misleading.
+///
+/// `total_evaluated` excludes the attempts the detector returned no score for,
+/// and `total_processed` counts every attempt that was generated. A reader
+/// shown only "12 failures" cannot tell 12-of-12 from 12-of-500, and cannot
+/// tell either from a run where most attempts were never judged at all.
+fn garak_counts_sentence(
+    fails: u64,
+    evaluated: Option<u64>,
+    unjudged: Option<u64>,
+    processed: Option<u64>,
+) -> String {
+    let mut sentence = match evaluated {
+        Some(evaluated) => {
+            format!("garak judged {fails} of {evaluated} evaluated attempts as failures")
+        }
+        None => format!("garak judged {fails} attempts as failures"),
+    };
+    if let Some(unjudged) = unjudged.filter(|count| *count > 0) {
+        sentence.push_str(&format!(
+            ". {unjudged} further attempts returned no detector score and were not evaluated"
+        ));
+    }
+    if let Some(processed) = processed
+        && evaluated.is_some_and(|evaluated| processed > evaluated)
+    {
+        sentence.push_str(&format!(
+            ". The probe generated {processed} attempts in total, so not every attempt reached the detector"
+        ));
+    }
+    sentence.push('.');
+    sentence
+}
+
 fn gitleaks_location(object: &Map<String, Value>) -> String {
     // Gitleaks' Secret and Match fields must never participate in a durable
     // identity. File coordinates and a validated Git object ID distinguish
@@ -6021,6 +6194,7 @@ fn impact_for(
         Profile::Kubescape | Profile::KubeBench => {
             "the Kubernetes cluster or workload may have reduced isolation or administrative protection"
         }
+        Profile::Garak => "the model endpoint may produce output it is supposed to refuse",
     };
     format!("{consequence}.")
 }
@@ -6045,6 +6219,7 @@ fn family_for(profile: Profile) -> FindingFamily {
         Profile::Checkov | Profile::Kics => FindingFamily::InfrastructureAsCode,
         Profile::Trivy | Profile::Grype | Profile::Syft => FindingFamily::VulnerableComponent,
         Profile::Kubescape | Profile::KubeBench => FindingFamily::Kubernetes,
+        Profile::Garak => FindingFamily::ModelBehavior,
     }
 }
 
@@ -6089,6 +6264,9 @@ fn remedy_for(profile: Profile) -> &'static str {
         }
         Profile::Kubescape | Profile::KubeBench => {
             "Correct the workload or cluster setting named by this check"
+        }
+        Profile::Garak => {
+            "Reproduce the probe, decide whether those replies actually breach this endpoint's usage policy, and if so add a guardrail in front of or behind the model"
         }
     }
 }

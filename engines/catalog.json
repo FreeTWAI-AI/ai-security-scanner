@@ -2910,5 +2910,143 @@
         "destinations": []
       }
     }
+  },
+  {
+    "schema_version": "2.0.0",
+    "id": "garak",
+    "display_name": "garak",
+    "category": "ai_model_endpoint",
+    "description": "Sends NVIDIA garak's adversarial probe suite to one approved AI model endpoint and reports, per probe and detector, how many attempts the detector judged as failures.",
+    "repository_url": "https://github.com/NVIDIA/garak",
+    "homepage_url": "https://garak.ai/",
+    "license_spdx": "Apache-2.0",
+    "distribution_mode": "build_from_pinned_source",
+    "image": null,
+    "source_revision": "93aa9cdec309ec4170559676f1826ea2a679920c",
+    "engine_version": "0.17.0",
+    "rule_version": null,
+    "adapter_version": "0.1.3",
+    "supported_providers": [],
+    "supported_asset_kinds": [
+      "ai_model_endpoint"
+    ],
+    "required_permissions": [
+      "active_external_testing"
+    ],
+    "direct_network_contract": {
+      "target_kinds": [
+        "hostname"
+      ],
+      "protocols": [
+        "https"
+      ]
+    },
+    "active_external": true,
+    "default_enabled": false,
+    "estimated_memory_mb": 2048,
+    "estimated_disk_mb": 4096,
+    "network_destinations": [
+      "authorized target model endpoint"
+    ],
+    "output_formats": [
+      "jsonl"
+    ],
+    "command": [
+      "--engine",
+      "garak",
+      "--scope",
+      "/run/ai-security-scanner/scope.json",
+      "--output",
+      "/output"
+    ],
+    "status": "experimental",
+    "notices": [
+      "This release is not dispatchable. It carries no packaged image and declares itself non-runnable, so the registry refuses to plan or run it; the record exists so the adapter that reads garak evidence has a reviewed manifest to be validated against.",
+      "A garak run sends adversarial prompts to the model behind the endpoint. That is active external testing against someone's live service and it consumes that service's quota, so it stays bound to an endpoint named by an explicit scope grant.",
+      "garak reports each probe and detector pair as counts of attempts that passed, failed, or could not be judged. It publishes no severity for them, and this product does not invent one."
+    ],
+    "license": {
+      "disposition": "allow",
+      "rationale": "Apache-2.0 permits redistribution of the engine and its probes with the upstream notice retained.",
+      "source_offer_path": null
+    },
+    "provenance": {
+      "engine": {
+        "version": "0.17.0",
+        "source_repository": "https://github.com/NVIDIA/garak",
+        "source_revision": "93aa9cdec309ec4170559676f1826ea2a679920c",
+        "source_ref": "v0.17.0",
+        "acquisition_source": "https://github.com/NVIDIA/garak/commit/93aa9cdec309ec4170559676f1826ea2a679920c",
+        "artifact_source_revision": null,
+        "source_association": "source_build_required"
+      },
+      "rules": {
+        "mode": "embedded",
+        "identifier": "garak packaged probes and detectors",
+        "revision": null,
+        "acquisition_source": "https://github.com/NVIDIA/garak/tree/93aa9cdec309ec4170559676f1826ea2a679920c/garak/probes"
+      },
+      "data": {
+        "mode": "runtime_bound",
+        "identifier": "the AI model endpoint named by the case scope grant",
+        "revision": null,
+        "acquisition_source": "assessment_case"
+      },
+      "adapter": {
+        "id": "ai-security-scanner:garak",
+        "version": "0.1.3",
+        "acquisition_source": "workspace://src-tauri/src/adapters/mod.rs",
+        "source_revision": null,
+        "release_state": "workspace_unreleased"
+      }
+    },
+    "compatibility": {
+      "knowledge_date": "2026-09-12",
+      "support_until": "2026-12-11",
+      "maintenance_owner": "teddashh/ai-security-scanner maintainers",
+      "update_procedure": "docs/engine-maintenance.md",
+      "runnable": false,
+      "artifact_state": "managed_build_plan",
+      "blocked_by": [
+        "no packaged image: the pinned source has never been built, tested, or published for this product",
+        "no scope-grant path exists for an AI model endpoint, so no run could be authorized against one",
+        "no credential path exists for a model endpoint that requires a key"
+      ],
+      "knowledge_input": {
+        "kind": "runtime_bound",
+        "identifier": "the AI model endpoint named by the case scope grant",
+        "version": null,
+        "acquisition_source": "assessment_case",
+        "pin_state": "runtime_bound"
+      },
+      "wrapper": {
+        "required": true,
+        "strategy": "Accept only the model endpoint named in the scope grant, refuse every other destination, and hand the adapter only the run's own report.jsonl.",
+        "entrypoint": null
+      },
+      "packaging_plan": "engines/images/garak/plan.json"
+    },
+    "execution": {
+      "output": {
+        "primary_format": "jsonl",
+        "path": "/output/report.jsonl",
+        "media_type": "application/x-ndjson",
+        "adapter_state": "workspace_unreleased"
+      },
+      "resources": {
+        "memory_mb": 2048,
+        "disk_mb": 4096,
+        "cpu_millis": 2000,
+        "pids": 256,
+        "timeout_seconds": 3600
+      },
+      "network": {
+        "required": true,
+        "mode": "managed_allowlist",
+        "destinations": [
+          "authorized target model endpoint"
+        ]
+      }
+    }
   }
 ]

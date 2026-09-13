@@ -382,7 +382,7 @@
         "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "display_name": { "type": "string", "minLength": 1 },
         "category": {
-          "enum": ["cloud_inventory", "cloud_configuration", "identity_and_access", "microsoft365", "external_attack_surface", "code_and_secrets", "infrastructure_as_code", "container_and_sbom", "kubernetes", "host", "schema_and_export"]
+          "enum": ["cloud_inventory", "cloud_configuration", "identity_and_access", "microsoft365", "external_attack_surface", "code_and_secrets", "infrastructure_as_code", "container_and_sbom", "kubernetes", "host", "schema_and_export", "ai_model_endpoint"]
         },
         "description": { "type": "string", "minLength": 1 },
         "repository_url": { "type": "string", "pattern": "^https://github\\.com/" },
@@ -411,7 +411,7 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "enum": ["cloud_organization", "cloud_account", "subscription", "project", "tenant", "domain", "ip_address", "host", "web_service", "cloud_resource", "identity", "repository", "file_system", "iac_project", "container_image", "container_registry", "kubernetes_cluster", "other"]
+            "enum": ["cloud_organization", "cloud_account", "subscription", "project", "tenant", "domain", "ip_address", "host", "web_service", "cloud_resource", "identity", "repository", "file_system", "iac_project", "container_image", "container_registry", "kubernetes_cluster", "ai_model_endpoint", "other"]
           }
         },
         "input_contracts": {

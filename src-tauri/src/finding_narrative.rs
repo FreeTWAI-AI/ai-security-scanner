@@ -35,6 +35,7 @@ fn consequence(family: FindingFamily) -> &'static str {
         FindingFamily::InfrastructureAsCode => "之後部署出來的基礎架構會沿用這個不安全的設定",
         FindingFamily::VulnerableComponent => "容器或軟體元件可能讓工作負載暴露於已知弱點",
         FindingFamily::Kubernetes => "Kubernetes 叢集或工作負載的隔離或管理保護可能不足",
+        FindingFamily::ModelBehavior => "這個模型端點可能會產生它原本應該拒絕的輸出",
     }
 }
 
@@ -64,6 +65,9 @@ fn consequence_english(family: FindingFamily) -> &'static str {
         FindingFamily::Kubernetes => {
             "The Kubernetes cluster or workload may have reduced isolation or administrative protection"
         }
+        FindingFamily::ModelBehavior => {
+            "The model endpoint may produce output it is supposed to refuse"
+        }
     }
 }
 
@@ -91,6 +95,9 @@ fn remedy(family: FindingFamily) -> &'static str {
             "將受影響的元件升級到已修正的版本，或記錄目前無法升級的原因"
         }
         FindingFamily::Kubernetes => "調整這項檢查所指出的工作負載或叢集設定",
+        FindingFamily::ModelBehavior => {
+            "重現這個探測項目，判斷這些回覆是否確實違反該端點的使用政策；若是，請在模型之前或之後加上防護措施"
+        }
     }
 }
 
@@ -119,6 +126,9 @@ fn remedy_english(family: FindingFamily) -> &'static str {
             "Upgrade the affected component to a fixed version; if none is available, record the blocker and track the fix"
         }
         FindingFamily::Kubernetes => "Correct the workload or cluster setting named by this check",
+        FindingFamily::ModelBehavior => {
+            "Reproduce the probe, decide whether those replies actually breach this endpoint's usage policy, and if so add a guardrail in front of or behind the model"
+        }
     }
 }
 
@@ -152,11 +162,14 @@ pub fn basis_english(code: SeverityBasisCode) -> &'static str {
         SeverityBasisCode::UnratedVulnerabilityTestAlarm => {
             "a Greenbone vulnerability-test alarm whose pinned feed entry carries no parseable severity vector"
         }
+        SeverityBasisCode::AdversarialProbeFailureRate => {
+            "a count of adversarial probe attempts a garak detector judged as failures, which garak publishes without a severity"
+        }
     }
 }
 
 /// Every basis code, so a new one cannot be added without being translated.
-pub const ALL_SEVERITY_BASIS_CODES: [SeverityBasisCode; 9] = [
+pub const ALL_SEVERITY_BASIS_CODES: [SeverityBasisCode; 10] = [
     SeverityBasisCode::OpenPort,
     SeverityBasisCode::ReachableHttpService,
     SeverityBasisCode::SecretPatternMatch,
@@ -166,6 +179,7 @@ pub const ALL_SEVERITY_BASIS_CODES: [SeverityBasisCode; 9] = [
     SeverityBasisCode::CloudControlQuery,
     SeverityBasisCode::CloudsplainingIamPolicyFinding,
     SeverityBasisCode::UnratedVulnerabilityTestAlarm,
+    SeverityBasisCode::AdversarialProbeFailureRate,
 ];
 
 /// The canonical English clause explaining why this product assigned a
@@ -268,6 +282,9 @@ fn basis(code: SeverityBasisCode) -> &'static str {
         SeverityBasisCode::UnratedVulnerabilityTestAlarm => {
             "Greenbone 弱點測試發出的警示，但固定版本 feed 條目沒有可解析的嚴重程度向量"
         }
+        SeverityBasisCode::AdversarialProbeFailureRate => {
+            "garak 偵測器判定為失敗的對抗式探測次數；garak 只提供次數，不提供嚴重程度"
+        }
     }
 }
 
@@ -289,6 +306,7 @@ pub fn expert_type_zh_hant(expert: &str) -> &str {
         "Container security engineer" => "容器安全工程師",
         "Software supply-chain engineer" => "軟體供應鏈工程師",
         "Kubernetes security engineer" => "Kubernetes 安全工程師",
+        "AI security engineer" => "AI 安全工程師",
         // Not from an adapter. A check that timed out is a network or system
         // problem, and the report says so on purpose; letting it fall through
         // would send the reader to a security specialist for a connectivity
@@ -3340,6 +3358,7 @@ mod tests {
             "Container security engineer",
             "Software supply-chain engineer",
             "Kubernetes security engineer",
+            "AI security engineer",
         ];
         let named = experts
             .iter()

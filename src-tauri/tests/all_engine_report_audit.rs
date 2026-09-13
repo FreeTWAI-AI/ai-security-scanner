@@ -1232,6 +1232,27 @@ fn an_ascii_clause_break_is_only_reported_where_a_chinese_clause_ends() {
 /// inventory, not a result, in either run.
 const INVENTORY_ONLY_ENGINES: [&str; 5] = ["cloudquery", "httpx", "naabu", "steampipe", "syft"];
 
+/// The engines this build will actually run, read from the release contract
+/// rather than listed here.
+///
+/// A packaged catalog coordinate is not the same thing as a dispatchable
+/// engine: an entry that declares itself non-runnable exists so its adapter has
+/// a reviewed manifest to be validated against, and the registry refuses to
+/// plan it. Asking a report to account for one is asking it to report on a
+/// check that never ran. Derived from `release_blocker` so a coordinate that
+/// later becomes runnable is picked up here without anyone remembering to.
+fn dispatchable_engine_ids(engines: &EngineRegistry) -> BTreeSet<&'static str> {
+    BUILTIN_ENGINE_IDS
+        .iter()
+        .copied()
+        .filter(|engine_id| {
+            engines
+                .get(engine_id)
+                .is_some_and(|manifest| manifest.release_blocker().is_none())
+        })
+        .collect()
+}
+
 /// What the other run cannot show: every detector reporting at once.
 ///
 /// The mixed run spends five checks on terminal states, so Checkov, KICS,
@@ -1263,9 +1284,8 @@ fn every_detector_places_its_finding_on_its_mapped_control() {
                 .flat_map(|finding| &finding.evidence_references)
                 .map(|reference| reference.engine_id.as_str())
                 .collect::<BTreeSet<_>>();
-            let silent = BUILTIN_ENGINE_IDS
-                .iter()
-                .copied()
+            let silent = dispatchable_engine_ids(engines)
+                .into_iter()
                 .filter(|engine| {
                     !INVENTORY_ONLY_ENGINES.contains(engine) && !reporting.contains(engine)
                 })
@@ -1551,7 +1571,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     .iter()
                     .map(|check| check.check_id.as_str())
                     .collect::<BTreeSet<_>>(),
-                BUILTIN_ENGINE_IDS.iter().copied().collect()
+                dispatchable_engine_ids(engines)
             );
             assert_eq!(
                 report
