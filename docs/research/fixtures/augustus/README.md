@@ -10,9 +10,9 @@ hosted model security check ran.
 The fixtures exercise
 `praetorian-inc/augustus@f032fc6373aaa9983868282b31dc9c59503c78a2` plus the exact
 [`augustus-0.14.29-machine-json.patch`](../../patches/augustus-0.14.29-machine-json.patch), whose
-SHA-256 is `963f7654cc043d097bf714169dae7ac445e7cdf79a3178652f4efc43309a10e2`.
+SHA-256 is `4f6c1e0d16014ac2a638ec50ebbab053b7a3c6a7320911fbff14b8541f45b59a`.
 The patched ignored checkout is at local research commit
-`4195d19e2223690ca565d8ca8469b74e1069fca0`, whose parent is the pinned upstream revision.
+`13c96bc6a36f880e7f016e02da63eadd64b73674`, whose parent is the pinned upstream revision.
 
 `TestRepeatMachineOutputFixtures` invokes the checked-in `test.Repeat` generator directly. Its only
 input is the inert string `SYNTHETIC AUGUSTUS REPEAT INPUT`, which it echoes locally. Fixed synthetic
@@ -22,8 +22,11 @@ used.
 Every focused Go command ran with an empty inherited environment and explicit local Go paths,
 `GOTOOLCHAIN=local`, `GOPROXY=off`, and `GOSUMDB=off`. That made dependency download impossible.
 The full upstream suite was not run because two test-only modules were absent from the local cache;
-no dependency was installed to bypass that boundary. Six focused file-list test commands and the
-affected dependency-free package build completed instead.
+no dependency was installed to bypass that boundary. Six dependency-free focused file-list
+commands and the affected package build completed. A seventh focused command created the real
+`promptinject.HijackLongPrompt` probe and used the checked-in `test.Repeat` generator to prove its
+machine plan contains exactly 15 attempts; a temporary overlay excluded only the unrelated
+`lipsum.go` file whose uncached `x/text` import otherwise prevented compilation.
 
 | Fixture | Contract result | SHA-256 |
 | --- | --- | --- |

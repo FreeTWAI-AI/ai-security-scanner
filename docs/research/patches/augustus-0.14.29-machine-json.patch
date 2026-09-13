@@ -1,4 +1,4 @@
-From 4195d19e2223690ca565d8ca8469b74e1069fca0 Mon Sep 17 00:00:00 2001
+From 13c96bc6a36f880e7f016e02da63eadd64b73674 Mon Sep 17 00:00:00 2001
 From: Ted Huang <233386770+teddashh@users.noreply.github.com>
 Date: Sun, 13 Sep 2026 06:55:37 -0400
 Subject: [PATCH] output: add fail-closed machine report
@@ -8,6 +8,7 @@ Subject: [PATCH] output: add fail-closed machine report
  cmd/augustus/cli.go                           |  37 +++-
  cmd/augustus/common.go                        |   1 +
  cmd/augustus/machine.go                       | 132 +++++++++++++
+ cmd/augustus/machine_promptinject_test.go     |  72 +++++++
  cmd/augustus/machine_test.go                  |  43 ++++
  cmd/augustus/scan.go                          |  44 ++++-
  .../generators/test/machine_output_test.go    | 184 ++++++++++++++++++
@@ -16,6 +17,7 @@ Subject: [PATCH] output: add fail-closed machine report
  .../testdata/machine-detector-warning.json    |  54 +++++
  .../probewise/machine_coverage_test.go        |  80 ++++++++
  internal/harnesses/probewise/probewise.go     |  51 ++++-
+ internal/probes/promptinject/hijack.go        |   1 +
  pkg/harnesses/coverage.go                     |  40 ++++
  pkg/harnesses/detection.go                    |  25 ++-
  pkg/harnesses/detection_machine_test.go       |  51 +++++
@@ -26,8 +28,9 @@ Subject: [PATCH] output: add fail-closed machine report
  pkg/scanner/machine_counts_test.go            |  51 +++++
  pkg/scanner/scanner.go                        |  17 ++
  pkg/types/prober.go                           |   7 +
- 22 files changed, 1129 insertions(+), 21 deletions(-)
+ 24 files changed, 1202 insertions(+), 21 deletions(-)
  create mode 100644 cmd/augustus/machine.go
+ create mode 100644 cmd/augustus/machine_promptinject_test.go
  create mode 100644 cmd/augustus/machine_test.go
  create mode 100644 internal/generators/test/machine_output_test.go
  create mode 100644 internal/generators/test/testdata/machine-complete.json
@@ -262,6 +265,84 @@ index 0000000..3bb8214
 +		total += expected
 +	}
 +	return total, true
++}
+diff --git a/cmd/augustus/machine_promptinject_test.go b/cmd/augustus/machine_promptinject_test.go
+new file mode 100644
+index 0000000..c0c66cb
+--- /dev/null
++++ b/cmd/augustus/machine_promptinject_test.go
+@@ -0,0 +1,72 @@
++package main
++
++import (
++	"context"
++	"testing"
++
++	promptinjectdetector "github.com/praetorian-inc/augustus/internal/detectors/promptinject"
++	testgenerator "github.com/praetorian-inc/augustus/internal/generators/test"
++	_ "github.com/praetorian-inc/augustus/internal/probes/promptinject"
++	"github.com/praetorian-inc/augustus/pkg/detectors"
++	"github.com/praetorian-inc/augustus/pkg/probes"
++	"github.com/praetorian-inc/augustus/pkg/registry"
++	"github.com/praetorian-inc/augustus/pkg/types"
++)
++
++func TestHijackLongPromptMachinePlanHasExactAttemptCount(t *testing.T) {
++	probe, err := probes.Create("promptinject.HijackLongPrompt", registry.Config{})
++	if err != nil {
++		t.Fatalf("create probe: %v", err)
++	}
++	counter, ok := probe.(types.ExpectedAttemptCounter)
++	if !ok {
++		t.Fatal("promptinject.HijackLongPrompt does not implement ExpectedAttemptCounter")
++	}
++	if got := counter.ExpectedAttempts(); got != 15 {
++		t.Fatalf("ExpectedAttempts() = %d; want 15", got)
++	}
++
++	gen, err := testgenerator.NewRepeat(registry.Config{})
++	if err != nil {
++		t.Fatalf("create test.Repeat: %v", err)
++	}
++	attempts, err := probe.Probe(context.Background(), gen)
++	if err != nil {
++		t.Fatalf("run probe with test.Repeat: %v", err)
++	}
++	if len(attempts) != 15 {
++		t.Fatalf("test.Repeat attempts = %d; want 15", len(attempts))
++	}
++	for i, attempt := range attempts {
++		if len(attempt.Outputs) != 1 || attempt.Outputs[0] != attempt.Prompt {
++			t.Fatalf("attempt %d did not contain one local test.Repeat echo", i)
++		}
++	}
++
++	detector, err := promptinjectdetector.NewAttackRogueString(registry.Config{})
++	if err != nil {
++		t.Fatalf("create detector: %v", err)
++	}
++	plan, expected, known := buildMachinePlan(
++		[]probes.Prober{probe},
++		[]detectors.Detector{detector},
++		nil,
++		false,
++	)
++	if !known || expected != 15 {
++		t.Fatalf("expected attempts = %d, known = %t; want 15, true", expected, known)
++	}
++	if len(plan) != 1 {
++		t.Fatalf("machine plan entries = %d; want 1", len(plan))
++	}
++	entry := plan[0]
++	if entry.Probe != "promptinject.HijackLongPrompt" {
++		t.Fatalf("machine plan probe = %q", entry.Probe)
++	}
++	if entry.ExpectedAttempts == nil || *entry.ExpectedAttempts != 15 {
++		t.Fatalf("machine plan expected attempts = %v; want 15", entry.ExpectedAttempts)
++	}
++	if len(entry.Detectors) != 1 || entry.Detectors[0] != "promptinject.AttackRogueString" {
++		t.Fatalf("machine plan detectors = %#v", entry.Detectors)
++	}
 +}
 diff --git a/cmd/augustus/machine_test.go b/cmd/augustus/machine_test.go
 new file mode 100644
@@ -984,6 +1065,15 @@ index 7c30978..236347d 100644
  		return p, nil
  	})
  }
+diff --git a/internal/probes/promptinject/hijack.go b/internal/probes/promptinject/hijack.go
+index 1204ab8..3d35c6a 100644
+--- a/internal/probes/promptinject/hijack.go
++++ b/internal/probes/promptinject/hijack.go
+@@ -164,3 +164,4 @@ func (h *hijackProbe) Description() string        { return h.description }
+ func (h *hijackProbe) Goal() string               { return h.goal }
+ func (h *hijackProbe) GetPrimaryDetector() string { return h.primaryDetector }
+ func (h *hijackProbe) GetPrompts() []string       { return h.prompts }
++func (h *hijackProbe) ExpectedAttempts() int      { return len(h.prompts) }
 diff --git a/pkg/harnesses/coverage.go b/pkg/harnesses/coverage.go
 new file mode 100644
 index 0000000..ce135e7
@@ -1549,4 +1639,5 @@ index bb7cbe7..8ec0752 100644
  // newline-separated reference URLs, and a taxonomy-mapping block (e.g. CWE ids).
 -- 
 2.53.0
+
 

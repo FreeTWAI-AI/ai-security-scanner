@@ -110,7 +110,7 @@ no overall or per-probe timeout
 
 The first profile is now frozen as the research-only
 [`augustus-openai-promptinject-v1`](augustus-single-destination-profile.json) contract, SHA-256
-`2dacb19545726fa0a18b8fa412633dca5df6cf2289c6a5db6ea95bec08a9a798`. It remains blocked from
+`9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4`. It remains blocked from
 dispatch. The allowlist contains exactly one native generator, one probe, and one detector:
 
 - generator `openai.OpenAI`, bound at dispatch to the exact model in the scope grant and only the
@@ -163,13 +163,14 @@ the future typed launcher must set the former and reject the latter. A product-o
 and exact-destination egress gate must enforce the request rate, redirect, body-size, and monetary
 ceilings that Augustus does not provide. Missing enforcement rejects dispatch.
 
-The audit also found one fail-closed integration gap. `HijackLongPrompt` is a custom prober rather
-than `SimpleProbe` and does not implement the retained machine patch's `ExpectedAttemptCounter`.
-The current patched output would therefore mark its expected-attempt plan unknown and
-`complete: false`. Before any integration test, a narrow upstream patch must report the existing
-15-prompt count without changing prompt or detector behavior, and a synthetic test must prove that
-the machine plan says exactly 15. This audit approves only the frozen profile and limits; it does
-not authorize or make the profile runnable.
+The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
+rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
+retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed
+prompt list, without changing prompts or detector behavior. A focused test creates the real probe,
+runs its 15 prompts through the local `test.Repeat` generator, and proves that the machine plan
+contains one `promptinject.HijackLongPrompt` entry with exactly 15 expected attempts and only
+`promptinject.AttackRogueString`. This closes the count-metadata gap; it does not authorize or make
+the profile runnable.
 
 ## Why the current machine output is not admissible
 
@@ -257,8 +258,8 @@ content.
 On 2026-09-13, the narrow output patch was evaluated against the pinned source in the ignored
 research checkout. The exact
 [`augustus-0.14.29-machine-json.patch`](patches/augustus-0.14.29-machine-json.patch) has SHA-256
-`963f7654cc043d097bf714169dae7ac445e7cdf79a3178652f4efc43309a10e2`. It was generated from local
-research commit `4195d19e2223690ca565d8ca8469b74e1069fca0`, whose parent is the audited upstream
+`4f6c1e0d16014ac2a638ec50ebbab053b7a3c6a7320911fbff14b8541f45b59a`. It was generated from local
+research commit `13c96bc6a36f880e7f016e02da63eadd64b73674`, whose parent is the audited upstream
 commit.
 
 The patch stays within output and orchestration plumbing:
@@ -283,9 +284,10 @@ from becoming an alternate credential or target-expansion channel; the future pr
 still owns authorization and secure credential delivery.
 
 The three reviewed [`test.Repeat` fixtures](fixtures/augustus/README.md) cover a complete run, a
-detector warning, and a count mismatch. Six dependency-free focused Go test commands passed,
-including the real checked-in `test.Repeat` generator and a failing writer; the affected core
-packages also built offline. The full upstream suite could not run with `GOPROXY=off` because
+detector warning, and a count mismatch. Seven focused Go test commands passed: the six earlier
+dependency-free commands cover the machine contract, checked-in `test.Repeat` generator, failing
+writer, and affected core packages; the seventh creates the real `HijackLongPrompt` probe and
+proves its exact 15-attempt plan. The full upstream suite could not run with `GOPROXY=off` because
 `testify` and `x/text` were absent from the local module cache. They were not downloaded or
 installed. This local evidence proves the machine contract's shape, but it is not release
 qualification or engine admission.
@@ -297,8 +299,7 @@ Augustus remains outside the catalog until all of these are independently resolv
 1. an exact provider/model endpoint scope-grant path for active external testing;
 2. a product-owned ephemeral credential-delivery and cleanup path;
 3. upstream review plus a dependency-complete gate for the pinned machine-output patch;
-4. a typed launcher and exact-destination egress gate that enforce the frozen profile, plus an
-   explicit 15-attempt contract and dependency-complete synthetic proof; and
+4. a typed launcher and exact-destination egress gate that enforce the frozen profile; and
 5. a separately authorized packaging decision by the product owner.
 
 Packaging is deliberately not started by this research decision. Clearing the first four blockers
@@ -311,6 +312,9 @@ reviewed as source. The patched output components and checked-in `test.Repeat` g
 locally against inert synthetic data with network-backed module lookup disabled. No Augustus probe,
 hosted-provider generator, target, or provider API was contacted; no dependency was installed, and
 no credential or model weight was accessed. No image was built or published, and no repository
-branch was pushed. The later profile audit only read the pinned source and calculated deterministic
-prompt counts, byte lengths, and hashes; it did not execute Augustus code or open a network
-connection.
+branch was pushed. The later profile audit first read the pinned source and calculated deterministic
+prompt counts, byte lengths, and hashes. Its follow-up count test then created the real
+`HijackLongPrompt` probe and used only the checked-in `test.Repeat` generator. The offline command
+temporarily overlaid the unrelated `lipsum.go` file with an empty package because `x/text` was not
+cached; the overlay was removed after the test, and no dependency was downloaded. No network
+connection was opened.

@@ -94,9 +94,9 @@ const AGENTIC_RADAR_RESEARCH_FIXTURES = {
 const AGENTIC_RADAR_RESEARCH_PATCH_SHA256 =
   "d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72";
 const AUGUSTUS_RESEARCH_PATCH_SHA256 =
-  "963f7654cc043d097bf714169dae7ac445e7cdf79a3178652f4efc43309a10e2";
+  "4f6c1e0d16014ac2a638ec50ebbab053b7a3c6a7320911fbff14b8541f45b59a";
 const AUGUSTUS_RESEARCH_PROFILE_SHA256 =
-  "2dacb19545726fa0a18b8fa412633dca5df6cf2289c6a5db6ea95bec08a9a798";
+  "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4";
 const AUGUSTUS_RESEARCH_FIXTURES = {
   "machine-complete.json": [
     true,
@@ -255,7 +255,7 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(decision, /test\.Repeat/u);
   assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PATCH_SHA256, "u"));
   assert.match(decision, new RegExp(AUGUSTUS_RESEARCH_PROFILE_SHA256, "u"));
-  assert.match(decision, /4195d19e2223690ca565d8ca8469b74e1069fca0/u);
+  assert.match(decision, /13c96bc6a36f880e7f016e02da63eadd64b73674/u);
   assert.equal(
     createHash("sha256").update(patchContent).digest("hex"),
     AUGUSTUS_RESEARCH_PATCH_SHA256,
@@ -264,6 +264,9 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(patchContent, /detector_failed/u);
   assert.match(patchContent, /count_mismatch/u);
   assert.match(patchContent, /test\.Repeat/u);
+  assert.match(patchContent, /func \(h \*hijackProbe\) ExpectedAttempts\(\) int/u);
+  assert.match(patchContent, /TestHijackLongPromptMachinePlanHasExactAttemptCount/u);
+  assert.match(patchContent, /testgenerator\.NewRepeat/u);
   assert.match(patchContent, /func \(sw \*StreamWriter\) Append\(a \*attempt\.Attempt\) error/u);
   assert.match(patchContent, /sw\.file\.Sync\(\)/u);
   assert.equal(
@@ -354,7 +357,7 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   ]) {
     assert.ok(profile.denied_capabilities.includes(denied), denied);
   }
-  assert.ok(profile.dispatch_blockers.some((item) => /ExpectedAttemptCounter/u.test(item)));
+  assert.ok(!profile.dispatch_blockers.some((item) => /ExpectedAttemptCounter/u.test(item)));
   assert.ok(profile.dispatch_blockers.some((item) => /scope-grant/u.test(item)));
   assert.ok(profile.dispatch_blockers.some((item) => /credential-delivery/u.test(item)));
 
