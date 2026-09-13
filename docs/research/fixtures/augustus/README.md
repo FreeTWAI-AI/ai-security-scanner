@@ -63,9 +63,10 @@ examples, not caller authority: the product evaluator mechanically replaces rule
 evidence from the embedded profile, retained machine-patch digest, frozen source revision, and
 profile blocker ledger. It also replaces Rule 3 with the frozen destination plus an explicit absent
 scope-grant and bound-model state. Rule 4 retains the profile's custom-base-URL and redirect denials
-as intent, while separately recording that neither launcher nor HTTP-gate enforcement exists. With
-the current profile, every schema-valid pair therefore stops at rule 1 when evaluated by the
-product.
+as intent, while separately recording that neither launcher nor HTTP-gate enforcement exists. Rule
+5 likewise retains the exact ordered 16-entry denied-capability ledger only as intent; closed
+launcher and destination-gate enforcement remain absent. With the current profile, every
+schema-valid pair therefore stops at rule 1 when evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |

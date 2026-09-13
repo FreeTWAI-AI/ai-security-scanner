@@ -203,6 +203,13 @@ struct AugustusProfileDestinationPolicyDocument {
     destination: AugustusProfileDestinationPolicyFields,
 }
 
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDeniedCapabilitiesDocument {
+    schema_version: String,
+    profile_id: String,
+    denied_capabilities: Vec<AugustusDeniedCapability>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AugustusFrozenDestination {
     generator: String,
@@ -320,6 +327,82 @@ impl AugustusDestinationPolicyEvidence {
 
     pub fn redirect_enforcement_state(&self) -> AugustusDestinationPolicyEnforcementState {
         self.redirect_enforcement_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AugustusDeniedCapability {
+    AllOtherGenerators,
+    AllOtherProbes,
+    AllOtherDetectors,
+    CustomBaseUrl,
+    Redirects,
+    Reconnaissance,
+    Buffs,
+    RuntimeHooks,
+    Tools,
+    MultiTurn,
+    AttackerOrJudgeModels,
+    DetectorNetworkAccess,
+    ConfigurationFiles,
+    InlineConfiguration,
+    Wildcards,
+    Retries,
+}
+
+const AUGUSTUS_FROZEN_DENIED_CAPABILITIES: [AugustusDeniedCapability; 16] = [
+    AugustusDeniedCapability::AllOtherGenerators,
+    AugustusDeniedCapability::AllOtherProbes,
+    AugustusDeniedCapability::AllOtherDetectors,
+    AugustusDeniedCapability::CustomBaseUrl,
+    AugustusDeniedCapability::Redirects,
+    AugustusDeniedCapability::Reconnaissance,
+    AugustusDeniedCapability::Buffs,
+    AugustusDeniedCapability::RuntimeHooks,
+    AugustusDeniedCapability::Tools,
+    AugustusDeniedCapability::MultiTurn,
+    AugustusDeniedCapability::AttackerOrJudgeModels,
+    AugustusDeniedCapability::DetectorNetworkAccess,
+    AugustusDeniedCapability::ConfigurationFiles,
+    AugustusDeniedCapability::InlineConfiguration,
+    AugustusDeniedCapability::Wildcards,
+    AugustusDeniedCapability::Retries,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusCapabilityEnforcementState {
+    Absent,
+}
+
+/// Pure-data Rule 5 evidence for the frozen denied-capability ledger.
+///
+/// The list is retained only when the complete profile and exact ordered enum
+/// set remain frozen. With no admitted launcher controls or destination gate,
+/// the deny list is policy intent rather than enforced execution behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusDeniedCapabilitiesEvidence {
+    frozen_denied_capabilities: Option<Vec<AugustusDeniedCapability>>,
+    launcher_enforcement_state: AugustusCapabilityEnforcementState,
+    destination_gate_enforcement_state: AugustusCapabilityEnforcementState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusDeniedCapabilitiesEvidence {
+    pub fn frozen_denied_capabilities(&self) -> Option<&[AugustusDeniedCapability]> {
+        self.frozen_denied_capabilities.as_deref()
+    }
+
+    pub fn launcher_enforcement_state(&self) -> AugustusCapabilityEnforcementState {
+        self.launcher_enforcement_state
+    }
+
+    pub fn destination_gate_enforcement_state(&self) -> AugustusCapabilityEnforcementState {
+        self.destination_gate_enforcement_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -725,6 +808,47 @@ fn produce_destination_policy_evidence(profile_json: &[u8]) -> AugustusDestinati
     }
 }
 
+/// Produces Rule 5 evidence without accepting caller capability claims.
+///
+/// The exact ordered deny list is read from the embedded profile. Because no
+/// admitted launcher or destination-gate enforcement exists, the list cannot
+/// be treated as proof that those capabilities are inert.
+pub fn produce_augustus_denied_capabilities_evidence() -> AugustusDeniedCapabilitiesEvidence {
+    produce_denied_capabilities_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_denied_capabilities_evidence(profile_json: &[u8]) -> AugustusDeniedCapabilitiesEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileDeniedCapabilitiesDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let frozen_denied_capabilities = profile.and_then(|profile| {
+        if calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+            && profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+            && profile.profile_id == AUGUSTUS_PROFILE_ID
+            && profile.denied_capabilities == AUGUSTUS_FROZEN_DENIED_CAPABILITIES
+        {
+            Some(profile.denied_capabilities)
+        } else {
+            None
+        }
+    });
+
+    AugustusDeniedCapabilitiesEvidence {
+        frozen_denied_capabilities,
+        launcher_enforcement_state: AugustusCapabilityEnforcementState::Absent,
+        destination_gate_enforcement_state: AugustusCapabilityEnforcementState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 5,
+            rule_id: AugustusPreflightRuleId::DeniedCapabilities,
+            state: AugustusEvidenceState::Unverified,
+            rejection_condition_indices: vec![0, 1],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -735,6 +859,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let destination_policy = produce_augustus_destination_policy_evidence();
     input.rule_evidence[3].clone_from(destination_policy.rule_evidence());
+
+    let denied_capabilities = produce_augustus_denied_capabilities_evidence();
+    input.rule_evidence[4].clone_from(denied_capabilities.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -1211,6 +1338,78 @@ mod tests {
         );
         assert_eq!(
             input.rule_evidence[3].rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn current_denied_capability_ledger_is_frozen_but_not_enforced() {
+        let evidence = produce_augustus_denied_capabilities_evidence();
+        let denied = evidence
+            .frozen_denied_capabilities()
+            .expect("trusted frozen deny list");
+
+        assert_eq!(denied, AUGUSTUS_FROZEN_DENIED_CAPABILITIES.as_slice());
+        assert_eq!(denied.len(), 16);
+        assert_eq!(
+            evidence.launcher_enforcement_state(),
+            AugustusCapabilityEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.destination_gate_enforcement_state(),
+            AugustusCapabilityEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 5,
+                rule_id: AugustusPreflightRuleId::DeniedCapabilities,
+                state: AugustusEvidenceState::Unverified,
+                rejection_condition_indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn denied_capability_order_drift_is_not_returned_as_trusted_policy() {
+        let mut profile: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        profile["denied_capabilities"]
+            .as_array_mut()
+            .expect("denied capability array")
+            .reverse();
+        let drifted_profile = serde_json::to_vec(&profile).expect("serializable drifted profile");
+
+        let evidence = produce_denied_capabilities_evidence(&drifted_profile);
+
+        assert_eq!(evidence.frozen_denied_capabilities(), None);
+        assert_eq!(
+            evidence.rule_evidence().state(),
+            AugustusEvidenceState::Unverified
+        );
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn caller_cannot_mark_denied_capabilities_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[5].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[4].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[4],
+            produce_augustus_denied_capabilities_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[4].rejection_condition_indices(),
             &[0, 1]
         );
     }
