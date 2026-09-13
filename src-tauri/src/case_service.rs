@@ -16373,6 +16373,37 @@ fn localize_redaction_markers(document: &str) -> String {
     localized
 }
 
+/// The fixed English sentences the report model writes into a task record.
+///
+/// They arrive already composed, printed between a translated label and a
+/// translated footnote, so left alone they are the English in an otherwise
+/// Chinese record. The connection test's contract is the one that matters
+/// most: it is the sentence saying the task was not a vulnerability scan, on
+/// the one task a reader is most likely to mistake for one.
+///
+/// Only the sentences this build writes are named. Anything else a build
+/// stores here is printed in the language it was stored in -- less than a
+/// reader should get, but never something the record did not say.
+fn translated_task_sentence(catalog: HtmlReportCatalog, stored: &str) -> &str {
+    match stored {
+        "One desktop-host TCP connection attempt; no application payload; reachability observation only." => {
+            catalog.text(
+                stored,
+                "對桌面主機嘗試一次 TCP 連線；不送出應用層資料；只取得可連線與否的觀察。",
+            )
+        }
+        "Stored localhost task contract: unsupported. Endpoint observation: unavailable." => {
+            catalog.text(stored, "保存的本機工作契約不受支援；端點觀察無法取得。")
+        }
+        "Run-bound diagnostic log: unavailable. Redacted diagnostic export: separate." => catalog
+            .text(
+                stored,
+                "本輪的診斷紀錄無法取得；已遮蔽的診斷匯出為獨立檔案。",
+            ),
+        stored => stored,
+    }
+}
+
 fn html_report_bytes(
     case: &AssessmentCase,
     run_id: &str,
@@ -17689,6 +17720,7 @@ fn html_report_bytes(
                             .text("observation not retained", "未保留觀察紀錄")
                             .into()
                     });
+                let contract = translated_task_sentence(catalog, contract);
                 format!(
                     "{} {endpoint}; {} {timeout_ms} ms; {} {payload_bytes} {}; {observation}; {contract}",
                     catalog.text("native endpoint", "原生端點"),
@@ -17698,6 +17730,7 @@ fn html_report_bytes(
                 )
             }
             crate::beginner_report::TechnicalExecution::InvalidBuiltInTask { explanation } => {
+                let explanation = translated_task_sentence(catalog, explanation);
                 format!(
                     "{}: {explanation}",
                     catalog.text("invalid built-in task record", "無效的內建工作紀錄")
@@ -17730,18 +17763,8 @@ fn html_report_bytes(
             .as_ref()
             .map(|value| format!("<br><code>{}</code>", html_escape(value)))
             .unwrap_or_default();
-        // One fixed English sentence written into the report model, printed
-        // between a translated heading and a translated footnote. Anything
-        // else a build stores here stays in the language it was stored in.
-        let diagnostic_explanation = match task.redacted_diagnostic_log.explanation.as_str() {
-            "Run-bound diagnostic log: unavailable. Redacted diagnostic export: separate." => {
-                catalog.text(
-                    "Run-bound diagnostic log: unavailable. Redacted diagnostic export: separate.",
-                    "本輪的診斷紀錄無法取得；已遮蔽的診斷匯出為獨立檔案。",
-                )
-            }
-            stored => stored,
-        };
+        let diagnostic_explanation =
+            translated_task_sentence(catalog, &task.redacted_diagnostic_log.explanation);
         let cleanup = task
             .cleanup_removed
             .map(|removed| {
@@ -33699,6 +33722,49 @@ mod tests {
     }
 
     #[test]
+    fn every_fixed_task_sentence_the_report_model_writes_has_a_chinese_one() {
+        // The three sentences the model composes for a task record. Each is
+        // printed between a translated label and a translated footnote, so a
+        // stored sentence with no arm here is the English in a Chinese record.
+        // Held by value, not by pattern: this list is what the model writes,
+        // and a sentence reworded on that side has to be reworded here.
+        for stored in [
+            "One desktop-host TCP connection attempt; no application payload; reachability observation only.",
+            "Stored localhost task contract: unsupported. Endpoint observation: unavailable.",
+            "Run-bound diagnostic log: unavailable. Redacted diagnostic export: separate.",
+        ] {
+            let english = HtmlReportCatalog {
+                locale: crate::export::ReportLocale::En,
+            };
+            let chinese = HtmlReportCatalog {
+                locale: crate::export::ReportLocale::ZhHant,
+            };
+            assert_eq!(
+                translated_task_sentence(english, stored),
+                stored,
+                "the English report reworded a stored sentence"
+            );
+            let named = translated_task_sentence(chinese, stored);
+            assert_ne!(named, stored, "no Chinese sentence for: {stored}");
+            assert!(
+                !named.is_ascii(),
+                "the Chinese sentence for {stored} is not Chinese"
+            );
+        }
+        // A sentence from another build is printed as it was stored, in both.
+        let stored = "Some other sentence a future build wrote.";
+        for locale in [
+            crate::export::ReportLocale::En,
+            crate::export::ReportLocale::ZhHant,
+        ] {
+            assert_eq!(
+                translated_task_sentence(HtmlReportCatalog { locale }, stored),
+                stored
+            );
+        }
+    }
+
+    #[test]
     fn beginner_visible_html_uses_friendly_labels_and_keeps_exact_ids_collapsed() {
         let fixture = Fixture::new();
         let prepared = crate::localhost_quick_scan::prepare_localhost_quick_scan(
@@ -33803,6 +33869,13 @@ mod tests {
             technical_details.contains(&target_id),
             "collapsed technical details retain the exact target ID for auditability"
         );
+        // The sentence that says this task was not a vulnerability scan.
+        assert!(
+            technical_details.contains(
+                "One desktop-host TCP connection attempt; no application payload; reachability observation only."
+            ),
+            "the connection test dropped the contract that says what it was not"
+        );
         assert!(!html.contains("<details class=\"technical\" open"));
         assert!(html.contains(concat!(
             "Content-Security-Policy\" content=\"default-src 'none'; ",
@@ -33861,6 +33934,19 @@ mod tests {
             !zh_html.contains(
                 "The selected run's stored project identifier does not match this project."
             )
+        );
+        // Same sentence, in the language the rest of the record is in. A
+        // connection test is the one task a reader most needs told plainly
+        // that it was not a vulnerability scan.
+        assert!(
+            zh_html.contains(
+                "對桌面主機嘗試一次 TCP 連線；不送出應用層資料；只取得可連線與否的觀察。"
+            ),
+            "the connection test's contract stayed in English in the Chinese report"
+        );
+        assert!(
+            !zh_html.contains("reachability observation only"),
+            "the English contract is still in the Chinese report"
         );
         for expected in [
             "<html lang=\"zh-Hant\">",
