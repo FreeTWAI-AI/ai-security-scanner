@@ -5,19 +5,27 @@ Normative status: this is a pinned research decision, subordinate to the
 boundary for one audited Agentic Radar revision. It does not admit an engine, authorize packaging
 or publication, or make this inventory-only analysis a completed security check.
 
-Decision: when Agentic Radar is integrated, consume its static workflow graph as typed inventory
-observations. Do not turn its tool-category warnings or agent-mitigation assessments into findings.
-The pinned revision already has a JSON graph exporter, so the product does not need a second graph
-builder. A narrow orchestration patch is still required to make that output safe for a machine
-consumer.
+Decision: consume Agentic Radar's static workflow graph as typed inventory observations. Do not turn
+its tool-category warnings or agent-mitigation assessments into findings. The pinned revision
+already has a JSON graph exporter, so the product does not need a second graph builder. The retained
+narrow orchestration patch only supplies a versioned, fail-closed machine envelope around that same
+parser-produced graph. The current product record remains experimental, non-runnable, and
+fixture-bound; neither the patch nor the record is a dispatch path.
 
 This static review is pinned to
 [`splx-ai/agentic-radar@65a7e4bd01e2034c7cb52e9620eeed287688cc53`](https://github.com/splx-ai/agentic-radar/tree/65a7e4bd01e2034c7cb52e9620eeed287688cc53)
 (version 0.14.1). Its checked-in license is Apache-2.0
 ([package metadata](https://github.com/splx-ai/agentic-radar/blob/65a7e4bd01e2034c7cb52e9620eeed287688cc53/pyproject.toml#L1-L18),
 [license text](https://github.com/splx-ai/agentic-radar/blob/65a7e4bd01e2034c7cb52e9620eeed287688cc53/LICENSE#L1-L3)).
-It remains `RESEARCH / NOT_DISTRIBUTED`: it is not an `ai-security-scanner` engine, installer
-component, container image, or transitive release dependency.
+The upstream source remains `RESEARCH / NOT_DISTRIBUTED`: it is not an installer component,
+container image, or transitive release dependency. The separate product catalog record is only
+experimental, non-runnable integration metadata backed by retained fixtures.
+
+The Step 2a source audit was rechecked on 2026-09-13 from the existing ignored shallow checkout at
+`.upstreams/splx-ai/agentic-radar`. Its retained research commit has the pinned upstream revision as
+its exact parent. Every upstream claim and permalink in the audited path below refers to those
+parent bytes, not to the later local patch. No upstream code was executed and no target was
+contacted during this recheck.
 
 ## Audited machine-readable path
 
@@ -61,11 +69,9 @@ At the pinned revision:
   That presentation object is not the adapter input: parsing it would couple the product to HTML and
   would reintroduce the generic warnings deliberately excluded by the upstream graph JSON path.
 
-No Agentic Radar code was executed for this decision, and no scan target was contacted.
-
 ## Normalization decision
 
-The future adapter may derive only inventory observations from the exported graph:
+The fixture-bound adapter may derive only inventory observations from the exported graph:
 
 - one component observation for each distinct agent, tool, custom tool, basic workflow node, or MCP
   server in the union of `nodes` and `tools`;
@@ -110,7 +116,7 @@ model when credentials are available
 Its generated mitigation levels and explanations are also excluded from findings and typed
 observations.
 
-## Required execution boundary before integration
+## Required execution boundary before dispatch
 
 Only the static `scan ... --export-graph-json` path is in scope. The future launcher must:
 
@@ -127,7 +133,7 @@ Only the static `scan ... --export-graph-json` path is in scope. The future laun
 The pinned CLI exits with code 1 when it sees no more than two graph nodes instead of emitting an
 explicit machine-readable empty result
 ([no-workflow branch](https://github.com/splx-ai/agentic-radar/blob/65a7e4bd01e2034c7cb52e9620eeed287688cc53/agentic_radar/cli.py#L144-L159)).
-That cannot be translated into a successful clean scan. A future integration must retain the
+That cannot be translated into a successful clean scan. Any runnable integration must retain the
 product's non-zero-exit boundary and show this case as incomplete until the upstream output contract
 can distinguish “no supported workflow found” from execution failure.
 
