@@ -190,6 +190,19 @@ struct AugustusProfileScopeFields {
     destination: AugustusProfileDestinationFields,
 }
 
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDestinationPolicyFields {
+    custom_base_url_allowed: bool,
+    redirects_allowed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDestinationPolicyDocument {
+    schema_version: String,
+    profile_id: String,
+    destination: AugustusProfileDestinationPolicyFields,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AugustusFrozenDestination {
     generator: String,
@@ -255,6 +268,58 @@ impl AugustusScopeBindingEvidence {
 
     pub fn bound_model(&self) -> Option<&str> {
         self.bound_model.as_deref()
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenDestinationPolicy {
+    custom_base_url_allowed: bool,
+    redirects_allowed: bool,
+}
+
+impl AugustusFrozenDestinationPolicy {
+    pub fn custom_base_url_allowed(&self) -> bool {
+        self.custom_base_url_allowed
+    }
+
+    pub fn redirects_allowed(&self) -> bool {
+        self.redirects_allowed
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusDestinationPolicyEnforcementState {
+    Absent,
+}
+
+/// Pure-data Rule 4 evidence for base-URL and redirect denial.
+///
+/// Frozen policy intent is not treated as enforcement. Until separately
+/// reviewed launcher and HTTP-gate controls exist, both enforcement points
+/// remain absent and this rule stays unverified before contact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusDestinationPolicyEvidence {
+    frozen_policy: Option<AugustusFrozenDestinationPolicy>,
+    base_url_enforcement_state: AugustusDestinationPolicyEnforcementState,
+    redirect_enforcement_state: AugustusDestinationPolicyEnforcementState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusDestinationPolicyEvidence {
+    pub fn frozen_policy(&self) -> Option<AugustusFrozenDestinationPolicy> {
+        self.frozen_policy
+    }
+
+    pub fn base_url_enforcement_state(&self) -> AugustusDestinationPolicyEnforcementState {
+        self.base_url_enforcement_state
+    }
+
+    pub fn redirect_enforcement_state(&self) -> AugustusDestinationPolicyEnforcementState {
+        self.redirect_enforcement_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -615,6 +680,51 @@ fn frozen_destination(destination: &AugustusProfileDestinationFields) -> Augustu
     }
 }
 
+/// Produces Rule 4 evidence without accepting caller policy or configuration.
+///
+/// The embedded profile permits neither a custom base URL nor redirects, but
+/// those declarations are not execution controls. With no admitted launcher or
+/// HTTP gate, both enforcement points remain absent and fail closed.
+pub fn produce_augustus_destination_policy_evidence() -> AugustusDestinationPolicyEvidence {
+    produce_destination_policy_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_destination_policy_evidence(profile_json: &[u8]) -> AugustusDestinationPolicyEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileDestinationPolicyDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let frozen_policy = profile.and_then(|profile| {
+        if calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+            && profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+            && profile.profile_id == AUGUSTUS_PROFILE_ID
+            && !profile.destination.custom_base_url_allowed
+            && !profile.destination.redirects_allowed
+        {
+            Some(AugustusFrozenDestinationPolicy {
+                custom_base_url_allowed: profile.destination.custom_base_url_allowed,
+                redirects_allowed: profile.destination.redirects_allowed,
+            })
+        } else {
+            None
+        }
+    });
+
+    AugustusDestinationPolicyEvidence {
+        frozen_policy,
+        base_url_enforcement_state: AugustusDestinationPolicyEnforcementState::Absent,
+        redirect_enforcement_state: AugustusDestinationPolicyEnforcementState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 4,
+            rule_id: AugustusPreflightRuleId::BaseUrlAndRedirectDenial,
+            state: AugustusEvidenceState::Unverified,
+            rejection_condition_indices: vec![0, 1],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -622,6 +732,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let scope_binding = produce_augustus_scope_binding_evidence();
     input.rule_evidence[2].clone_from(scope_binding.rule_evidence());
+
+    let destination_policy = produce_augustus_destination_policy_evidence();
+    input.rule_evidence[3].clone_from(destination_policy.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -1033,6 +1146,73 @@ mod tests {
             produce_augustus_scope_binding_evidence().rule_evidence()
         );
         assert_eq!(input.rule_evidence[2].rejection_condition_indices(), &[0]);
+    }
+
+    #[test]
+    fn current_destination_policy_is_intent_with_absent_enforcement() {
+        let evidence = produce_augustus_destination_policy_evidence();
+        let policy = evidence.frozen_policy().expect("trusted frozen policy");
+
+        assert!(!policy.custom_base_url_allowed());
+        assert!(!policy.redirects_allowed());
+        assert_eq!(
+            evidence.base_url_enforcement_state(),
+            AugustusDestinationPolicyEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.redirect_enforcement_state(),
+            AugustusDestinationPolicyEnforcementState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 4,
+                rule_id: AugustusPreflightRuleId::BaseUrlAndRedirectDenial,
+                state: AugustusEvidenceState::Unverified,
+                rejection_condition_indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn destination_policy_drift_is_not_returned_as_trusted_policy() {
+        let mut profile: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        profile["destination"]["custom_base_url_allowed"] = json!(true);
+        let drifted_profile = serde_json::to_vec(&profile).expect("serializable drifted profile");
+
+        let evidence = produce_destination_policy_evidence(&drifted_profile);
+
+        assert_eq!(evidence.frozen_policy(), None);
+        assert_eq!(
+            evidence.rule_evidence().state(),
+            AugustusEvidenceState::Unverified
+        );
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn caller_cannot_mark_destination_policy_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[4].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[3].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[3],
+            produce_augustus_destination_policy_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[3].rejection_condition_indices(),
+            &[0, 1]
+        );
     }
 
     #[test]
