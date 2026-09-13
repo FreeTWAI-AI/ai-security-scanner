@@ -79,6 +79,9 @@ egress enforcement. Rule 11 retains one provider request per second, zero scanne
 Rule 12 retains 300-second probe and scanner deadlines plus a 330-second process deadline, but has
 no verified scanner-option observability, exact process termination and reaping, or egress-lease
 revocation.
+Rule 13 retains 512 MiB memory, 1,000 CPU-millis, 128-PID, and 16 MiB writable-temporary-storage
+ceilings, but has no created runtime or verified mount inventory. It rejects on unavailable runtime
+enforcement without inventing a forbidden mount.
 With the current profile, every schema-valid pair therefore stops at rule 1 when evaluated by the
 product.
 

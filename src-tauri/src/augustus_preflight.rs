@@ -61,6 +61,10 @@ const AUGUSTUS_FROZEN_REQUEST_TIMEOUT_SECONDS: u32 = 20;
 const AUGUSTUS_FROZEN_PROBE_TIMEOUT_SECONDS: u32 = 300;
 const AUGUSTUS_FROZEN_SCANNER_TIMEOUT_SECONDS: u32 = 300;
 const AUGUSTUS_FROZEN_PROCESS_TIMEOUT_SECONDS: u32 = 330;
+const AUGUSTUS_FROZEN_MEMORY_MIB: u32 = 512;
+const AUGUSTUS_FROZEN_CPU_MILLIS: u32 = 1_000;
+const AUGUSTUS_FROZEN_PIDS: u32 = 128;
+const AUGUSTUS_FROZEN_WRITABLE_TMP_MIB: u32 = 16;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -355,6 +359,21 @@ struct AugustusProfileDeadlinePolicyDocument {
     schema_version: String,
     profile_id: String,
     execution_limits: AugustusProfileDeadlinePolicyFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileSandboxPolicyFields {
+    memory_mib: u32,
+    cpu_millis: u32,
+    pids: u32,
+    writable_tmp_mib: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileSandboxPolicyDocument {
+    schema_version: String,
+    profile_id: String,
+    execution_limits: AugustusProfileSandboxPolicyFields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1012,6 +1031,68 @@ impl AugustusDeadlinePolicyEvidence {
 
     pub fn egress_lease_revocation_state(&self) -> AugustusDeadlinePolicyRuntimeState {
         self.egress_lease_revocation_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenSandboxPolicy {
+    memory_mib: u32,
+    cpu_millis: u32,
+    pids: u32,
+    writable_tmp_mib: u32,
+}
+
+impl AugustusFrozenSandboxPolicy {
+    pub fn memory_mib(&self) -> u32 {
+        self.memory_mib
+    }
+
+    pub fn cpu_millis(&self) -> u32 {
+        self.cpu_millis
+    }
+
+    pub fn pids(&self) -> u32 {
+        self.pids
+    }
+
+    pub fn writable_tmp_mib(&self) -> u32 {
+        self.writable_tmp_mib
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusSandboxRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 13 evidence for the process resource sandbox.
+///
+/// Frozen ceilings are not proof that a disposable runtime enforces them or
+/// that its exact mount inventory contains no broad, sensitive, or additional
+/// writable host path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusProcessResourceSandboxEvidence {
+    frozen_policy: Option<AugustusFrozenSandboxPolicy>,
+    runtime_sandbox_state: AugustusSandboxRuntimeState,
+    runtime_mount_inventory_state: AugustusSandboxRuntimeState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusProcessResourceSandboxEvidence {
+    pub fn frozen_policy(&self) -> Option<AugustusFrozenSandboxPolicy> {
+        self.frozen_policy
+    }
+
+    pub fn runtime_sandbox_state(&self) -> AugustusSandboxRuntimeState {
+        self.runtime_sandbox_state
+    }
+
+    pub fn runtime_mount_inventory_state(&self) -> AugustusSandboxRuntimeState {
+        self.runtime_mount_inventory_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1906,6 +1987,60 @@ fn produce_deadline_policy_evidence(profile_json: &[u8]) -> AugustusDeadlinePoli
     }
 }
 
+/// Produces Rule 13 evidence without accepting caller-supplied resource limits.
+///
+/// All four ceilings come only from the embedded starter profile. No runtime
+/// sandbox or mount-inventory statement is accepted until a separately
+/// reviewed isolation component can prove the created runtime.
+pub fn produce_augustus_process_resource_sandbox_evidence() -> AugustusProcessResourceSandboxEvidence
+{
+    produce_process_resource_sandbox_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_process_resource_sandbox_evidence(
+    profile_json: &[u8],
+) -> AugustusProcessResourceSandboxEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileSandboxPolicyDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let sandbox_values_match = profile.as_ref().is_some_and(|profile| {
+        profile.execution_limits.memory_mib == AUGUSTUS_FROZEN_MEMORY_MIB
+            && profile.execution_limits.cpu_millis == AUGUSTUS_FROZEN_CPU_MILLIS
+            && profile.execution_limits.pids == AUGUSTUS_FROZEN_PIDS
+            && profile.execution_limits.writable_tmp_mib == AUGUSTUS_FROZEN_WRITABLE_TMP_MIB
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_policy = if profile_is_trusted && sandbox_values_match {
+        profile.as_ref().map(|profile| AugustusFrozenSandboxPolicy {
+            memory_mib: profile.execution_limits.memory_mib,
+            cpu_millis: profile.execution_limits.cpu_millis,
+            pids: profile.execution_limits.pids,
+            writable_tmp_mib: profile.execution_limits.writable_tmp_mib,
+        })
+    } else {
+        None
+    };
+
+    AugustusProcessResourceSandboxEvidence {
+        frozen_policy,
+        runtime_sandbox_state: AugustusSandboxRuntimeState::Absent,
+        runtime_mount_inventory_state: AugustusSandboxRuntimeState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 13,
+            rule_id: AugustusPreflightRuleId::ProcessResourceSandbox,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices: vec![0],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1940,6 +2075,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let deadline_policy = produce_augustus_deadline_policy_evidence();
     input.rule_evidence[11].clone_from(deadline_policy.rule_evidence());
+
+    let process_resource_sandbox = produce_augustus_process_resource_sandbox_evidence();
+    input.rule_evidence[12].clone_from(process_resource_sandbox.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -3064,6 +3202,78 @@ mod tests {
             input.rule_evidence[11].rejection_condition_indices(),
             &[0, 1]
         );
+    }
+
+    #[test]
+    fn current_sandbox_policy_is_frozen_without_runtime_enforcement() {
+        let evidence = produce_augustus_process_resource_sandbox_evidence();
+        let policy = evidence
+            .frozen_policy()
+            .expect("trusted frozen sandbox policy");
+
+        assert_eq!(policy.memory_mib(), 512);
+        assert_eq!(policy.cpu_millis(), 1_000);
+        assert_eq!(policy.pids(), 128);
+        assert_eq!(policy.writable_tmp_mib(), 16);
+        assert_eq!(
+            evidence.runtime_sandbox_state(),
+            AugustusSandboxRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.runtime_mount_inventory_state(),
+            AugustusSandboxRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 13,
+                rule_id: AugustusPreflightRuleId::ProcessResourceSandbox,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0],
+            }
+        );
+    }
+
+    #[test]
+    fn sandbox_policy_drift_is_never_returned_as_frozen() {
+        for (field, drifted_value) in [
+            ("memory_mib", json!(513)),
+            ("cpu_millis", json!(1_001)),
+            ("pids", json!(129)),
+            ("writable_tmp_mib", json!(17)),
+        ] {
+            let mut profile: Value =
+                serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+            profile["execution_limits"][field] = drifted_value;
+            let evidence = produce_process_resource_sandbox_evidence(
+                &serde_json::to_vec(&profile).expect("serializable sandbox-policy drift"),
+            );
+
+            assert_eq!(evidence.frozen_policy(), None, "field: {field}");
+            assert_eq!(
+                evidence.rule_evidence().rejection_condition_indices(),
+                &[0],
+                "absent runtime enforcement rejects without inventing a forbidden mount: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn caller_cannot_mark_process_resource_sandbox_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[13].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[12].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[12],
+            produce_augustus_process_resource_sandbox_evidence().rule_evidence()
+        );
+        assert_eq!(input.rule_evidence[12].rejection_condition_indices(), &[0]);
     }
 
     #[test]
