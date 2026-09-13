@@ -70,8 +70,10 @@ probe/detector allowlist, case-insensitive setting, and 15-attempt metadata, but
 remains absent. Rule 7 separately retains the 15-attempt, one-turn, one-generation, no-tools shape,
 while terminal reconciliation evidence remains absent. Rule 8 retains the reviewed ordered corpus
 digest, source revision, count, and byte bounds, but has no launcher evidence binding the executed
-prompt source to that attestation. With the current profile, every schema-valid pair therefore stops
-at rule 1 when evaluated by the product.
+prompt source to that attestation. Rule 9 retains the starter request, token, charge, and pricing
+ceilings with checked arithmetic, but has no trusted model price or tokenizer, launcher
+`max_tokens`, or independent HTTP request counter. With the current profile, every schema-valid
+pair therefore stops at rule 1 when evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |

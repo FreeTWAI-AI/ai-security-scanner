@@ -44,6 +44,16 @@ const AUGUSTUS_FROZEN_API_BASE_PATH: &str = "/v1";
 const AUGUSTUS_FROZEN_PROMPT_CANONICALIZATION: &str =
     "UTF-8 JSON array in source order with no insignificant whitespace";
 const AUGUSTUS_FROZEN_PROMPT_TOTAL_UTF8_BYTES: usize = 3_212;
+const AUGUSTUS_FROZEN_MAXIMUM_INPUT_TOKENS_PER_REQUEST: u32 = 512;
+const AUGUSTUS_FROZEN_MAXIMUM_OUTPUT_TOKENS_PER_REQUEST: u32 = 128;
+const AUGUSTUS_FROZEN_MAXIMUM_TOTAL_INPUT_TOKENS: u32 =
+    AUGUSTUS_FROZEN_MAXIMUM_INPUT_TOKENS_PER_REQUEST * AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS;
+const AUGUSTUS_FROZEN_MAXIMUM_TOTAL_OUTPUT_TOKENS: u32 =
+    AUGUSTUS_FROZEN_MAXIMUM_OUTPUT_TOKENS_PER_REQUEST * AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS;
+const AUGUSTUS_FROZEN_MAXIMUM_TOTAL_TOKENS: u32 =
+    AUGUSTUS_FROZEN_MAXIMUM_TOTAL_INPUT_TOKENS + AUGUSTUS_FROZEN_MAXIMUM_TOTAL_OUTPUT_TOKENS;
+const AUGUSTUS_FROZEN_MAXIMUM_ESTIMATED_CHARGE_USD_MICROS: u64 = 250_000;
+const AUGUSTUS_FROZEN_PRICING_REQUIREMENT: &str = "Refuse dispatch unless the exact granted model has a current price and the worst-case estimate is at most this ceiling.";
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -273,6 +283,25 @@ struct AugustusProfilePromptCorpusDocument {
     profile_id: String,
     source_revision: String,
     allowlist: Vec<AugustusProfilePromptCorpusEntryFields>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileCostLimitsFields {
+    maximum_provider_requests: u32,
+    maximum_input_tokens_per_request: u32,
+    maximum_total_input_tokens: u32,
+    maximum_output_tokens_per_request: u32,
+    maximum_total_output_tokens: u32,
+    maximum_total_tokens: u32,
+    maximum_estimated_charge_usd_micros: u64,
+    pricing_requirement: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileCostLimitsDocument {
+    schema_version: String,
+    profile_id: String,
+    cost_limits: AugustusProfileCostLimitsFields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -664,6 +693,98 @@ impl AugustusPromptCorpusEvidence {
 
     pub fn executed_source_binding_state(&self) -> AugustusPromptSourceBindingState {
         self.executed_source_binding_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusFrozenCostBudget {
+    maximum_provider_requests: u32,
+    maximum_input_tokens_per_request: u32,
+    maximum_total_input_tokens: u32,
+    maximum_output_tokens_per_request: u32,
+    maximum_total_output_tokens: u32,
+    maximum_total_tokens: u32,
+    maximum_estimated_charge_usd_micros: u64,
+    pricing_requirement: String,
+}
+
+impl AugustusFrozenCostBudget {
+    pub fn maximum_provider_requests(&self) -> u32 {
+        self.maximum_provider_requests
+    }
+
+    pub fn maximum_input_tokens_per_request(&self) -> u32 {
+        self.maximum_input_tokens_per_request
+    }
+
+    pub fn maximum_total_input_tokens(&self) -> u32 {
+        self.maximum_total_input_tokens
+    }
+
+    pub fn maximum_output_tokens_per_request(&self) -> u32 {
+        self.maximum_output_tokens_per_request
+    }
+
+    pub fn maximum_total_output_tokens(&self) -> u32 {
+        self.maximum_total_output_tokens
+    }
+
+    pub fn maximum_total_tokens(&self) -> u32 {
+        self.maximum_total_tokens
+    }
+
+    pub fn maximum_estimated_charge_usd_micros(&self) -> u64 {
+        self.maximum_estimated_charge_usd_micros
+    }
+
+    pub fn pricing_requirement(&self) -> &str {
+        &self.pricing_requirement
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusCostBudgetRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 9 evidence for the frozen starter cost budget.
+///
+/// Frozen ceilings are not proof of a current model price, tokenizer result,
+/// generator option, or HTTP request counter. Those independently enforced
+/// values remain absent until separately reviewed runtime components exist.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusCostBudgetEvidence {
+    frozen_budget: Option<AugustusFrozenCostBudget>,
+    trusted_price_and_tokenizer_state: AugustusCostBudgetRuntimeState,
+    generator_max_tokens_state: AugustusCostBudgetRuntimeState,
+    http_request_counter_state: AugustusCostBudgetRuntimeState,
+    tcp_connection_count_substituted: bool,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusCostBudgetEvidence {
+    pub fn frozen_budget(&self) -> Option<&AugustusFrozenCostBudget> {
+        self.frozen_budget.as_ref()
+    }
+
+    pub fn trusted_price_and_tokenizer_state(&self) -> AugustusCostBudgetRuntimeState {
+        self.trusted_price_and_tokenizer_state
+    }
+
+    pub fn generator_max_tokens_state(&self) -> AugustusCostBudgetRuntimeState {
+        self.generator_max_tokens_state
+    }
+
+    pub fn http_request_counter_state(&self) -> AugustusCostBudgetRuntimeState {
+        self.http_request_counter_state
+    }
+
+    pub fn tcp_connection_count_substituted(&self) -> bool {
+        self.tcp_connection_count_substituted
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1319,6 +1440,89 @@ fn produce_prompt_corpus_evidence(profile_json: &[u8]) -> AugustusPromptCorpusEv
     }
 }
 
+/// Produces Rule 9 evidence without accepting caller-supplied prices or limits.
+///
+/// The starter budget is retained only when every field and checked arithmetic
+/// relationship matches the embedded profile. Runtime price, tokenizer,
+/// generator, and HTTP request-accounting evidence remain absent.
+pub fn produce_augustus_cost_budget_evidence() -> AugustusCostBudgetEvidence {
+    produce_cost_budget_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_cost_budget_evidence(profile_json: &[u8]) -> AugustusCostBudgetEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileCostLimitsDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let cost = profile.as_ref().map(|profile| &profile.cost_limits);
+    let pricing_policy_matches =
+        cost.is_some_and(|cost| cost.pricing_requirement == AUGUSTUS_FROZEN_PRICING_REQUIREMENT);
+    let token_budget_matches = cost.is_some_and(|cost| {
+        cost.maximum_input_tokens_per_request == AUGUSTUS_FROZEN_MAXIMUM_INPUT_TOKENS_PER_REQUEST
+            && cost.maximum_output_tokens_per_request
+                == AUGUSTUS_FROZEN_MAXIMUM_OUTPUT_TOKENS_PER_REQUEST
+            && cost
+                .maximum_input_tokens_per_request
+                .checked_mul(AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS)
+                == Some(cost.maximum_total_input_tokens)
+            && cost
+                .maximum_output_tokens_per_request
+                .checked_mul(AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS)
+                == Some(cost.maximum_total_output_tokens)
+            && cost
+                .maximum_total_input_tokens
+                .checked_add(cost.maximum_total_output_tokens)
+                == Some(cost.maximum_total_tokens)
+            && cost.maximum_total_input_tokens == AUGUSTUS_FROZEN_MAXIMUM_TOTAL_INPUT_TOKENS
+            && cost.maximum_total_output_tokens == AUGUSTUS_FROZEN_MAXIMUM_TOTAL_OUTPUT_TOKENS
+            && cost.maximum_total_tokens == AUGUSTUS_FROZEN_MAXIMUM_TOTAL_TOKENS
+    });
+    let request_and_charge_budget_matches = cost.is_some_and(|cost| {
+        cost.maximum_provider_requests == AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS
+            && cost.maximum_estimated_charge_usd_micros
+                == AUGUSTUS_FROZEN_MAXIMUM_ESTIMATED_CHARGE_USD_MICROS
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_budget = if profile_is_trusted
+        && pricing_policy_matches
+        && token_budget_matches
+        && request_and_charge_budget_matches
+    {
+        cost.map(|cost| AugustusFrozenCostBudget {
+            maximum_provider_requests: cost.maximum_provider_requests,
+            maximum_input_tokens_per_request: cost.maximum_input_tokens_per_request,
+            maximum_total_input_tokens: cost.maximum_total_input_tokens,
+            maximum_output_tokens_per_request: cost.maximum_output_tokens_per_request,
+            maximum_total_output_tokens: cost.maximum_total_output_tokens,
+            maximum_total_tokens: cost.maximum_total_tokens,
+            maximum_estimated_charge_usd_micros: cost.maximum_estimated_charge_usd_micros,
+            pricing_requirement: cost.pricing_requirement.clone(),
+        })
+    } else {
+        None
+    };
+
+    AugustusCostBudgetEvidence {
+        frozen_budget,
+        trusted_price_and_tokenizer_state: AugustusCostBudgetRuntimeState::Absent,
+        generator_max_tokens_state: AugustusCostBudgetRuntimeState::Absent,
+        http_request_counter_state: AugustusCostBudgetRuntimeState::Absent,
+        tcp_connection_count_substituted: false,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 9,
+            rule_id: AugustusPreflightRuleId::TokenRequestAndCostBudget,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices: vec![0, 1, 2],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1341,6 +1545,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let prompt_corpus = produce_augustus_prompt_corpus_evidence();
     input.rule_evidence[7].clone_from(prompt_corpus.rule_evidence());
+
+    let cost_budget = produce_augustus_cost_budget_evidence();
+    input.rule_evidence[8].clone_from(cost_budget.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -2143,6 +2350,100 @@ mod tests {
             produce_augustus_prompt_corpus_evidence().rule_evidence()
         );
         assert_eq!(input.rule_evidence[7].rejection_condition_indices(), &[1]);
+    }
+
+    #[test]
+    fn current_cost_budget_is_frozen_without_runtime_cost_proof() {
+        let evidence = produce_augustus_cost_budget_evidence();
+        let budget = evidence
+            .frozen_budget()
+            .expect("trusted frozen starter cost budget");
+
+        assert_eq!(
+            budget.maximum_provider_requests(),
+            AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS
+        );
+        assert_eq!(budget.maximum_input_tokens_per_request(), 512);
+        assert_eq!(budget.maximum_total_input_tokens(), 7_680);
+        assert_eq!(budget.maximum_output_tokens_per_request(), 128);
+        assert_eq!(budget.maximum_total_output_tokens(), 1_920);
+        assert_eq!(budget.maximum_total_tokens(), 9_600);
+        assert_eq!(budget.maximum_estimated_charge_usd_micros(), 250_000);
+        assert_eq!(
+            budget.pricing_requirement(),
+            AUGUSTUS_FROZEN_PRICING_REQUIREMENT
+        );
+        assert_eq!(
+            evidence.trusted_price_and_tokenizer_state(),
+            AugustusCostBudgetRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.generator_max_tokens_state(),
+            AugustusCostBudgetRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.http_request_counter_state(),
+            AugustusCostBudgetRuntimeState::Absent
+        );
+        assert!(!evidence.tcp_connection_count_substituted());
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 9,
+                rule_id: AugustusPreflightRuleId::TokenRequestAndCostBudget,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0, 1, 2],
+            }
+        );
+    }
+
+    #[test]
+    fn cost_budget_drift_is_never_returned_as_frozen_policy() {
+        for (field, drifted_value) in [
+            ("maximum_provider_requests", json!(16)),
+            ("maximum_input_tokens_per_request", json!(513)),
+            ("maximum_total_input_tokens", json!(7_679)),
+            ("maximum_output_tokens_per_request", json!(129)),
+            ("maximum_total_output_tokens", json!(1_919)),
+            ("maximum_total_tokens", json!(9_599)),
+            ("maximum_estimated_charge_usd_micros", json!(250_001)),
+            ("pricing_requirement", json!("Trust caller pricing")),
+        ] {
+            let mut profile: Value =
+                serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+            profile["cost_limits"][field] = drifted_value;
+            let evidence = produce_cost_budget_evidence(
+                &serde_json::to_vec(&profile).expect("serializable cost-budget drift"),
+            );
+
+            assert_eq!(evidence.frozen_budget(), None, "field: {field}");
+            assert_eq!(
+                evidence.rule_evidence().rejection_condition_indices(),
+                &[0, 1, 2],
+                "runtime cost enforcement remains absent for field: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn caller_cannot_mark_cost_budget_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[9].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[8].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[8],
+            produce_augustus_cost_budget_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[8].rejection_condition_indices(),
+            &[0, 1, 2]
+        );
     }
 
     #[test]

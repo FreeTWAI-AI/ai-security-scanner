@@ -218,7 +218,7 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
-These pairs remain isolated schema examples: product evaluation replaces their first eight
+These pairs remain isolated schema examples: product evaluation replaces their first nine
 caller-carried evidence rows with mechanically derived evidence before it selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
@@ -256,9 +256,16 @@ ordered SHA-256, 15-prompt count, 3,212 total UTF-8 bytes, and 233-byte per-prom
 the complete embedded profile and the terminal verifier's frozen constants agree. Those reviewed
 values are not proof of which source a future launcher executed. With no executed-source binding,
 Rule 8 is `rejected` with condition 1; any corpus metadata drift adds condition 0. The evaluator
-replaces rules 1 through 8. Malformed, drifted, or all-verified input returns an error. The module is
-not connected to the engine catalog, orchestrator, process runtime, credential handling, gateway,
-or network path, so this implementation still cannot dispatch Augustus or contact a model endpoint.
+replaces rules 1 through 8. An eighth no-input producer retains the starter profile's exact
+15-request ceiling, 512/128 per-request token limits, checked 7,680/1,920/9,600 token totals, USD
+0.25 charge ceiling, and fail-closed pricing requirement. These defaults are not runtime cost proof:
+the exact model's trusted current price and tokenizer, launcher `max_tokens`, and independent HTTP
+request counter remain absent. Rule 9 is therefore `rejected` with conditions 0, 1, and 2; no TCP
+connection count is presented as provider-request evidence, so condition 3 is not invented. The
+evaluator replaces rules 1 through 9. Malformed, drifted, or all-verified input returns an error.
+The module is not connected to the engine catalog, orchestrator, process runtime, credential
+handling, gateway, or network path, so this implementation still cannot dispatch Augustus or
+contact a model endpoint.
 
 The pure Rust [`augustus_terminal`](../../src-tauri/src/augustus_terminal.rs) verifier now checks an
 already captured machine document against the pinned scanner provenance, an exact comparison-only
