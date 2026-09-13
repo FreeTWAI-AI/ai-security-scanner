@@ -147,8 +147,8 @@ exit, capture analyzer diagnostics as structured warnings with fail-closed compl
 export does not initialize hosted-model analysis, and add fixture-backed CLI tests for all five
 framework values. It must serialize the same parser-produced graph and must not change parsers,
 vulnerability matching, severity, evidence, or remediation logic. Until that contract is available
-and pinned, this repository may evaluate a minimal equivalent patch in the ignored research
-checkout, but it must not add the catalog entry, adapter, or packaged artifact.
+and pinned, any product record based on the local equivalent must remain experimental,
+non-runnable, fixture-bound, and without a packaged artifact.
 
 ## Local patch evaluation
 
@@ -188,10 +188,15 @@ checks passed, mypy reported no issues in 90 source files, and all nine focused 
 tests used in-memory graphs and temporary output directories; they did not execute Agentic Radar
 against a project or contact a target.
 
-This patch is retained as research evidence only. It has not been applied to product code, admitted
-to the engine catalog, packaged, published, or submitted upstream. Its removal condition is an
-upstream release with an equivalent documented and tested machine-output contract. A new upstream
-revision requires a fresh audit rather than rebasing these hashes by assumption.
+This patch is retained as research evidence only. It has not been merged upstream, packaged,
+published, or applied to a runnable product image. The product catalog records an experimental,
+non-runnable integration whose adapter is fixture-bound to this contract; that record does not
+promote the patch to product code or authorize execution. Its replacement condition is an upstream
+release with an equivalent documented and tested machine-output contract. A new upstream revision
+requires a fresh audit rather than rebasing these hashes by assumption.
+
+The prepared [upstream issue and pull request drafts](agentic-radar-upstream-drafts.md) remain local
+and may be submitted only after their recorded preflight and explicit authorization.
 
 ## Controlled fixture result
 
