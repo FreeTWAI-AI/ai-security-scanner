@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -118,6 +118,22 @@ const AUGUSTUS_PRECONTACT_RULE_CODES = [
   [12, "probe_scanner_and_process_deadlines", "augustus_deadline_policy_rejected"],
   [13, "process_resource_sandbox", "augustus_sandbox_policy_rejected"],
   [14, "response_and_process_output_bounds", "augustus_output_bound_rejected"],
+];
+const AUGUSTUS_PREFLIGHT_FIXTURE_PAIRS = [
+  ["01-profile-identity", "b8d84b3209badf438256af9a6dac4b44a04900f644d4dcd7dacc2473a73223b2", "b0fa66557b9a37eab418d43d03dd48bb621433bc68e451e31a7f228818faf5a5"],
+  ["02-dispatch-blockers", "190c4bf8b969e6019347292d70df4b0f7c4ad948ed2fded4dd9ff724a2943125", "5ff2e8efc83fdc873f65d48a91552d324e69da72d0eac116d3f59329cf266899"],
+  ["03-scope-binding", "1dd3a038178b97e64ac8d621538afae9780a0e4fef418a73b706189d16faf6e4", "dc9a2cab3b306db1ac21f6bc9647989a557cc2f243bdc2dcf2107c68821c8288"],
+  ["04-destination-policy", "e265f3da4a75ae15a588aaff83f11127446a759ea38ba84385928f2af24d744c", "8adfbb4399bc2c1289b938d7d2474ce68542c38ecc1f998df0d585c8fd31f7c0"],
+  ["05-denied-capabilities", "a14356aecc683d6777d326440bada972c646c7640d6072a05a0fe2615cfc2c93", "61c206a6e415b3d8a6dcbb991abcb8899d2549edd1fdbd25e3331b1ff490b83f"],
+  ["06-plan-allowlist", "2115248ea0589509bdc919c5755cfe316d5c27d86dd888d5b9c4af32ecd9c405", "318f9b66e97699cef9462f1eff1aa4d2cbcebd6df93ef8ac6625c56bd716d9d0"],
+  ["07-attempt-shape", "91b74400b79360aeae6405ada941f66671c52315059b88a02583e0b3f3b6d459", "de4c671474e1d6f4f7c7eb8e1b9f0f98ecb0b9b2ebfcaee5ed411bde6479fcc4"],
+  ["08-prompt-corpus", "fcc7fbc9024fb8067c7de51ab5c2052c1170c813d5657da0d95e27daa80ad388", "371288cf26361a4a57c8d0855bc45a526312ac629509a74a5de49cf817aa5e53"],
+  ["09-cost-budget", "14308aa686aa34a759f05ce84650fdd2b0bf5cc5567c526ca9ce0ab6afa62f5e", "ebc43709af1eed508a26c7eabd030b5f7adf1a424d83657839debc4df46e43f5"],
+  ["10-concurrency", "3b50c21ef03a4efae2af9423771cd8d1e2e3ad65b5ae0da911d01fb674c1c32c", "b778e2e4fe94749fd21f1a1bb9e67c9e11428547712e4acdccf47c9ab9bd8c33"],
+  ["11-request-policy", "d9d96727a9ab8dff406fc6d9fe1679717601839d737285d70b7bb02dd9885d38", "c9df47ecf7dcd5d78e24191a95a36ca34e847052a2510fd57235e31736ac1b08"],
+  ["12-deadlines", "c6382fd18deae11c30d6cb7f8a4ebd98e165c2773f78901dd4e51ead9c619014", "1f09d7b27ec0e57959abc61bbe822f16c802acca1252d2e4958152c765f5c06a"],
+  ["13-sandbox", "908d1fcdd536be9a31718dd1818fe8d6ff63ccfba9da0799bad4a48b7ae36156", "289e6003878310274e3a5123e1d85184bcf9a69e0d93c4b9bf9b5dfeb3d2751f"],
+  ["14-output-bounds", "65828090ea29aae481f35af32506affa3c5fc1544d979dc7e66347746fe74fa2", "1b142550a240781399bea5cd47f76d396c235c1658386b86886febd2c5ae39bb"],
 ];
 const AUGUSTUS_RESEARCH_FIXTURES = {
   "machine-complete.json": [
@@ -679,6 +695,102 @@ test("Augustus typed preflight schema is data-only and reject-only", async () =>
     assert.equal(variant.additionalProperties, false);
     assert.deepEqual(variant.required, ["pre_contact_order", "rule_id", "error_code"]);
   }
+});
+
+test("Augustus typed preflight fixtures cover all fourteen rejection codes", async () => {
+  const schema = JSON.parse(await load("docs/research/augustus-preflight.schema.json"));
+  const references = Object.fromEntries(
+    Object.entries(schema.$defs.artifact_references.properties)
+      .map(([key, value]) => [key, value.const]),
+  );
+  const inputRequired = schema.$defs.input.required.toSorted();
+  const outputRequired = schema.$defs.output.required.toSorted();
+  const evidenceRequired = schema.$defs.rule_evidence.required.toSorted();
+  const firstRejectionRequired = ["pre_contact_order", "rule_id", "error_code"].toSorted();
+  const seenCodes = [];
+
+  assert.equal(AUGUSTUS_PREFLIGHT_FIXTURE_PAIRS.length, 14);
+  assert.deepEqual(
+    (await readdir(path.join(REPOSITORY_ROOT, "docs/research/fixtures/augustus/preflight")))
+      .toSorted(),
+    AUGUSTUS_PREFLIGHT_FIXTURE_PAIRS
+      .flatMap(([stem]) => [`${stem}.input.json`, `${stem}.output.json`])
+      .toSorted(),
+  );
+  for (const [index, [stem, inputSha256, outputSha256]] of
+    AUGUSTUS_PREFLIGHT_FIXTURE_PAIRS.entries()) {
+    const inputContent = await load(`docs/research/fixtures/augustus/preflight/${stem}.input.json`);
+    const outputContent = await load(`docs/research/fixtures/augustus/preflight/${stem}.output.json`);
+    const input = JSON.parse(inputContent);
+    const output = JSON.parse(outputContent);
+    const [expectedOrder, expectedRuleId, expectedErrorCode] = AUGUSTUS_PRECONTACT_RULE_CODES[index];
+
+    assert.equal(createHash("sha256").update(inputContent).digest("hex"), inputSha256, stem);
+    assert.equal(createHash("sha256").update(outputContent).digest("hex"), outputSha256, stem);
+    assert.deepEqual(Object.keys(input).toSorted(), inputRequired, stem);
+    assert.deepEqual(Object.keys(output).toSorted(), outputRequired, stem);
+    assert.equal(input.document_kind, "preflight_input", stem);
+    assert.equal(output.document_kind, "preflight_output", stem);
+    assert.equal(input.schema_version, "1", stem);
+    assert.equal(output.schema_version, "1", stem);
+    assert.equal(input.normative_status, "research_only_non_executable", stem);
+    assert.equal(output.normative_status, "research_only_non_executable", stem);
+    assert.equal(input.evaluation_id, output.evaluation_id, stem);
+    assert.match(input.evaluation_id, /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u, stem);
+    assert.deepEqual(input.artifact_references, references, stem);
+    assert.deepEqual(output.artifact_references, references, stem);
+    assert.equal(output.input_sha256, inputSha256, stem);
+
+    assert.equal(input.rule_evidence.length, 14, stem);
+    assert.deepEqual(
+      input.rule_evidence.map(({ pre_contact_order: order, rule_id: ruleId }) => [order, ruleId]),
+      AUGUSTUS_PRECONTACT_RULE_CODES.map(([order, ruleId]) => [order, ruleId]),
+      stem,
+    );
+    for (const [ruleIndex, evidence] of input.rule_evidence.entries()) {
+      assert.deepEqual(Object.keys(evidence).toSorted(), evidenceRequired, stem);
+      if (ruleIndex === index) {
+        assert.equal(evidence.state, "rejected", stem);
+        assert.equal(evidence.rejection_condition_indices.length, 1, stem);
+        assert.ok(
+          evidence.rejection_condition_indices[0]
+            <= schema.$defs.input.properties.rule_evidence.prefixItems[ruleIndex]
+              .allOf[1].properties.rejection_condition_indices.items.maximum,
+          stem,
+        );
+      } else {
+        assert.equal(evidence.state, "verified", stem);
+        assert.deepEqual(evidence.rejection_condition_indices, [], stem);
+      }
+    }
+
+    assert.equal(output.decision, "reject_before_contact", stem);
+    assert.deepEqual(Object.keys(output.first_rejection).toSorted(), firstRejectionRequired, stem);
+    assert.deepEqual(
+      output.first_rejection,
+      {
+        pre_contact_order: expectedOrder,
+        rule_id: expectedRuleId,
+        error_code: expectedErrorCode,
+      },
+      stem,
+    );
+    assert.equal(output.egress_lease_created, false, stem);
+    assert.equal(output.target_contact_attempted, false, stem);
+    assert.equal(output.provider_request_count, 0, stem);
+    assert.equal(output.finding_count, 0, stem);
+    assert.doesNotMatch(
+      `${inputContent}\n${outputContent}`,
+      /api[_-]?key|bearer\s+|sk-[a-z0-9]/iu,
+      stem,
+    );
+    seenCodes.push(output.first_rejection.error_code);
+  }
+
+  assert.deepEqual(
+    seenCodes,
+    AUGUSTUS_PRECONTACT_RULE_CODES.map(([, , errorCode]) => errorCode),
+  );
 });
 
 test("Agentic Radar research patch and fixtures retain the audited machine-output contract", async () => {

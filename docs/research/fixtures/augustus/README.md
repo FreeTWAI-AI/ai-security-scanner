@@ -54,6 +54,29 @@ output that carry this contract. Input contains only fixed artifact references p
 rejection triplet, the input SHA-256, exact artifact references, and the same zero-contact
 invariants; there is no accepted or dispatchable output shape.
 
+### Schema-valid pairs
+
+Each pair below independently validates against the schema. Its input has exactly one `rejected`
+rule and 13 `verified` rules; its output returns the matching first rejection and binds the exact
+input file bytes by SHA-256. CI pins every input and output digest.
+
+| Order | Pair | Stable error code |
+| --- | --- | --- |
+| 1 | [input](preflight/01-profile-identity.input.json) / [output](preflight/01-profile-identity.output.json) | `augustus_profile_not_admitted` |
+| 2 | [input](preflight/02-dispatch-blockers.input.json) / [output](preflight/02-dispatch-blockers.output.json) | `augustus_dispatch_blocked` |
+| 3 | [input](preflight/03-scope-binding.input.json) / [output](preflight/03-scope-binding.output.json) | `augustus_scope_binding_rejected` |
+| 4 | [input](preflight/04-destination-policy.input.json) / [output](preflight/04-destination-policy.output.json) | `augustus_destination_policy_rejected` |
+| 5 | [input](preflight/05-denied-capabilities.input.json) / [output](preflight/05-denied-capabilities.output.json) | `augustus_capability_rejected` |
+| 6 | [input](preflight/06-plan-allowlist.input.json) / [output](preflight/06-plan-allowlist.output.json) | `augustus_plan_allowlist_rejected` |
+| 7 | [input](preflight/07-attempt-shape.input.json) / [output](preflight/07-attempt-shape.output.json) | `augustus_attempt_shape_rejected` |
+| 8 | [input](preflight/08-prompt-corpus.input.json) / [output](preflight/08-prompt-corpus.output.json) | `augustus_prompt_corpus_rejected` |
+| 9 | [input](preflight/09-cost-budget.input.json) / [output](preflight/09-cost-budget.output.json) | `augustus_cost_budget_rejected` |
+| 10 | [input](preflight/10-concurrency.input.json) / [output](preflight/10-concurrency.output.json) | `augustus_concurrency_policy_rejected` |
+| 11 | [input](preflight/11-request-policy.input.json) / [output](preflight/11-request-policy.output.json) | `augustus_request_policy_rejected` |
+| 12 | [input](preflight/12-deadlines.input.json) / [output](preflight/12-deadlines.output.json) | `augustus_deadline_policy_rejected` |
+| 13 | [input](preflight/13-sandbox.input.json) / [output](preflight/13-sandbox.output.json) | `augustus_sandbox_policy_rejected` |
+| 14 | [input](preflight/14-output-bounds.input.json) / [output](preflight/14-output-bounds.output.json) | `augustus_output_bound_rejected` |
+
 ## Contract audit
 
 All three machine-output files contain schema version `1`, scanner version `v0.14.29`, the exact

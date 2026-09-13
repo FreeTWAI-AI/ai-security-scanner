@@ -1,0 +1,100 @@
+{
+  "document_kind": "preflight_input",
+  "schema_version": "1",
+  "normative_status": "research_only_non_executable",
+  "evaluation_id": "synthetic:08-prompt-corpus",
+  "artifact_references": {
+    "profile_id": "augustus-openai-promptinject-v1",
+    "profile_sha256": "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4",
+    "enforcement_matrix_sha256": "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df",
+    "rejection_vectors_sha256": "3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7"
+  },
+  "rule_evidence": [
+    {
+      "pre_contact_order": 1,
+      "rule_id": "profile_identity_and_provenance",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 2,
+      "rule_id": "unresolved_dispatch_blockers",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 3,
+      "rule_id": "exact_destination_and_model_binding",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 4,
+      "rule_id": "base_url_and_redirect_denial",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 5,
+      "rule_id": "denied_capabilities",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 6,
+      "rule_id": "probe_detector_allowlist",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 7,
+      "rule_id": "attempt_shape",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 8,
+      "rule_id": "prompt_corpus_attestation",
+      "state": "rejected",
+      "rejection_condition_indices": [
+        0
+      ]
+    },
+    {
+      "pre_contact_order": 9,
+      "rule_id": "token_request_and_cost_budget",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 10,
+      "rule_id": "single_connection_execution",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 11,
+      "rule_id": "request_rate_retry_and_timeout",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 12,
+      "rule_id": "probe_scanner_and_process_deadlines",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 13,
+      "rule_id": "process_resource_sandbox",
+      "state": "verified",
+      "rejection_condition_indices": []
+    },
+    {
+      "pre_contact_order": 14,
+      "rule_id": "response_and_process_output_bounds",
+      "state": "verified",
+      "rejection_condition_indices": []
+    }
+  ]
+}

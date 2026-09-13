@@ -1,0 +1,23 @@
+{
+  "document_kind": "preflight_output",
+  "schema_version": "1",
+  "normative_status": "research_only_non_executable",
+  "evaluation_id": "synthetic:12-deadlines",
+  "artifact_references": {
+    "profile_id": "augustus-openai-promptinject-v1",
+    "profile_sha256": "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4",
+    "enforcement_matrix_sha256": "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df",
+    "rejection_vectors_sha256": "3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7"
+  },
+  "input_sha256": "c6382fd18deae11c30d6cb7f8a4ebd98e165c2773f78901dd4e51ead9c619014",
+  "decision": "reject_before_contact",
+  "first_rejection": {
+    "pre_contact_order": 12,
+    "rule_id": "probe_scanner_and_process_deadlines",
+    "error_code": "augustus_deadline_policy_rejected"
+  },
+  "egress_lease_created": false,
+  "target_contact_attempted": false,
+  "provider_request_count": 0,
+  "finding_count": 0
+}

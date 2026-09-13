@@ -1,0 +1,23 @@
+{
+  "document_kind": "preflight_output",
+  "schema_version": "1",
+  "normative_status": "research_only_non_executable",
+  "evaluation_id": "synthetic:08-prompt-corpus",
+  "artifact_references": {
+    "profile_id": "augustus-openai-promptinject-v1",
+    "profile_sha256": "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4",
+    "enforcement_matrix_sha256": "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df",
+    "rejection_vectors_sha256": "3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7"
+  },
+  "input_sha256": "fcc7fbc9024fb8067c7de51ab5c2052c1170c813d5657da0d95e27daa80ad388",
+  "decision": "reject_before_contact",
+  "first_rejection": {
+    "pre_contact_order": 8,
+    "rule_id": "prompt_corpus_attestation",
+    "error_code": "augustus_prompt_corpus_rejected"
+  },
+  "egress_lease_created": false,
+  "target_contact_attempted": false,
+  "provider_request_count": 0,
+  "finding_count": 0
+}

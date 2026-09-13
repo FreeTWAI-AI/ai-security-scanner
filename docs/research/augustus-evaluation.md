@@ -215,6 +215,10 @@ decision is always `reject_before_contact`, and `first_rejection` is a closed un
 order/rule/code triplets. Each output repeats the exact artifact references and binds the evaluated
 input by SHA-256. Schema validity alone never grants scope or authorizes execution.
 
+The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
+one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
+first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
+
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
 retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed
