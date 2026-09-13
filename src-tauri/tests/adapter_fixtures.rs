@@ -6104,3 +6104,99 @@ fn garak_reports_probe_failure_rates_and_keeps_clean_probes_out_of_the_findings(
         "a model reply reached the normalized output"
     );
 }
+
+/// A garak report whose counts cannot be true, and one that never evaluated
+/// anything, must not read as a completed probe suite.
+///
+/// This file is written by third-party code inside a container, about a model
+/// whose replies it does not control. A corrupt or truncated one is the normal
+/// failure, not the exotic one, and both of these shapes previously produced a
+/// confident result: an impossible ratio printed as a measurement, and an
+/// artifact that was never a garak run reported as a clean scan.
+#[test]
+fn garak_withholds_completion_for_counts_that_cannot_be_true() {
+    let normalize = |label: &str, body: &str| {
+        normalize_bytes(
+            "garak",
+            body.as_bytes(),
+            "report.jsonl",
+            "application/x-ndjson",
+            label,
+        )
+    };
+
+    // More failures than attempts. garak's own count survives -- it is the
+    // engine's number -- but "50 of 10" is arithmetic nobody performed.
+    let impossible = normalize(
+        "run-garak-impossible",
+        r#"{"entry_type":"eval","probe":"a.B","detector":"c.D","passed":0,"nones":0,"total_evaluated":10,"fails":50,"total_processed":10}
+"#,
+    );
+    assert!(
+        !impossible.complete,
+        "an impossible count was reported as a complete result"
+    );
+    // Pointer `/` rather than `line:1`: a one-line report is a valid JSON
+    // document, and `json_rows` names a document's single row that way.
+    assert_eq!(
+        impossible.warnings,
+        [
+            "garak eval row at / counted more failures than evaluated attempts; the rate was not shown"
+        ]
+    );
+    assert_eq!(
+        impossible.findings.len(),
+        1,
+        "the engine's own count was lost"
+    );
+    assert_eq!(
+        impossible.findings[0].title,
+        "garak probe a.B: detector c.D judged 50 attempts as failures",
+        "the finding still states a ratio it cannot support"
+    );
+
+    // Zero evaluated attempts is the same defect wearing a smaller number.
+    let zero = normalize(
+        "run-garak-zero",
+        r#"{"entry_type":"eval","probe":"a.B","detector":"c.D","passed":0,"nones":0,"total_evaluated":0,"fails":3,"total_processed":0}
+"#,
+    );
+    assert!(!zero.complete);
+    assert_eq!(
+        zero.findings[0].title,
+        "garak probe a.B: detector c.D judged 3 attempts as failures"
+    );
+
+    // A well-formed document that is not a garak run. Zero findings here means
+    // nothing was tested, and saying so is the difference between "the model
+    // passed every probe" and "no probe ever reached it".
+    let foreign = normalize(
+        "run-garak-foreign",
+        r#"{"entry_type":"init","garak_version":"0.17.0"}
+{"Results":[{"Target":"some other engine's document"}]}
+"#,
+    );
+    assert!(!foreign.complete);
+    assert_eq!(
+        foreign.warnings,
+        ["garak output contained no eval rows, so no probe result was evaluated"]
+    );
+    assert!(foreign.findings.is_empty());
+
+    // The other side of that contract. Every probe passing is a real, complete
+    // result with nothing to report, and it must not be confused with the one
+    // above -- including when the whole report is a single line, which parses
+    // as a JSON document rather than as JSONL.
+    let clean = normalize(
+        "run-garak-clean",
+        r#"{"entry_type":"eval","probe":"a.B","detector":"c.D","passed":10,"nones":0,"total_evaluated":10,"fails":0,"total_processed":10}
+"#,
+    );
+    assert!(
+        clean.complete,
+        "a clean probe run was reported as malformed: {:?}",
+        clean.warnings
+    );
+    assert!(clean.warnings.is_empty(), "{:?}", clean.warnings);
+    assert!(clean.findings.is_empty());
+}

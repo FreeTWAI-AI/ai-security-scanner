@@ -4329,17 +4329,11 @@ fn extract_gitleaks(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<
 /// stays Unknown: rating a probe failure would be this product's opinion about
 /// how much a model's answer matters, on a scale garak never published.
 fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<SourceRecord> {
-    if !matches!(parsed, ParsedArtifact::JsonLines(_)) {
-        push_warning(
-            warnings,
-            "garak output was not its supported JSONL run report; the raw artifact was retained, and the scan should be retried with the supported pinned JSONL output",
-        );
-        return Vec::new();
-    }
     let rows = json_rows(parsed, warnings);
     let target = garak_target(&rows);
     let contexts = garak_probe_contexts(&rows);
     let mut records = Vec::new();
+    let mut evaluated_pairs = 0_usize;
     for (pointer, value) in &rows {
         let Some(object) = value.as_object() else {
             continue;
@@ -4347,6 +4341,7 @@ fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
         if string_any(object, &["entry_type"]).as_deref() != Some("eval") {
             continue;
         }
+        evaluated_pairs += 1;
         let (Some(probe), Some(detector)) = (
             exact_rule_string_any(object, &["probe"]),
             exact_rule_string_any(object, &["detector"]),
@@ -4371,7 +4366,22 @@ fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
         if fails == 0 {
             continue;
         }
-        let evaluated = garak_count(object, "total_evaluated");
+        // More failures than attempts is not a measurement, and rendering it
+        // puts "3 of 0 attempts" in a security report as though someone had
+        // counted it. The count garak reported is still its own and survives;
+        // only the ratio, which cannot be true, is withheld.
+        let evaluated = match garak_count(object, "total_evaluated") {
+            Some(evaluated) if evaluated < fails => {
+                push_warning(
+                    warnings,
+                    format!(
+                        "garak eval row at {pointer} counted more failures than evaluated attempts; the rate was not shown"
+                    ),
+                );
+                None
+            }
+            evaluated => evaluated,
+        };
         let processed = garak_count(object, "total_processed");
         let unjudged = garak_count(object, "nones");
         let rule_id = format!("{probe}/{detector}");
@@ -4416,6 +4426,12 @@ fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
             None,
             None,
         ));
+    }
+    if evaluated_pairs == 0 {
+        push_warning(
+            warnings,
+            "garak output contained no eval rows, so no probe result was evaluated",
+        );
     }
     records
 }
