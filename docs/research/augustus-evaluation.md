@@ -222,6 +222,14 @@ Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separatel
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
 are rejection evidence only and are never candidate preflight inputs.
 
+The product now contains a pure Rust
+[`augustus_preflight`](../../src-tauri/src/augustus_preflight.rs) evaluator for this frozen exchange.
+It bounds input at 64 KiB, denies unknown fields, checks the exact artifact references and ordered
+condition indices, and emits only the first `reject_before_contact` result. Malformed, drifted, or
+all-verified input returns an error. The module is not connected to the engine catalog,
+orchestrator, process runtime, credential handling, gateway, or network path, so this implementation
+still cannot dispatch Augustus or contact a model endpoint.
+
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
 retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed
