@@ -17870,8 +17870,12 @@ fn html_report_bytes(
         _ => None,
     };
     let mut technical_tasks = match &shared_diagnostics {
+        // A sibling of the task records below it, not a part of one. It kept
+        // the h4 it had while it was still printed inside each task, which
+        // left the one hole in this report's heading outline: an h4 directly
+        // under the section's h2, ahead of the h3 records it summarizes.
         Some(shared) => format!(
-            "<article><h4>{}</h4><p>{}</p>{}</article>",
+            "<article><h3>{}</h3><p>{}</p>{}</article>",
             diagnostics_heading,
             catalog.text(
                 "Every task in this run recorded the same state.",

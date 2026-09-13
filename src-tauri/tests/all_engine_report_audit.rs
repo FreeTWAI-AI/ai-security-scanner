@@ -2994,6 +2994,35 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "a task phase stayed in English in the Chinese report"
             );
 
+            // A reader moving by heading -- a screen reader, a print outline,
+            // an export to a document -- follows the levels. A skipped level
+            // is a hole they cannot see around.
+            for (html, named) in [(&ordered_html, "English"), (&zh_html, "Chinese")] {
+                let mut depth = 0usize;
+                let mut seen = 0usize;
+                let mut rest = html.as_str();
+                while let Some(at) = rest.find("<h") {
+                    rest = &rest[at + 2..];
+                    let Some(level) = rest.chars().next().and_then(|glyph| glyph.to_digit(10))
+                    else {
+                        continue;
+                    };
+                    let level = level as usize;
+                    if !(1..=6).contains(&level) {
+                        continue;
+                    }
+                    if seen > 0 {
+                        assert!(
+                            level <= depth + 1,
+                            "the {named} report skips from h{depth} to h{level}"
+                        );
+                    }
+                    depth = level;
+                    seen += 1;
+                }
+                assert!(seen > 200, "the {named} report lost its headings: {seen}");
+            }
+
             // The error code is the sibling of the phase and the state, and
             // was the one value on that line the backend's own spelling
             // reached the page through. A reader only meets it on the run
