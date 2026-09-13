@@ -54,6 +54,7 @@ const AUGUSTUS_FROZEN_MAXIMUM_TOTAL_TOKENS: u32 =
     AUGUSTUS_FROZEN_MAXIMUM_TOTAL_INPUT_TOKENS + AUGUSTUS_FROZEN_MAXIMUM_TOTAL_OUTPUT_TOKENS;
 const AUGUSTUS_FROZEN_MAXIMUM_ESTIMATED_CHARGE_USD_MICROS: u64 = 250_000;
 const AUGUSTUS_FROZEN_PRICING_REQUIREMENT: &str = "Refuse dispatch unless the exact granted model has a current price and the worst-case estimate is at most this ceiling.";
+const AUGUSTUS_FROZEN_SINGLE_CONNECTION_LIMIT: u32 = 1;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -302,6 +303,24 @@ struct AugustusProfileCostLimitsDocument {
     schema_version: String,
     profile_id: String,
     cost_limits: AugustusProfileCostLimitsFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileConnectionDestinationFields {
+    maximum_concurrent_connections: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileConnectionExecutionFields {
+    concurrency: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileSingleConnectionDocument {
+    schema_version: String,
+    profile_id: String,
+    destination: AugustusProfileConnectionDestinationFields,
+    execution_limits: AugustusProfileConnectionExecutionFields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -785,6 +804,57 @@ impl AugustusCostBudgetEvidence {
 
     pub fn tcp_connection_count_substituted(&self) -> bool {
         self.tcp_connection_count_substituted
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenSingleConnectionPolicy {
+    scanner_concurrency: u32,
+    maximum_concurrent_connections: u32,
+}
+
+impl AugustusFrozenSingleConnectionPolicy {
+    pub fn scanner_concurrency(&self) -> u32 {
+        self.scanner_concurrency
+    }
+
+    pub fn maximum_concurrent_connections(&self) -> u32 {
+        self.maximum_concurrent_connections
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusSingleConnectionRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 10 evidence for single-connection execution.
+///
+/// The frozen concurrency values are starter policy, not proof that scanner
+/// options or a run-and-destination-bound egress policy enforce them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusSingleConnectionEvidence {
+    frozen_policy: Option<AugustusFrozenSingleConnectionPolicy>,
+    scanner_options_state: AugustusSingleConnectionRuntimeState,
+    egress_connection_policy_state: AugustusSingleConnectionRuntimeState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusSingleConnectionEvidence {
+    pub fn frozen_policy(&self) -> Option<AugustusFrozenSingleConnectionPolicy> {
+        self.frozen_policy
+    }
+
+    pub fn scanner_options_state(&self) -> AugustusSingleConnectionRuntimeState {
+        self.scanner_options_state
+    }
+
+    pub fn egress_connection_policy_state(&self) -> AugustusSingleConnectionRuntimeState {
+        self.egress_connection_policy_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1523,6 +1593,56 @@ fn produce_cost_budget_evidence(profile_json: &[u8]) -> AugustusCostBudgetEviden
     }
 }
 
+/// Produces Rule 10 evidence without accepting caller-supplied concurrency.
+///
+/// Both single-connection values are read from the embedded starter profile.
+/// No scanner-options or egress-policy statement is accepted until separately
+/// reviewed runtime enforcement exists.
+pub fn produce_augustus_single_connection_evidence() -> AugustusSingleConnectionEvidence {
+    produce_single_connection_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_single_connection_evidence(profile_json: &[u8]) -> AugustusSingleConnectionEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileSingleConnectionDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let single_connection_values_match = profile.as_ref().is_some_and(|profile| {
+        profile.execution_limits.concurrency == AUGUSTUS_FROZEN_SINGLE_CONNECTION_LIMIT
+            && profile.destination.maximum_concurrent_connections
+                == AUGUSTUS_FROZEN_SINGLE_CONNECTION_LIMIT
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_policy = if profile_is_trusted && single_connection_values_match {
+        profile
+            .as_ref()
+            .map(|profile| AugustusFrozenSingleConnectionPolicy {
+                scanner_concurrency: profile.execution_limits.concurrency,
+                maximum_concurrent_connections: profile.destination.maximum_concurrent_connections,
+            })
+    } else {
+        None
+    };
+
+    AugustusSingleConnectionEvidence {
+        frozen_policy,
+        scanner_options_state: AugustusSingleConnectionRuntimeState::Absent,
+        egress_connection_policy_state: AugustusSingleConnectionRuntimeState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 10,
+            rule_id: AugustusPreflightRuleId::SingleConnectionExecution,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices: vec![0, 1],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1548,6 +1668,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let cost_budget = produce_augustus_cost_budget_evidence();
     input.rule_evidence[8].clone_from(cost_budget.rule_evidence());
+
+    let single_connection = produce_augustus_single_connection_evidence();
+    input.rule_evidence[9].clone_from(single_connection.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -2443,6 +2566,83 @@ mod tests {
         assert_eq!(
             input.rule_evidence[8].rejection_condition_indices(),
             &[0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn current_single_connection_policy_is_frozen_without_runtime_enforcement() {
+        let evidence = produce_augustus_single_connection_evidence();
+        let policy = evidence
+            .frozen_policy()
+            .expect("trusted frozen single-connection policy");
+
+        assert_eq!(policy.scanner_concurrency(), 1);
+        assert_eq!(policy.maximum_concurrent_connections(), 1);
+        assert_eq!(
+            evidence.scanner_options_state(),
+            AugustusSingleConnectionRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.egress_connection_policy_state(),
+            AugustusSingleConnectionRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 10,
+                rule_id: AugustusPreflightRuleId::SingleConnectionExecution,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn single_connection_policy_drift_is_never_returned_as_frozen() {
+        let mut scanner_concurrency: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        scanner_concurrency["execution_limits"]["concurrency"] = json!(2);
+        let evidence = produce_single_connection_evidence(
+            &serde_json::to_vec(&scanner_concurrency)
+                .expect("serializable scanner-concurrency drift"),
+        );
+        assert_eq!(evidence.frozen_policy(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 1]
+        );
+
+        let mut connection_limit: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        connection_limit["destination"]["maximum_concurrent_connections"] = json!(2);
+        let evidence = produce_single_connection_evidence(
+            &serde_json::to_vec(&connection_limit).expect("serializable connection-limit drift"),
+        );
+        assert_eq!(evidence.frozen_policy(), None);
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn caller_cannot_mark_single_connection_execution_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[10].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[9].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[9],
+            produce_augustus_single_connection_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[9].rejection_condition_indices(),
+            &[0, 1]
         );
     }
 

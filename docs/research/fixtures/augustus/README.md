@@ -72,8 +72,10 @@ while terminal reconciliation evidence remains absent. Rule 8 retains the review
 digest, source revision, count, and byte bounds, but has no launcher evidence binding the executed
 prompt source to that attestation. Rule 9 retains the starter request, token, charge, and pricing
 ceilings with checked arithmetic, but has no trusted model price or tokenizer, launcher
-`max_tokens`, or independent HTTP request counter. With the current profile, every schema-valid
-pair therefore stops at rule 1 when evaluated by the product.
+`max_tokens`, or independent HTTP request counter. Rule 10 retains scanner concurrency 1 and a
+one-live-connection ceiling, but has no verified scanner-options or run-and-destination-bound
+egress enforcement. With the current profile, every schema-valid pair therefore stops at rule 1
+when evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |

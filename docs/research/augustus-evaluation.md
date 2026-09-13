@@ -218,7 +218,7 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
-These pairs remain isolated schema examples: product evaluation replaces their first nine
+These pairs remain isolated schema examples: product evaluation replaces their first ten
 caller-carried evidence rows with mechanically derived evidence before it selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
@@ -262,7 +262,11 @@ replaces rules 1 through 8. An eighth no-input producer retains the starter prof
 the exact model's trusted current price and tokenizer, launcher `max_tokens`, and independent HTTP
 request counter remain absent. Rule 9 is therefore `rejected` with conditions 0, 1, and 2; no TCP
 connection count is presented as provider-request evidence, so condition 3 is not invented. The
-evaluator replaces rules 1 through 9. Malformed, drifted, or all-verified input returns an error.
+evaluator replaces rules 1 through 9. A ninth no-input producer retains scanner concurrency 1 and
+maximum concurrent connections 1 only when both values and the complete embedded profile remain
+frozen. These defaults are not runtime enforcement. With no verified scanner options or egress
+policy bound to one run and destination, Rule 10 is `rejected` with conditions 0 and 1. The
+evaluator replaces rules 1 through 10. Malformed, drifted, or all-verified input returns an error.
 The module is not connected to the engine catalog, orchestrator, process runtime, credential
 handling, gateway, or network path, so this implementation still cannot dispatch Augustus or
 contact a model endpoint.
