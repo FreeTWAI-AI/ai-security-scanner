@@ -218,6 +218,9 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
+Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
+decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
+are rejection evidence only and are never candidate preflight inputs.
 
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The

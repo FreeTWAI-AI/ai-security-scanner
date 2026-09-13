@@ -77,6 +77,18 @@ input file bytes by SHA-256. CI pins every input and output digest.
 | 13 | [input](preflight/13-sandbox.input.json) / [output](preflight/13-sandbox.output.json) | `augustus_sandbox_policy_rejected` |
 | 14 | [input](preflight/14-output-bounds.input.json) / [output](preflight/14-output-bounds.output.json) | `augustus_output_bound_rejected` |
 
+### Schema-negative fixtures
+
+These four documents are deliberately invalid. Each starts from the order-1 valid pair and changes
+only the named contract dimension; schema rejection is the expected result.
+
+| Fixture | Required rejection | SHA-256 |
+| --- | --- | --- |
+| [`accepted-output.json`](preflight-negative/accepted-output.json) | Output uses unsupported `decision: accepted` | `ca1e8fb881e826e12f910c74a3b9644a23ca3968edc1ae50e7faebac0fb1ffc1` |
+| [`all-verified-input.json`](preflight-negative/all-verified-input.json) | Input has no `rejected` or `unverified` rule | `a0043709139d4632259972f585e8a0fee407471062a161cf1cf6482d66512cd4` |
+| [`mismatched-error-code.json`](preflight-negative/mismatched-error-code.json) | Order-1 rule carries the order-2 error code | `b0c78605017b4513359c32a42a0a24c5d74fefe1d9957fa678032ad7c991ee2a` |
+| [`extra-argv-input.json`](preflight-negative/extra-argv-input.json) | Input adds the forbidden `argv` property | `e7507226a66766524e5ea6539caaf8823881cff24c19b54c5c60388574666961` |
+
 ## Contract audit
 
 All three machine-output files contain schema version `1`, scanner version `v0.14.29`, the exact

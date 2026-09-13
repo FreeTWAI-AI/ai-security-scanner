@@ -135,6 +135,12 @@ const AUGUSTUS_PREFLIGHT_FIXTURE_PAIRS = [
   ["13-sandbox", "908d1fcdd536be9a31718dd1818fe8d6ff63ccfba9da0799bad4a48b7ae36156", "289e6003878310274e3a5123e1d85184bcf9a69e0d93c4b9bf9b5dfeb3d2751f"],
   ["14-output-bounds", "65828090ea29aae481f35af32506affa3c5fc1544d979dc7e66347746fe74fa2", "1b142550a240781399bea5cd47f76d396c235c1658386b86886febd2c5ae39bb"],
 ];
+const AUGUSTUS_PREFLIGHT_NEGATIVE_FIXTURES = {
+  "accepted-output.json": "ca1e8fb881e826e12f910c74a3b9644a23ca3968edc1ae50e7faebac0fb1ffc1",
+  "all-verified-input.json": "a0043709139d4632259972f585e8a0fee407471062a161cf1cf6482d66512cd4",
+  "extra-argv-input.json": "e7507226a66766524e5ea6539caaf8823881cff24c19b54c5c60388574666961",
+  "mismatched-error-code.json": "b0c78605017b4513359c32a42a0a24c5d74fefe1d9957fa678032ad7c991ee2a",
+};
 const AUGUSTUS_RESEARCH_FIXTURES = {
   "machine-complete.json": [
     true,
@@ -791,6 +797,84 @@ test("Augustus typed preflight fixtures cover all fourteen rejection codes", asy
     seenCodes,
     AUGUSTUS_PRECONTACT_RULE_CODES.map(([, , errorCode]) => errorCode),
   );
+});
+
+test("Augustus negative preflight fixtures remain schema-invalid for one named reason", async () => {
+  const schema = JSON.parse(await load("docs/research/augustus-preflight.schema.json"));
+  const directory = path.join(
+    REPOSITORY_ROOT,
+    "docs/research/fixtures/augustus/preflight-negative",
+  );
+  assert.deepEqual(
+    (await readdir(directory)).toSorted(),
+    Object.keys(AUGUSTUS_PREFLIGHT_NEGATIVE_FIXTURES).toSorted(),
+  );
+
+  const negative = new Map();
+  for (const [name, expectedSha256] of Object.entries(AUGUSTUS_PREFLIGHT_NEGATIVE_FIXTURES)) {
+    const content = await load(`docs/research/fixtures/augustus/preflight-negative/${name}`);
+    assert.equal(createHash("sha256").update(content).digest("hex"), expectedSha256, name);
+    assert.doesNotMatch(content, /api[_-]?key|bearer\s+|sk-[a-z0-9]/iu, name);
+    negative.set(name, JSON.parse(content));
+  }
+
+  const validInput = JSON.parse(
+    await load("docs/research/fixtures/augustus/preflight/01-profile-identity.input.json"),
+  );
+  const validOutput = JSON.parse(
+    await load("docs/research/fixtures/augustus/preflight/01-profile-identity.output.json"),
+  );
+  const accepted = negative.get("accepted-output.json");
+  assert.deepEqual(accepted, {
+    ...validOutput,
+    evaluation_id: "synthetic-negative:accepted-output",
+    decision: "accepted",
+  });
+  assert.notEqual(accepted.decision, schema.$defs.output.properties.decision.const);
+
+  const allVerified = negative.get("all-verified-input.json");
+  assert.deepEqual(allVerified, {
+    ...validInput,
+    evaluation_id: "synthetic-negative:all-verified",
+    rule_evidence: validInput.rule_evidence.map((evidence) => ({
+      ...evidence,
+      state: "verified",
+      rejection_condition_indices: [],
+    })),
+  });
+  assert.ok(
+    !allVerified.rule_evidence.some(({ state }) => ["rejected", "unverified"].includes(state)),
+  );
+  assert.equal(schema.$defs.input.properties.rule_evidence.minContains, 1);
+
+  const mismatched = negative.get("mismatched-error-code.json");
+  assert.deepEqual(mismatched, {
+    ...validOutput,
+    evaluation_id: "synthetic-negative:mismatched-error-code",
+    first_rejection: {
+      ...validOutput.first_rejection,
+      error_code: "augustus_dispatch_blocked",
+    },
+  });
+  const validTriplets = schema.$defs.first_rejection.oneOf.map((variant) => ({
+    pre_contact_order: variant.properties.pre_contact_order.const,
+    rule_id: variant.properties.rule_id.const,
+    error_code: variant.properties.error_code.const,
+  }));
+  assert.ok(
+    !validTriplets.some(
+      (triplet) => JSON.stringify(triplet) === JSON.stringify(mismatched.first_rejection),
+    ),
+  );
+
+  const extraArgv = negative.get("extra-argv-input.json");
+  assert.deepEqual(extraArgv, {
+    ...validInput,
+    evaluation_id: "synthetic-negative:extra-argv",
+    argv: ["scan"],
+  });
+  assert.equal(schema.$defs.input.additionalProperties, false);
+  assert.ok(!schema.$defs.input.required.includes("argv"));
 });
 
 test("Agentic Radar research patch and fixtures retain the audited machine-output contract", async () => {
