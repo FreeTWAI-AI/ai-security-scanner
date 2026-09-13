@@ -74,8 +74,10 @@ prompt source to that attestation. Rule 9 retains the starter request, token, ch
 ceilings with checked arithmetic, but has no trusted model price or tokenizer, launcher
 `max_tokens`, or independent HTTP request counter. Rule 10 retains scanner concurrency 1 and a
 one-live-connection ceiling, but has no verified scanner-options or run-and-destination-bound
-egress enforcement. With the current profile, every schema-valid pair therefore stops at rule 1
-when evaluated by the product.
+egress enforcement. Rule 11 retains one provider request per second, zero scanner retries, and a
+20-second request deadline, but has no verified retry enforcement or HTTP-aware rate/deadline gate.
+With the current profile, every schema-valid pair therefore stops at rule 1 when evaluated by the
+product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |

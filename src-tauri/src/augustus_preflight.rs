@@ -55,6 +55,9 @@ const AUGUSTUS_FROZEN_MAXIMUM_TOTAL_TOKENS: u32 =
 const AUGUSTUS_FROZEN_MAXIMUM_ESTIMATED_CHARGE_USD_MICROS: u64 = 250_000;
 const AUGUSTUS_FROZEN_PRICING_REQUIREMENT: &str = "Refuse dispatch unless the exact granted model has a current price and the worst-case estimate is at most this ceiling.";
 const AUGUSTUS_FROZEN_SINGLE_CONNECTION_LIMIT: u32 = 1;
+const AUGUSTUS_FROZEN_MAXIMUM_REQUESTS_PER_SECOND: u32 = 1;
+const AUGUSTUS_FROZEN_SCANNER_RETRY_COUNT: u32 = 0;
+const AUGUSTUS_FROZEN_REQUEST_TIMEOUT_SECONDS: u32 = 20;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -321,6 +324,20 @@ struct AugustusProfileSingleConnectionDocument {
     profile_id: String,
     destination: AugustusProfileConnectionDestinationFields,
     execution_limits: AugustusProfileConnectionExecutionFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileRequestPolicyFields {
+    maximum_requests_per_second: u32,
+    scanner_retry_count: u32,
+    request_timeout_seconds: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileRequestPolicyDocument {
+    schema_version: String,
+    profile_id: String,
+    execution_limits: AugustusProfileRequestPolicyFields,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -855,6 +872,67 @@ impl AugustusSingleConnectionEvidence {
 
     pub fn egress_connection_policy_state(&self) -> AugustusSingleConnectionRuntimeState {
         self.egress_connection_policy_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AugustusFrozenRequestPolicy {
+    maximum_requests_per_second: u32,
+    scanner_retry_count: u32,
+    request_timeout_seconds: u32,
+}
+
+impl AugustusFrozenRequestPolicy {
+    pub fn maximum_requests_per_second(&self) -> u32 {
+        self.maximum_requests_per_second
+    }
+
+    pub fn scanner_retry_count(&self) -> u32 {
+        self.scanner_retry_count
+    }
+
+    pub fn request_timeout_seconds(&self) -> u32 {
+        self.request_timeout_seconds
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusRequestPolicyRuntimeState {
+    Absent,
+}
+
+/// Pure-data Rule 11 evidence for request rate, retry, and timeout policy.
+///
+/// The starter values are not proof that every retry source is disabled or
+/// that an HTTP-aware gate meters and aborts provider requests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusRequestPolicyEvidence {
+    frozen_policy: Option<AugustusFrozenRequestPolicy>,
+    retry_enforcement_state: AugustusRequestPolicyRuntimeState,
+    http_request_rate_and_timeout_state: AugustusRequestPolicyRuntimeState,
+    connection_meter_substituted: bool,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusRequestPolicyEvidence {
+    pub fn frozen_policy(&self) -> Option<AugustusFrozenRequestPolicy> {
+        self.frozen_policy
+    }
+
+    pub fn retry_enforcement_state(&self) -> AugustusRequestPolicyRuntimeState {
+        self.retry_enforcement_state
+    }
+
+    pub fn http_request_rate_and_timeout_state(&self) -> AugustusRequestPolicyRuntimeState {
+        self.http_request_rate_and_timeout_state
+    }
+
+    pub fn connection_meter_substituted(&self) -> bool {
+        self.connection_meter_substituted
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1643,6 +1721,58 @@ fn produce_single_connection_evidence(profile_json: &[u8]) -> AugustusSingleConn
     }
 }
 
+/// Produces Rule 11 evidence without accepting caller-supplied request policy.
+///
+/// Rate, retry, and timeout values come only from the embedded starter profile.
+/// No scanner, SDK, transport, intermediary, or HTTP-gate enforcement statement
+/// is accepted until separately reviewed runtime controls exist.
+pub fn produce_augustus_request_policy_evidence() -> AugustusRequestPolicyEvidence {
+    produce_request_policy_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_request_policy_evidence(profile_json: &[u8]) -> AugustusRequestPolicyEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileRequestPolicyDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let request_policy_values_match = profile.as_ref().is_some_and(|profile| {
+        profile.execution_limits.maximum_requests_per_second
+            == AUGUSTUS_FROZEN_MAXIMUM_REQUESTS_PER_SECOND
+            && profile.execution_limits.scanner_retry_count == AUGUSTUS_FROZEN_SCANNER_RETRY_COUNT
+            && profile.execution_limits.request_timeout_seconds
+                == AUGUSTUS_FROZEN_REQUEST_TIMEOUT_SECONDS
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_policy = if profile_is_trusted && request_policy_values_match {
+        profile.as_ref().map(|profile| AugustusFrozenRequestPolicy {
+            maximum_requests_per_second: profile.execution_limits.maximum_requests_per_second,
+            scanner_retry_count: profile.execution_limits.scanner_retry_count,
+            request_timeout_seconds: profile.execution_limits.request_timeout_seconds,
+        })
+    } else {
+        None
+    };
+
+    AugustusRequestPolicyEvidence {
+        frozen_policy,
+        retry_enforcement_state: AugustusRequestPolicyRuntimeState::Absent,
+        http_request_rate_and_timeout_state: AugustusRequestPolicyRuntimeState::Absent,
+        connection_meter_substituted: false,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 11,
+            rule_id: AugustusPreflightRuleId::RequestRateRetryAndTimeout,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices: vec![0, 1],
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1671,6 +1801,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let single_connection = produce_augustus_single_connection_evidence();
     input.rule_evidence[9].clone_from(single_connection.rule_evidence());
+
+    let request_policy = produce_augustus_request_policy_evidence();
+    input.rule_evidence[10].clone_from(request_policy.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -2642,6 +2775,80 @@ mod tests {
         );
         assert_eq!(
             input.rule_evidence[9].rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn current_request_policy_is_frozen_without_runtime_enforcement() {
+        let evidence = produce_augustus_request_policy_evidence();
+        let policy = evidence
+            .frozen_policy()
+            .expect("trusted frozen request policy");
+
+        assert_eq!(policy.maximum_requests_per_second(), 1);
+        assert_eq!(policy.scanner_retry_count(), 0);
+        assert_eq!(policy.request_timeout_seconds(), 20);
+        assert_eq!(
+            evidence.retry_enforcement_state(),
+            AugustusRequestPolicyRuntimeState::Absent
+        );
+        assert_eq!(
+            evidence.http_request_rate_and_timeout_state(),
+            AugustusRequestPolicyRuntimeState::Absent
+        );
+        assert!(!evidence.connection_meter_substituted());
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 11,
+                rule_id: AugustusPreflightRuleId::RequestRateRetryAndTimeout,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0, 1],
+            }
+        );
+    }
+
+    #[test]
+    fn request_policy_drift_is_never_returned_as_frozen() {
+        for (field, drifted_value) in [
+            ("maximum_requests_per_second", json!(2)),
+            ("scanner_retry_count", json!(1)),
+            ("request_timeout_seconds", json!(21)),
+        ] {
+            let mut profile: Value =
+                serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+            profile["execution_limits"][field] = drifted_value;
+            let evidence = produce_request_policy_evidence(
+                &serde_json::to_vec(&profile).expect("serializable request-policy drift"),
+            );
+
+            assert_eq!(evidence.frozen_policy(), None, "field: {field}");
+            assert_eq!(
+                evidence.rule_evidence().rejection_condition_indices(),
+                &[0, 1],
+                "runtime request enforcement remains absent for field: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn caller_cannot_mark_request_policy_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[11].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[10].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[10],
+            produce_augustus_request_policy_evidence().rule_evidence()
+        );
+        assert_eq!(
+            input.rule_evidence[10].rejection_condition_indices(),
             &[0, 1]
         );
     }
