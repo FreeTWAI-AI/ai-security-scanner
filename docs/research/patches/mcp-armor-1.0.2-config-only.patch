@@ -1,0 +1,1031 @@
+From 2f82f6c369313d5e4fb4784fe99750749e7d61e2 Mon Sep 17 00:00:00 2001
+From: Ted Huang <233386770+teddashh@users.noreply.github.com>
+Date: Sun, 13 Sep 2026 05:02:48 -0400
+Subject: [PATCH] feat: add fail-closed configuration-only scans
+
+---
+ README.md                                     |  15 +-
+ README_PYPI.md                                |  13 +
+ pyproject.toml                                |   6 +-
+ src/mcp_armor/__init__.py                     |   1 +
+ src/mcp_armor/cli.py                          | 108 ++++++--
+ src/mcp_armor/config_scan.py                  | 218 +++++++++++++++
+ .../scan_checks/excessive_tool_permissions.py |  21 +-
+ .../scan_checks/hardcoded_secrets.py          |  20 +-
+ src/mcp_armor/scanner.py                      |   8 +-
+ tests/config_only_test.py                     | 258 ++++++++++++++++++
+ tests/fixtures/README.md                      |   5 +
+ tests/fixtures/config-clean.json              |   8 +
+ tests/fixtures/config-findings.json           |  13 +
+ tests/fixtures/config-partial.json            |  11 +
+ 14 files changed, 674 insertions(+), 31 deletions(-)
+ create mode 100644 src/mcp_armor/config_scan.py
+ create mode 100644 tests/config_only_test.py
+ create mode 100644 tests/fixtures/README.md
+ create mode 100644 tests/fixtures/config-clean.json
+ create mode 100644 tests/fixtures/config-findings.json
+ create mode 100644 tests/fixtures/config-partial.json
+
+diff --git a/README.md b/README.md
+index 0739a02..a47f60c 100644
+--- a/README.md
++++ b/README.md
+@@ -29,7 +29,11 @@ MCP Armor is a comprehensive security scanner for Model Context Protocol (MCP).
+ ## 🧰 Installation
+ 
+ ```bash
++# Configuration-only scanning (does not connect to MCP servers or load a model)
+ pip install mcp-armor
++
++# Full MCP server scanning, including model-backed prompt-injection checks
++pip install "mcp-armor[prompt-injection]"
+ ```
+ 
+ ## 🏃 Quick Start
+@@ -38,6 +42,9 @@ pip install mcp-armor
+ # Scan all configurations with security analysis (auto-detects baseline.json if present)
+ mcp-armor scan
+ 
++# Scan only explicitly selected configuration files without server contact
++mcp-armor scan --config-only --config /path/to/config.json
++
+ # Inspect configurations and generate baseline (defaults to baseline.json)
+ mcp-armor inspect
+ 
+@@ -66,6 +73,7 @@ mcp-armor scan --report-type md --output my-report.md
+ | Option                    | Description                                                         |
+ |---------------------------|---------------------------------------------------------------------|
+ | `--config`                | Custom configuration file path (can be used multiple times)         |
++| `--config-only`           | Run configuration-file checks only; requires `--config` and JSON output |
+ | `--baseline`              | Baseline file for drift detection (scan) or creation (inspect)      |
+ | `--report-type {json,md}` | Output format (default: json)                                       |
+ | `--output`                | Custom output file path                                             |
+@@ -147,7 +155,12 @@ This open-source version covers static MCP configuration scanning. For teams tha
+ 
+ MCP Armor runs entirely locally. Inspect and scan modes analyze your MCP configurations, detect MCP servers integrated with your agents, and evaluate them directly on your machine. Prompt injection checks use our open-source model `Aira-security/FT-Llama-Prompt-Guard-2`, downloaded from Hugging Face to your local environment, ensuring your data and code is never shared externally.
+ 
++Configuration-only mode evaluates only the exact files supplied with `--config`. It does not
++connect to or start MCP servers, enter OAuth, or load the prompt-injection model. The JSON report
++records each selected configuration check as completed, failed, or not run; any warning or failed
++check sets `complete` to `false` while preserving findings from checks that completed.
++
+ 
+ ### ⚖️ License
+ 
+-Distributed under the Apache 2.0 License. See [LICENSE](https://github.com/aira-security/mcp-armor/blob/main/LICENSE) for more information.
+\ No newline at end of file
++Distributed under the Apache 2.0 License. See [LICENSE](https://github.com/aira-security/mcp-armor/blob/main/LICENSE) for more information.
+diff --git a/README_PYPI.md b/README_PYPI.md
+index 25aad2c..a2ee6b3 100644
+--- a/README_PYPI.md
++++ b/README_PYPI.md
+@@ -18,7 +18,11 @@ MCP Armor is a comprehensive security scanner for Model Context Protocol (MCP).
+ ## 🧰 Installation
+ 
+ ```bash
++# Configuration-only scanning (does not connect to MCP servers or load a model)
+ pip install mcp-armor
++
++# Full MCP server scanning, including model-backed prompt-injection checks
++pip install "mcp-armor[prompt-injection]"
+ ```
+ 
+ ## 🏃 Quick Start
+@@ -27,6 +31,9 @@ pip install mcp-armor
+ # Scan all configurations with security analysis (auto-detects baseline.json if present)
+ mcp-armor scan
+ 
++# Scan only explicitly selected configuration files without server contact
++mcp-armor scan --config-only --config /path/to/config.json
++
+ # Inspect configurations and generate baseline (defaults to baseline.json)
+ mcp-armor inspect
+ 
+@@ -55,6 +62,7 @@ mcp-armor scan --report-type md --output my-report.md
+ | Option                    | Description                                                         |
+ |---------------------------|---------------------------------------------------------------------|
+ | `--config`                | Custom configuration file path (can be used multiple times)         |
++| `--config-only`           | Run configuration-file checks only; requires `--config` and JSON output |
+ | `--baseline`              | Baseline file for drift detection (scan) or creation (inspect)      |
+ | `--report-type {json,md}` | Output format (default: json)                                       |
+ | `--output`                | Custom output file path                                             |
+@@ -136,6 +144,11 @@ This open-source version covers static MCP configuration scanning. For teams tha
+ 
+ MCP Armor runs entirely locally. Inspect and scan modes analyze your MCP configurations, detect MCP servers integrated with your agents, and evaluate them directly on your machine. Prompt injection checks use our open-source model `Aira-security/FT-Llama-Prompt-Guard-2`, downloaded from Hugging Face to your local environment, ensuring your data and code is never shared externally.
+ 
++Configuration-only mode evaluates only the exact files supplied with `--config`. It does not
++connect to or start MCP servers, enter OAuth, or load the prompt-injection model. The JSON report
++records each selected configuration check as completed, failed, or not run; any warning or failed
++check sets `complete` to `false` while preserving findings from checks that completed.
++
+ 
+ ### ⚖️ License
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index ce4ca9f..0da0a8f 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -27,6 +27,10 @@ dependencies = [
+     "pyyaml~=6.0.2",
+     "thefuzz~=0.22.1",
+     "rich~=14.1.0",
++]
++
++[project.optional-dependencies]
++prompt-injection = [
+     "transformers~=4.57.1",
+     "torch~=2.9.0",
+ ]
+@@ -72,4 +76,4 @@ line_length = 88
+ python_version = "3.10"
+ warn_return_any = true
+ warn_unused_configs = true
+-disallow_untyped_defs = true
+\ No newline at end of file
++disallow_untyped_defs = true
+diff --git a/src/mcp_armor/__init__.py b/src/mcp_armor/__init__.py
+index b84b323..5eedbcc 100644
+--- a/src/mcp_armor/__init__.py
++++ b/src/mcp_armor/__init__.py
+@@ -1 +1,2 @@
+ __author__ = "Aira Security"
++__version__ = "1.0.2"
+diff --git a/src/mcp_armor/cli.py b/src/mcp_armor/cli.py
+index b6466c2..6a76ff3 100644
+--- a/src/mcp_armor/cli.py
++++ b/src/mcp_armor/cli.py
+@@ -1,6 +1,7 @@
+ import asyncio
+ import argparse
+ import json
++import importlib.util
+ import sys
+ import logging
+ import os
+@@ -282,12 +283,7 @@ def _redact_args(args: List[str]) -> List[str]:
+     return redacted
+ 
+ 
+-def setup_logging(show_logs: bool = False):
+-    log_dir = Path("logs")
+-    log_dir.mkdir(exist_ok=True)
+-
+-    log_file = log_dir / "mcp_armor.log"
+-
++def setup_logging(show_logs: bool = False, file_logging: bool = True):
+     formatter = logging.Formatter(
+         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+         datefmt='%Y-%m-%d %H:%M:%S'
+@@ -297,10 +293,16 @@ def setup_logging(show_logs: bool = False):
+     root_logger.setLevel(logging.INFO)
+     root_logger.handlers.clear()
+ 
+-    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+-    file_handler.setLevel(logging.INFO)
+-    file_handler.setFormatter(formatter)
+-    root_logger.addHandler(file_handler)
++    log_file = None
++    if file_logging:
++        log_dir = Path("logs")
++        log_dir.mkdir(exist_ok=True)
++        log_file = log_dir / "mcp_armor.log"
++
++        file_handler = logging.FileHandler(log_file, encoding='utf-8')
++        file_handler.setLevel(logging.INFO)
++        file_handler.setFormatter(formatter)
++        root_logger.addHandler(file_handler)
+ 
+     if show_logs:
+         console_handler = logging.StreamHandler()
+@@ -308,7 +310,10 @@ def setup_logging(show_logs: bool = False):
+         console_handler.setFormatter(formatter)
+         root_logger.addHandler(console_handler)
+ 
+-    return str(log_file)
++    if not root_logger.handlers:
++        root_logger.addHandler(logging.NullHandler())
++
++    return str(log_file) if log_file else None
+ 
+ 
+ def format_scan_results_as_markdown(results, baseline_status: Optional[dict] = None) -> str:
+@@ -640,9 +645,63 @@ def save_report_to_file(content, filepath, report_type, suppress_print=False):
+         print(f"Report saved to {output_path}")
+ 
+ 
++def _require_prompt_injection_dependencies():
++    missing = [
++        package
++        for package in ("transformers", "torch")
++        if importlib.util.find_spec(package) is None
++    ]
++    if missing:
++        packages = ", ".join(missing)
++        print(
++            "Full MCP server scanning requires the prompt-injection extra "
++            f"(missing: {packages}). Install mcp-armor[prompt-injection], or "
++            "use --config-only for a non-connecting configuration scan.",
++            file=sys.stderr,
++        )
++        sys.exit(1)
++
++
++async def config_only_scan_command(args):
++    if not args.config:
++        print("Configuration-only scanning requires at least one --config path.", file=sys.stderr)
++        sys.exit(1)
++    if args.baseline:
++        print("--baseline is not available with --config-only.", file=sys.stderr)
++        sys.exit(1)
++    if args.report_type != "json":
++        print("--config-only requires --report-type json.", file=sys.stderr)
++        sys.exit(1)
++
++    from .config_scan import scan_configuration_files
++
++    output_file = determine_output_file(args, "scan")
++    report, evaluated_input = await scan_configuration_files(args.config)
++    try:
++        save_report_to_file(
++            json.dumps(report, indent=2) + "\n",
++            output_file,
++            "json",
++            suppress_print=True,
++        )
++    except Exception as error:
++        print(f"Failed to save configuration report: {error}", file=sys.stderr)
++        sys.exit(1)
++
++    print(f"Configuration-only report saved to {output_file}")
++    if not evaluated_input:
++        sys.exit(1)
++
++
+ async def scan_command(args):
+     print('\n🏃 Running MCP Armor in scan mode...\n')
+ 
++    if args.config_only:
++        await config_only_scan_command(args)
++        return
++
++    _require_prompt_injection_dependencies()
++
+     from .scanner import MCPConfigScanner
+     from .security_utils import (
+         ScanResult,
+@@ -1428,7 +1487,9 @@ Examples:
+         mcp-armor scan --show-logs                        # Display debug logs in terminal
+     
+ Note: 
+-    First-time scan will download the ML model for prompt injection check (~290MB) from Hugging Face.
++    Full MCP server scanning requires mcp-armor[prompt-injection] and will download
++    the ML model for prompt injection checks (~290MB) from Hugging Face on first use.
++    --config-only neither contacts an MCP server nor loads that model.
+     Subsequent scans use the cached model for faster completion.
+         """
+     )
+@@ -1442,12 +1503,20 @@ Note:
+         Scan MCP server configurations for detecting any security risks.
+         
+         Note: 
+-          On first run, the prompt injection detection model will be 
++          Full MCP server scanning requires mcp-armor[prompt-injection]. On first run,
++          the prompt injection detection model will be
+         automatically downloaded from Hugging Face (~290MB). 
+-          This is an one-time download and subsequent scans will use the cached model.
++          This is a one-time download and subsequent scans will use the cached model.
++          --config-only scans exact configuration files without connecting to servers
++          or loading the prompt-injection model.
+         """
+     )
+     scan_parser.add_argument('--config', action='append', help='Custom config file path')
++    scan_parser.add_argument(
++        '--config-only',
++        action='store_true',
++        help='Run only configuration-file checks; requires --config and JSON output',
++    )
+     scan_parser.add_argument('--baseline', help='Baseline file path for comparison (default: baseline.json in current directory)')
+     scan_parser.add_argument('--report-type', choices=['json', 'md'], default='json',
+                              help='Output format: json or markdown (default: json)')
+@@ -1480,13 +1549,14 @@ Note:
+         parser.print_help()
+         sys.exit(1)
+     
+-    if hasattr(args, 'show_logs') and args.show_logs:
+-        setup_logging(show_logs=True)
+-    else:
+-        setup_logging(show_logs=False)
++    show_logs = bool(hasattr(args, 'show_logs') and args.show_logs)
++    config_only = bool(
++        args.command == 'scan' and getattr(args, 'config_only', False)
++    )
++    setup_logging(show_logs=show_logs, file_logging=not config_only)
+ 
+     asyncio.run(args.func(args))
+ 
+ 
+ if __name__ == '__main__':
+-    main()
+\ No newline at end of file
++    main()
+diff --git a/src/mcp_armor/config_scan.py b/src/mcp_armor/config_scan.py
+new file mode 100644
+index 0000000..a698135
+--- /dev/null
++++ b/src/mcp_armor/config_scan.py
+@@ -0,0 +1,218 @@
++"""Machine-readable, configuration-only MCP security scanning.
++
++This module deliberately imports neither the live MCP connector nor the
++model-backed prompt-injection checks. It exposes the two existing checks that
++operate only on selected configuration files and reports their completeness.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Awaitable, Callable
++from typing import Any
++
++from . import __version__
++from .config_validator import load_and_validate_config
++from .scan_checks.excessive_tool_permissions import (
++    scan_for_excessive_tool_permissions,
++)
++from .scan_checks.hardcoded_secrets import scan_for_hardcoded_secrets
++from .scanner import MCPConfigScanner
++from .security_utils import MCPServerInfo, ScanResult, SecurityIssue
++
++SCHEMA_VERSION = "1"
++MODE = "configuration_only"
++
++ConfigurationCheck = Callable[..., Awaitable[list[SecurityIssue]]]
++CONFIGURATION_CHECKS: tuple[tuple[str, ConfigurationCheck], ...] = (
++    ("hardcoded_secrets", scan_for_hardcoded_secrets),
++    ("excessive_tool_permissions", scan_for_excessive_tool_permissions),
++)
++
++
++def _warning(
++    code: str,
++    message: str,
++    *,
++    config_file: str | None = None,
++    check_id: str | None = None,
++) -> dict[str, Any]:
++    return {
++        "code": code,
++        "message": message,
++        "config_file": config_file,
++        "check_id": check_id,
++    }
++
++
++def _server_map(config: dict[str, Any]) -> Any:
++    if "mcpServers" in config:
++        return config["mcpServers"]
++    if "servers" in config:
++        return config["servers"]
++    return config
++
++
++def _parse_servers(
++    scanner: MCPConfigScanner,
++    config: dict[str, Any],
++    config_file: str,
++    warnings: list[dict[str, Any]],
++) -> list[MCPServerInfo]:
++    servers: list[MCPServerInfo] = []
++    entries = _server_map(config)
++    if not isinstance(entries, dict):
++        warnings.append(
++            _warning(
++                "config_invalid",
++                "MCP server collection was not an object",
++                config_file=config_file,
++            )
++        )
++        return servers
++
++    for server_name, server_config in entries.items():
++        if not isinstance(server_config, dict):
++            warnings.append(
++                _warning(
++                    "server_config_invalid",
++                    f"Server '{server_name}' was not a configuration object",
++                    config_file=config_file,
++                )
++            )
++            continue
++        try:
++            servers.append(
++                scanner.create_server_info(
++                    str(server_name),
++                    server_config,
++                    config_file,
++                    is_user_provided=True,
++                )
++            )
++        except Exception as error:
++            warnings.append(
++                _warning(
++                    "server_config_invalid",
++                    f"Server '{server_name}' could not be parsed: {error}",
++                    config_file=config_file,
++                )
++            )
++    return servers
++
++
++def _serialize_finding(check_id: str, issue: SecurityIssue) -> dict[str, Any]:
++    return {
++        "check_id": check_id,
++        "finding_type": issue.issue_type,
++        "severity": issue.severity.value,
++        "description": issue.description,
++        "recommendation": issue.recommendation,
++        "entity_type": issue.entity_type,
++        "affected_server": issue.affected_server,
++        "config_file": issue.config_file,
++        "affected_tool": issue.affected_tool,
++        "affected_resource": issue.affected_resource,
++        "affected_resource_uri": issue.affected_resource_uri,
++        "affected_entities": issue.affected_entities,
++    }
++
++
++async def scan_configuration_files(
++    config_files: list[str],
++) -> tuple[dict[str, Any], bool]:
++    """Scan exact files without server contact and return an output envelope.
++
++    The boolean indicates whether at least one input was readable and therefore
++    whether an exit-zero partial result can preserve completed findings.
++    """
++
++    exact_files = list(dict.fromkeys(config_files))
++    warnings: list[dict[str, Any]] = []
++    valid_files: list[str] = []
++    servers: list[MCPServerInfo] = []
++    scanner = MCPConfigScanner()
++
++    for config_file in exact_files:
++        config, validation_errors = load_and_validate_config(config_file)
++        if config is None:
++            message = "; ".join(validation_errors) or "Configuration could not be read"
++            warnings.append(
++                _warning("config_invalid", message, config_file=config_file)
++            )
++            continue
++
++        valid_files.append(config_file)
++        for message in validation_errors:
++            warnings.append(
++                _warning("config_invalid", message, config_file=config_file)
++            )
++        if isinstance(config, dict):
++            servers.extend(_parse_servers(scanner, config, config_file, warnings))
++        else:
++            warnings.append(
++                _warning(
++                    "config_invalid",
++                    "Configuration root was not an object",
++                    config_file=config_file,
++                )
++            )
++
++    scan_result = ScanResult(
++        servers=servers,
++        tools=[],
++        resources=[],
++        prompts=[],
++        resource_templates=[],
++        config_files=valid_files,
++    )
++
++    findings: list[dict[str, Any]] = []
++    checks: list[dict[str, Any]] = []
++    for check_id, check in CONFIGURATION_CHECKS:
++        if not valid_files:
++            checks.append(
++                {"id": check_id, "status": "not_run", "finding_count": 0}
++            )
++            continue
++
++        try:
++            check_findings = await check(scan_result, fail_on_error=True)
++            if not isinstance(check_findings, list):
++                raise TypeError("check did not return a finding list")
++            findings.extend(
++                _serialize_finding(check_id, issue) for issue in check_findings
++            )
++            checks.append(
++                {
++                    "id": check_id,
++                    "status": "completed",
++                    "finding_count": len(check_findings),
++                }
++            )
++        except Exception as error:
++            checks.append(
++                {"id": check_id, "status": "failed", "finding_count": 0}
++            )
++            warnings.append(
++                _warning(
++                    "check_failed",
++                    f"{type(error).__name__}: {error}",
++                    check_id=check_id,
++                )
++            )
++
++    complete = bool(valid_files) and not warnings and all(
++        check["status"] == "completed" for check in checks
++    )
++    envelope = {
++        "schema_version": SCHEMA_VERSION,
++        "scanner_version": __version__,
++        "mode": MODE,
++        "input_count": len(exact_files),
++        "evaluated_input_count": len(valid_files),
++        "complete": complete,
++        "warnings": warnings,
++        "checks": checks,
++        "findings": findings,
++    }
++    return envelope, bool(valid_files)
+diff --git a/src/mcp_armor/scan_checks/excessive_tool_permissions.py b/src/mcp_armor/scan_checks/excessive_tool_permissions.py
+index c05d6d4..a79203a 100644
+--- a/src/mcp_armor/scan_checks/excessive_tool_permissions.py
++++ b/src/mcp_armor/scan_checks/excessive_tool_permissions.py
+@@ -57,14 +57,21 @@ _CRITICAL_PERMS_ALL_LOWER: Set[str] = {
+ }
+ 
+ 
+-def _load_config_file(path: str) -> Optional[Dict[str, Any]]:
++def _load_config_file(
++    path: str,
++    fail_on_error: bool = False,
++) -> Optional[Dict[str, Any]]:
+     try:
+         return safe_load_file(Path(path), MAX_CONFIG_FILE_SIZE)
+     except ValueError as e:
+         logger.warning(f"Config file size limit exceeded for '{path}': {e}")
++        if fail_on_error:
++            raise
+         return None
+     except Exception as e:
+         logger.warning(f"Failed to load config file '{path}': {e}")
++        if fail_on_error:
++            raise
+         return None
+ 
+ 
+@@ -119,7 +126,10 @@ def _check_server_entry(server_name: str, details: Dict[str, Any]) -> Dict[str,
+     }
+ 
+ 
+-async def scan_for_excessive_tool_permissions(scan_result: ScanResult) -> List[SecurityIssue]:
++async def scan_for_excessive_tool_permissions(
++    scan_result: ScanResult,
++    fail_on_error: bool = False,
++) -> List[SecurityIssue]:
+     issues: List[SecurityIssue] = []
+     if not scan_result.config_files:
+         return issues
+@@ -132,7 +142,10 @@ async def scan_for_excessive_tool_permissions(scan_result: ScanResult) -> List[S
+             unique_files.append(path)
+ 
+     loop = asyncio.get_event_loop()
+-    tasks = [loop.run_in_executor(None, _load_config_file, path) for path in unique_files]
++    tasks = [
++        loop.run_in_executor(None, _load_config_file, path, fail_on_error)
++        for path in unique_files
++    ]
+     parsed_list = await asyncio.gather(*tasks, return_exceptions=False)
+ 
+     server_to_tools: Dict[str, List[str]] = {}
+@@ -241,4 +254,4 @@ async def scan_for_excessive_tool_permissions(scan_result: ScanResult) -> List[S
+                     )
+                 )
+ 
+-    return issues
+\ No newline at end of file
++    return issues
+diff --git a/src/mcp_armor/scan_checks/hardcoded_secrets.py b/src/mcp_armor/scan_checks/hardcoded_secrets.py
+index 0f81522..3df3dc7 100644
+--- a/src/mcp_armor/scan_checks/hardcoded_secrets.py
++++ b/src/mcp_armor/scan_checks/hardcoded_secrets.py
+@@ -377,7 +377,8 @@ def _redact_secret(matched_text: str) -> str:
+ 
+ async def _scan_single_config_file(
+     config_file_path: str,
+-    servers_list: List[MCPServerInfo]
++    servers_list: List[MCPServerInfo],
++    fail_on_error: bool = False,
+ ) -> List[SecurityIssue]:
+     issues = []
+     
+@@ -419,11 +420,16 @@ async def _scan_single_config_file(
+                             break
+     except Exception as e:
+         logger.error(f"Error scanning {config_file_path} for hardcoded secrets: {e}")
++        if fail_on_error:
++            raise
+     
+     return issues
+ 
+ 
+-async def scan_for_hardcoded_secrets(scan_result: ScanResult) -> List[SecurityIssue]:
++async def scan_for_hardcoded_secrets(
++    scan_result: ScanResult,
++    fail_on_error: bool = False,
++) -> List[SecurityIssue]:
+     issues = []
+     
+     config_files = list({
+@@ -440,7 +446,11 @@ async def scan_for_hardcoded_secrets(scan_result: ScanResult) -> List[SecurityIs
+     for i in range(0, len(config_files), _CONFIG_FILE_BATCH_SIZE):
+         batch = config_files[i:i + _CONFIG_FILE_BATCH_SIZE]
+         tasks = [
+-            _scan_single_config_file(cfg_path, scan_result.servers)
++            _scan_single_config_file(
++                cfg_path,
++                scan_result.servers,
++                fail_on_error=fail_on_error,
++            )
+             for cfg_path in batch
+         ]
+         
+@@ -449,10 +459,12 @@ async def scan_for_hardcoded_secrets(scan_result: ScanResult) -> List[SecurityIs
+         for result in batch_results:
+             if isinstance(result, Exception):
+                 logger.error(f"Unexpected exception in config file scan: {result}")
++                if fail_on_error:
++                    raise result
+                 continue
+             issues.extend(result)
+     
+     logger.info(
+         f"Hardcoded secrets scan completed: {len(issues)} issues found across {len(config_files)} files"
+     )
+-    return issues
+\ No newline at end of file
++    return issues
+diff --git a/src/mcp_armor/scanner.py b/src/mcp_armor/scanner.py
+index 1e0d4c1..74f9d73 100644
+--- a/src/mcp_armor/scanner.py
++++ b/src/mcp_armor/scanner.py
+@@ -6,7 +6,6 @@ import logging
+ from typing import Dict, List, Optional, Any, Tuple, Callable
+ from pathlib import Path
+ from .config_validator import load_and_validate_config
+-from .connector import MCPConnector
+ from .security_utils import (
+     TransportType,
+     MCPServerInfo,
+@@ -238,6 +237,11 @@ class MCPConfigScanner:
+ 
+     async def discover_all(self, servers: List[MCPServerInfo], progress: Optional[Callable[[str, Dict[str, Any]], None]] = None) -> Tuple[
+         List[ToolInfo], List[ResourceInfo], List[PromptInfo], List[ResourceTemplateInfo]]:
++        # Keep the live MCP dependency outside the configuration-only import
++        # path. Importing this module must not be enough to start or prepare a
++        # server connection.
++        from .connector import MCPConnector
++
+         connector = MCPConnector()
+         all_tools: List[ToolInfo] = []
+         all_resources: List[ResourceInfo] = []
+@@ -295,4 +299,4 @@ class MCPConfigScanner:
+                 transport.value: len([s for s in scan_result.servers if s.type == transport])
+                 for transport in TransportType
+             }
+-        }
+\ No newline at end of file
++        }
+diff --git a/tests/config_only_test.py b/tests/config_only_test.py
+new file mode 100644
+index 0000000..b4c77b7
+--- /dev/null
++++ b/tests/config_only_test.py
+@@ -0,0 +1,258 @@
++import asyncio
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++
++import pytest
++
++from mcp_armor import __version__
++import mcp_armor.config_scan as config_scan
++
++
++REPOSITORY_ROOT = Path(__file__).parents[1]
++SOURCE_ROOT = REPOSITORY_ROOT / "src"
++
++
++def _environment() -> dict[str, str]:
++    return {
++        "LC_ALL": "C.UTF-8",
++        "PYTHONHASHSEED": "0",
++        "PYTHONPATH": str(SOURCE_ROOT),
++    }
++
++
++def _write_config(path: Path, server: dict) -> None:
++    path.write_text(json.dumps({"mcpServers": {"fixture": server}}), encoding="utf-8")
++
++
++def _run_config_only(tmp_path: Path, *config_files: Path, extra=()):
++    output = tmp_path / "report.json"
++    command = [
++        sys.executable,
++        "-m",
++        "mcp_armor.cli",
++        "scan",
++        "--config-only",
++        *[item for path in config_files for item in ("--config", str(path))],
++        "--output",
++        str(output),
++        *extra,
++    ]
++    completed = subprocess.run(
++        command,
++        cwd=tmp_path,
++        env=_environment(),
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    report = json.loads(output.read_text(encoding="utf-8")) if output.exists() else None
++    return completed, report
++
++
++def test_config_only_cli_emits_real_findings_without_live_dependencies(tmp_path):
++    fake_secret = "sk-" + "A" * 20 + "T3BlbkFJ" + "B" * 20
++    config = tmp_path / "mcp.json"
++    _write_config(
++        config,
++        {
++            "command": "python3",
++            "args": ["--allow-terminal"],
++            "permissions": ["terminal:exec"],
++            "env": {"FIXTURE_OPENAI_KEY": fake_secret},
++        },
++    )
++
++    completed, report = _run_config_only(tmp_path, config)
++
++    assert completed.returncode == 0, completed.stderr
++    assert report["schema_version"] == "1"
++    assert report["scanner_version"] == "1.0.2"
++    assert report["mode"] == "configuration_only"
++    assert report["complete"] is True
++    assert report["warnings"] == []
++    assert report["checks"] == [
++        {"id": "hardcoded_secrets", "status": "completed", "finding_count": 1},
++        {
++            "id": "excessive_tool_permissions",
++            "status": "completed",
++            "finding_count": 1,
++        },
++    ]
++    assert {finding["check_id"] for finding in report["findings"]} == {
++        "hardcoded_secrets",
++        "excessive_tool_permissions",
++    }
++    assert fake_secret not in json.dumps(report)
++    assert completed.stderr == ""
++    assert not (tmp_path / "logs").exists()
++
++
++def test_config_only_clean_result_has_exact_completed_ledger(tmp_path):
++    config = tmp_path / "safe.json"
++    _write_config(config, {"command": "safe-server", "args": []})
++
++    completed, report = _run_config_only(tmp_path, config)
++
++    assert completed.returncode == 0
++    assert report["input_count"] == 1
++    assert report["evaluated_input_count"] == 1
++    assert report["complete"] is True
++    assert report["findings"] == []
++    assert all(check["status"] == "completed" for check in report["checks"])
++
++
++def test_config_only_retains_valid_results_when_another_input_is_invalid(tmp_path):
++    valid = tmp_path / "valid.json"
++    invalid = tmp_path / "invalid.json"
++    _write_config(valid, {"command": "python", "args": []})
++    invalid.write_text("{", encoding="utf-8")
++
++    completed, report = _run_config_only(tmp_path, valid, invalid)
++
++    assert completed.returncode == 0
++    assert report["input_count"] == 2
++    assert report["evaluated_input_count"] == 1
++    assert report["complete"] is False
++    assert [warning["code"] for warning in report["warnings"]] == ["config_invalid"]
++    assert all(check["status"] == "completed" for check in report["checks"])
++    assert len(report["findings"]) == 1
++
++
++def test_config_only_writes_incomplete_report_and_fails_without_valid_input(tmp_path):
++    invalid = tmp_path / "invalid.json"
++    invalid.write_text("{", encoding="utf-8")
++
++    completed, report = _run_config_only(tmp_path, invalid)
++
++    assert completed.returncode == 1
++    assert report["complete"] is False
++    assert report["evaluated_input_count"] == 0
++    assert all(check["status"] == "not_run" for check in report["checks"])
++    assert report["findings"] == []
++
++
++def test_config_only_preserves_completed_findings_when_a_check_fails(
++    tmp_path, monkeypatch
++):
++    config = tmp_path / "risky.json"
++    _write_config(config, {"command": "python", "args": []})
++
++    async def failed_check(_scan_result, fail_on_error=False):
++        assert fail_on_error is True
++        raise RuntimeError("fixture check failure")
++
++    monkeypatch.setattr(
++        config_scan,
++        "CONFIGURATION_CHECKS",
++        (
++            (
++                "excessive_tool_permissions",
++                config_scan.scan_for_excessive_tool_permissions,
++            ),
++            ("fixture_failure", failed_check),
++        ),
++    )
++
++    report, evaluated = asyncio.run(
++        config_scan.scan_configuration_files([str(config)])
++    )
++
++    assert evaluated is True
++    assert report["complete"] is False
++    assert report["checks"] == [
++        {
++            "id": "excessive_tool_permissions",
++            "status": "completed",
++            "finding_count": 1,
++        },
++        {"id": "fixture_failure", "status": "failed", "finding_count": 0},
++    ]
++    assert len(report["findings"]) == 1
++    assert report["warnings"] == [
++        {
++            "code": "check_failed",
++            "message": "RuntimeError: fixture check failure",
++            "config_file": None,
++            "check_id": "fixture_failure",
++        }
++    ]
++
++
++def test_config_only_marks_unparseable_server_without_losing_checks(tmp_path):
++    config = tmp_path / "mixed.json"
++    config.write_text(
++        json.dumps(
++            {
++                "mcpServers": {
++                    "invalid": {"type": "unknown", "command": "safe-server"},
++                    "valid": {"command": "safe-server"},
++                }
++            }
++        ),
++        encoding="utf-8",
++    )
++
++    completed, report = _run_config_only(tmp_path, config)
++
++    assert completed.returncode == 0
++    assert report["complete"] is False
++    assert [warning["code"] for warning in report["warnings"]] == [
++        "server_config_invalid"
++    ]
++    assert all(check["status"] == "completed" for check in report["checks"])
++
++
++@pytest.mark.parametrize(
++    "extra, expected",
++    [
++        ((), "requires at least one --config"),
++        (("--baseline", "baseline.json"), "--baseline is not available"),
++        (("--report-type", "md"), "requires --report-type json"),
++    ],
++)
++def test_config_only_rejects_ambiguous_cli_combinations(tmp_path, extra, expected):
++    config_files = ()
++    if extra:
++        config = tmp_path / "safe.json"
++        _write_config(config, {"command": "safe-server"})
++        config_files = (config,)
++
++    completed, report = _run_config_only(tmp_path, *config_files, extra=extra)
++
++    assert completed.returncode == 1
++    assert expected in completed.stderr
++    assert report is None
++
++
++def test_config_only_imports_no_live_or_model_modules():
++    code = """
++import sys
++import mcp_armor.config_scan
++for name in ('fastmcp', 'transformers', 'torch'):
++    assert name not in sys.modules, name
++"""
++    completed = subprocess.run(
++        [sys.executable, "-c", code],
++        env=_environment(),
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    assert completed.returncode == 0, completed.stderr
++
++
++def test_model_dependencies_are_an_explicit_extra():
++    metadata = (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
++
++    base_dependencies, optional_dependencies = metadata.split(
++        "[project.optional-dependencies]", maxsplit=1
++    )
++    assert '"torch~=' not in base_dependencies
++    assert '"transformers~=' not in base_dependencies
++    assert 'prompt-injection = [' in optional_dependencies
++    assert '"transformers~=4.57.1"' in optional_dependencies
++    assert '"torch~=2.9.0"' in optional_dependencies
++    assert f'version = "{__version__}"' in metadata
+diff --git a/tests/fixtures/README.md b/tests/fixtures/README.md
+new file mode 100644
+index 0000000..c6e0b85
+--- /dev/null
++++ b/tests/fixtures/README.md
+@@ -0,0 +1,5 @@
++# Configuration-only fixtures
++
++These fixtures exercise the machine-readable configuration-only contract. The command values are
++inert fixture text and are never executed by this mode. `config-findings.json` declares a terminal
++permission so it produces a configuration finding without embedding credential-shaped text.
+diff --git a/tests/fixtures/config-clean.json b/tests/fixtures/config-clean.json
+new file mode 100644
+index 0000000..3eb5ea7
+--- /dev/null
++++ b/tests/fixtures/config-clean.json
+@@ -0,0 +1,8 @@
++{
++  "mcpServers": {
++    "fixture-safe": {
++      "command": "safe-server",
++      "args": []
++    }
++  }
++}
+diff --git a/tests/fixtures/config-findings.json b/tests/fixtures/config-findings.json
+new file mode 100644
+index 0000000..ba8d7e7
+--- /dev/null
++++ b/tests/fixtures/config-findings.json
+@@ -0,0 +1,13 @@
++{
++  "mcpServers": {
++    "fixture-risky": {
++      "command": "python3",
++      "args": [
++        "--allow-terminal"
++      ],
++      "permissions": [
++        "terminal:exec"
++      ]
++    }
++  }
++}
+diff --git a/tests/fixtures/config-partial.json b/tests/fixtures/config-partial.json
+new file mode 100644
+index 0000000..706b148
+--- /dev/null
++++ b/tests/fixtures/config-partial.json
+@@ -0,0 +1,11 @@
++{
++  "mcpServers": {
++    "fixture-invalid": {
++      "type": "unsupported",
++      "command": "safe-server"
++    },
++    "fixture-safe": {
++      "command": "safe-server"
++    }
++  }
++}
+-- 
+2.53.0
+

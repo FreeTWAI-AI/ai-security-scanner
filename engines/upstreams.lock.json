@@ -60,6 +60,14 @@
       "shallow": true
     },
     {
+      "id": "aira-security/mcp-armor",
+      "path": ".upstreams/aira-security/mcp-armor",
+      "remote": "https://github.com/aira-security/mcp-armor",
+      "branch": "main",
+      "revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
+      "shallow": true
+    },
+    {
       "id": "anchore/grype",
       "path": ".upstreams/anchore/grype",
       "remote": "https://github.com/anchore/grype",

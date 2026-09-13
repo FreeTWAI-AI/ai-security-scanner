@@ -343,6 +343,7 @@ pub enum EngineCategory {
     SchemaAndExport,
     AiModelEndpoint,
     AiAgentFramework,
+    AiMcpConfiguration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1584,6 +1585,13 @@ pub enum FindingFamily {
     /// so every other family's consequence and remedy would send the reader to
     /// the wrong place: the thing to change is what the model is allowed to say.
     ModelBehavior,
+    /// MCP configuration text contains a credential pattern. Its first action
+    /// is rotation and removal from the configuration, not a generic code fix.
+    McpSecret,
+    /// A static MCP configuration grants a server command or tool broader
+    /// capabilities than it needs. This is neither cloud IAM nor IaC: the
+    /// corrective action belongs in the MCP client/server configuration.
+    McpConfiguration,
 }
 
 /// Why a finding has no scanner-supplied severity.

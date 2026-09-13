@@ -25,7 +25,7 @@ use std::io::{Read, Take};
 use std::path::{Component, Path};
 use std::sync::Arc;
 
-pub const ADAPTER_VERSION: &str = "0.1.3";
+pub const ADAPTER_VERSION: &str = "0.1.4";
 /// Stable identity for the canonical finding fingerprint algorithm. Changing
 /// this value requires an explicit migration before cross-version diffs may be
 /// treated as comparable.
@@ -58,6 +58,7 @@ pub const BUILTIN_ENGINE_IDS: &[&str] = &[
     "kube-bench",
     "garak",
     "agentic-radar",
+    "mcp-armor",
 ];
 
 const MAX_ARTIFACTS: usize = 64;
@@ -100,6 +101,7 @@ enum Profile {
     KubeBench,
     Garak,
     AgenticRadar,
+    McpArmor,
 }
 
 #[derive(Debug)]
@@ -148,6 +150,11 @@ struct SourceRecord {
     scanner_details: Option<ScannerFindingDetails>,
     references: Vec<String>,
     tags: Vec<String>,
+    /// A profile normally has one finding family. MCP Armor's bounded static
+    /// slice is the exception: a leaked credential and an over-privileged MCP
+    /// command require materially different action, so the record carries the
+    /// product-owned family selected from its stable upstream check id.
+    family_override: Option<FindingFamily>,
 }
 
 #[derive(Debug)]
@@ -571,6 +578,7 @@ pub fn builtin_adapter_registry() -> AppResult<AdapterRegistry> {
             Profile::AgenticRadar,
             "AI security engineer",
         ),
+        ("mcp-armor", Profile::McpArmor, "AI security engineer"),
     ];
 
     let mut registry = AdapterRegistry::default();
@@ -2785,6 +2793,7 @@ fn extract_records(
         Profile::Kubescape => extract_kubescape(parsed, warnings),
         Profile::KubeBench => extract_kube_bench(parsed, warnings),
         Profile::Garak => extract_garak(parsed, warnings),
+        Profile::McpArmor => extract_mcp_armor(parsed, warnings),
         Profile::CloudQuery
         | Profile::Steampipe
         | Profile::Naabu
@@ -2792,6 +2801,623 @@ fn extract_records(
         | Profile::Syft
         | Profile::AgenticRadar => Vec::new(),
     }
+}
+
+const MCP_ARMOR_CHECKS: [(&str, &str, FindingFamily); 2] = [
+    (
+        "hardcoded_secrets",
+        "Hardcoded Secret",
+        FindingFamily::McpSecret,
+    ),
+    (
+        "excessive_tool_permissions",
+        "Excessive Tool Permissions",
+        FindingFamily::McpConfiguration,
+    ),
+];
+
+/// Read only the versioned, configuration-only envelope produced by the
+/// retained MCP Armor patch. The adapter does not infer whether a server was
+/// contacted: the dedicated mode and exact schema are the evidence boundary.
+/// Findings from completed checks survive a sibling shortfall, while every
+/// malformed ledger, warning, failed check, or unevaluated input clears
+/// `AdapterOutput::complete` through the warnings emitted here.
+fn extract_mcp_armor(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<SourceRecord> {
+    let ParsedArtifact::Json(Value::Object(document)) = parsed else {
+        push_warning(
+            warnings,
+            "MCP Armor output was not its supported configuration-only JSON document; result processing is incomplete",
+        );
+        return Vec::new();
+    };
+    if document.get("schema_version").and_then(Value::as_str) != Some("1")
+        || document.get("scanner_version").and_then(Value::as_str) != Some("1.0.2")
+        || document.get("mode").and_then(Value::as_str) != Some("configuration_only")
+    {
+        push_warning(
+            warnings,
+            "MCP Armor output did not match the supported configuration-only schema, scanner version, and mode; result processing is incomplete",
+        );
+        return Vec::new();
+    }
+
+    let input_count = document.get("input_count").and_then(Value::as_u64);
+    let evaluated_input_count = document
+        .get("evaluated_input_count")
+        .and_then(Value::as_u64);
+    if input_count != Some(1) || evaluated_input_count.is_none_or(|count| count > 1) {
+        push_warning(
+            warnings,
+            "MCP Armor input counts did not describe the one approved configuration snapshot; result processing is incomplete",
+        );
+    }
+
+    let declared_complete = document.get("complete").and_then(Value::as_bool);
+    if declared_complete.is_none() {
+        push_warning(
+            warnings,
+            "MCP Armor output lacked its completeness flag; result processing is incomplete",
+        );
+    }
+
+    let mut upstream_warning_count = 0_usize;
+    match document.get("warnings").and_then(Value::as_array) {
+        Some(values) => {
+            if values.len() > MAX_WARNINGS {
+                push_warning(
+                    warnings,
+                    "MCP Armor warnings exceeded the result safety boundary; additional diagnostics excluded",
+                );
+            }
+            for (index, value) in values.iter().take(MAX_WARNINGS).enumerate() {
+                let pointer = format!("/warnings/{index}");
+                let Some(object) = value.as_object() else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor warning at {pointer} was malformed; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                let Some(code) = mcp_armor_text(object.get("code")) else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor warning at {pointer} lacked a bounded code; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                if !matches!(
+                    code.as_str(),
+                    "config_invalid" | "server_config_invalid" | "check_failed"
+                ) {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor warning at {pointer} used an unsupported code; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                }
+                if mcp_armor_text(object.get("message")).is_none() {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor warning at {pointer} lacked a bounded message; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                }
+                let check_id = mcp_armor_text(object.get("check_id"));
+                let config_file = mcp_armor_text(object.get("config_file"));
+                let context = if code == "check_failed"
+                    && check_id.as_deref().is_some_and(|candidate| {
+                        MCP_ARMOR_CHECKS.iter().any(|(id, ..)| *id == candidate)
+                    })
+                    && config_file.is_none()
+                {
+                    format!("check {}", check_id.unwrap_or_default())
+                } else if code != "check_failed" && check_id.is_none() && config_file.is_some() {
+                    format!("configuration {}", config_file.unwrap_or_default())
+                } else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor warning at {pointer} had invalid context; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor reported incomplete configuration coverage ({code}) for {context}"
+                    ),
+                );
+                upstream_warning_count += 1;
+            }
+        }
+        None => push_warning(
+            warnings,
+            "MCP Armor output lacked its structured warnings array; result processing is incomplete",
+        ),
+    }
+
+    let mut checks = BTreeMap::<String, (String, u64)>::new();
+    match document.get("checks").and_then(Value::as_array) {
+        Some(values) => {
+            if values.len() != MCP_ARMOR_CHECKS.len() {
+                push_warning(
+                    warnings,
+                    "MCP Armor check ledger did not contain exactly the two supported configuration checks; result processing is incomplete",
+                );
+            }
+            for (index, value) in values.iter().enumerate() {
+                let pointer = format!("/checks/{index}");
+                let Some(object) = value.as_object() else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check at {pointer} was malformed; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                let Some(check_id) = mcp_armor_text(object.get("id")) else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check at {pointer} lacked a bounded id; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                if !MCP_ARMOR_CHECKS.iter().any(|(id, ..)| *id == check_id) {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check at {pointer} named an unsupported id; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                }
+                let Some(status) = mcp_armor_text(object.get("status"))
+                    .filter(|value| matches!(value.as_str(), "completed" | "failed" | "not_run"))
+                else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check {check_id} had an unsupported status; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                let Some(finding_count) = object.get("finding_count").and_then(Value::as_u64)
+                else {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check {check_id} lacked its finding count; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                };
+                if finding_count > MAX_RECORDS as u64 {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check {check_id} exceeded the finding safety boundary; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                }
+                if status != "completed" && finding_count != 0 {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check {check_id} reported findings without completing; result processing is incomplete"
+                        ),
+                    );
+                    continue;
+                }
+                if checks
+                    .insert(check_id.clone(), (status.clone(), finding_count))
+                    .is_some()
+                {
+                    push_warning(
+                        warnings,
+                        format!(
+                            "MCP Armor check ledger repeated {check_id}; result processing is incomplete"
+                        ),
+                    );
+                }
+                if status != "completed" {
+                    push_warning(
+                        warnings,
+                        format!("MCP Armor did not complete configuration check {check_id}"),
+                    );
+                }
+            }
+        }
+        None => push_warning(
+            warnings,
+            "MCP Armor output lacked its check ledger; result processing is incomplete",
+        ),
+    }
+    for (check_id, ..) in MCP_ARMOR_CHECKS {
+        if !checks.contains_key(check_id) {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor check ledger lacked {check_id}; result processing is incomplete"
+                ),
+            );
+        }
+    }
+
+    let Some(findings) = document.get("findings").and_then(Value::as_array) else {
+        push_warning(
+            warnings,
+            "MCP Armor output lacked its findings array; result processing is incomplete",
+        );
+        return Vec::new();
+    };
+    if findings.len() > MAX_RECORDS {
+        push_warning(
+            warnings,
+            "MCP Armor findings exceeded the result safety boundary; additional findings remain only in raw evidence",
+        );
+    }
+
+    let mut records = Vec::new();
+    let mut observed_counts = BTreeMap::<String, u64>::new();
+    for (index, value) in findings.iter().take(MAX_RECORDS).enumerate() {
+        let pointer = format!("/findings/{index}");
+        let Some(object) = value.as_object() else {
+            push_warning(
+                warnings,
+                format!("MCP Armor finding at {pointer} was malformed and was not normalized"),
+            );
+            continue;
+        };
+        let Some(check_id) = mcp_armor_text(object.get("check_id")) else {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} lacked a bounded check id and was not normalized"
+                ),
+            );
+            continue;
+        };
+        let Some((_, expected_type, family)) = MCP_ARMOR_CHECKS
+            .iter()
+            .find(|(id, ..)| *id == check_id)
+            .copied()
+        else {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} named an unsupported check and was not normalized"
+                ),
+            );
+            continue;
+        };
+        if checks
+            .get(&check_id)
+            .is_none_or(|(status, _)| status != "completed")
+        {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} belonged to a check that did not complete and was not normalized"
+                ),
+            );
+            continue;
+        }
+        let finding_type = mcp_armor_text(object.get("finding_type"));
+        let severity = mcp_armor_text(object.get("severity"));
+        let severity_is_supported = match check_id.as_str() {
+            "hardcoded_secrets" => severity.as_deref() == Some("high"),
+            "excessive_tool_permissions" => {
+                matches!(severity.as_deref(), Some("critical" | "low"))
+            }
+            _ => false,
+        };
+        if finding_type.as_deref() != Some(expected_type)
+            || !severity_is_supported
+            || object.get("entity_type").and_then(Value::as_str) != Some("configuration")
+        {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} did not match its pinned check shape and was not normalized"
+                ),
+            );
+            continue;
+        }
+        let Some(config_file) = mcp_armor_text(object.get("config_file")) else {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} lacked a bounded configuration path and was not normalized"
+                ),
+            );
+            continue;
+        };
+        if [
+            "description",
+            "recommendation",
+            "affected_tool",
+            "affected_resource",
+            "affected_resource_uri",
+        ]
+        .iter()
+        .any(|key| object.get(*key) != Some(&Value::Null))
+        {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} carried unsupported detail fields and was not normalized"
+                ),
+            );
+            continue;
+        }
+        let server = match object.get("affected_server") {
+            Some(Value::Null) => None,
+            value => mcp_armor_text(value),
+        };
+        if object.get("affected_server") != Some(&Value::Null) && server.is_none() {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} lacked a bounded server name and was not normalized"
+                ),
+            );
+            continue;
+        }
+        let Some(entities) = object.get("affected_entities").and_then(Value::as_object) else {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor finding at {pointer} lacked bounded affected entities and was not normalized"
+                ),
+            );
+            continue;
+        };
+
+        let mut location_details = Vec::<String>::new();
+        let mut identity = format!(
+            "{check_id}\0{config_file}\0{}",
+            server.as_deref().unwrap_or_default()
+        );
+        let mut tags = Vec::new();
+        if let Some(server) = &server {
+            location_details.push(format!("MCP server {server}"));
+            tags.push(format!("mcp-server:{}", safe_tag(server)));
+        }
+        if check_id == "hardcoded_secrets" {
+            let Some(secret_type) = mcp_armor_text(entities.get("secret_type")) else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} lacked a bounded secret type and was not normalized"
+                    ),
+                );
+                continue;
+            };
+            let Some(line_number) = entities
+                .get("line_number")
+                .and_then(Value::as_u64)
+                .filter(|line| *line > 0)
+            else {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} lacked a valid line number and was not normalized"
+                    ),
+                );
+                continue;
+            };
+            // The upstream report retains a redacted token excerpt. Even that
+            // excerpt is unnecessary in the product finding, so validate only
+            // that the field exists and leave its bytes in raw evidence.
+            if mcp_armor_text(entities.get("matched_text_redacted")).is_none() {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} lacked its redacted match marker and was not normalized"
+                    ),
+                );
+                continue;
+            }
+            location_details.push(format!("line {line_number}"));
+            location_details.push(format!("{secret_type} credential pattern"));
+            identity.push_str(&format!("\0{line_number}\0{secret_type}"));
+            tags.push(format!("secret-type:{}", safe_tag(&secret_type)));
+        } else {
+            if server.is_none() {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} lacked a bounded server name and was not normalized"
+                    ),
+                );
+                continue;
+            }
+            let risky_tools = mcp_armor_optional_string_array(entities.get("risky_tools"));
+            let risky_permissions =
+                mcp_armor_optional_string_array(entities.get("risky_permissions"));
+            let risky_flags = mcp_armor_optional_string_array(entities.get("risky_command_flags"));
+            let command = mcp_armor_optional_text(entities.get("risky_command"));
+            let disabled = match entities.get("disabled") {
+                None | Some(Value::Null) => Some(false),
+                Some(Value::Bool(value)) => Some(*value),
+                _ => None,
+            };
+            if risky_tools.is_none()
+                || risky_permissions.is_none()
+                || risky_flags.is_none()
+                || command.is_none()
+                || disabled.is_none()
+            {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} carried malformed permission evidence and was not normalized"
+                    ),
+                );
+                continue;
+            }
+            let risky_tools = risky_tools.unwrap_or_default();
+            let risky_permissions = risky_permissions.unwrap_or_default();
+            let risky_flags = risky_flags.unwrap_or_default();
+            let command = command.unwrap_or_default();
+            let disabled = disabled.unwrap_or_default();
+            if (severity.as_deref() == Some("low")) != disabled {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} did not match its pinned check shape and was not normalized"
+                    ),
+                );
+                continue;
+            }
+            if risky_tools.is_empty()
+                && risky_permissions.is_empty()
+                && risky_flags.is_empty()
+                && command.is_none()
+                && !disabled
+            {
+                push_warning(
+                    warnings,
+                    format!(
+                        "MCP Armor finding at {pointer} carried no permission evidence and was not normalized"
+                    ),
+                );
+                continue;
+            }
+            if disabled {
+                location_details.push("disabled server".into());
+                tags.push("mcp-server-state:disabled".into());
+            }
+            if let Some(command) = &command {
+                location_details.push(format!("command {command}"));
+                tags.push(format!("mcp-command:{}", safe_tag(command)));
+            }
+            for (label, values) in [
+                ("tool", &risky_tools),
+                ("permission", &risky_permissions),
+                ("command-flag", &risky_flags),
+            ] {
+                if !values.is_empty() {
+                    location_details.push(format!("{label}s {}", values.join(", ")));
+                    for value in values {
+                        tags.push(format!("mcp-{label}:{}", safe_tag(value)));
+                    }
+                }
+            }
+            identity.push_str(&format!(
+                "\0{}\0{}\0{}\0{}",
+                command.unwrap_or_default(),
+                risky_tools.join("\0"),
+                risky_permissions.join("\0"),
+                risky_flags.join("\0")
+            ));
+        }
+        let location = if location_details.is_empty() {
+            config_file.clone()
+        } else {
+            format!("{config_file} ({})", location_details.join(", "))
+        };
+
+        let mut record = record!(
+            pointer,
+            check_id.clone(),
+            expected_type.to_owned(),
+            severity.unwrap_or_default(),
+            location,
+            None,
+            String::new(),
+            Some(derived_confidence(
+                ConfidenceBasisCode::DeterministicPolicyEvaluation
+            )),
+            EvidenceKind::Configuration,
+            vec![],
+            tags,
+        );
+        record.family_override = Some(family);
+        record.fingerprint_identity = Some(identity);
+        *observed_counts.entry(check_id).or_default() += 1;
+        records.push(record);
+    }
+
+    for (check_id, (_, declared_count)) in &checks {
+        if *declared_count != observed_counts.get(check_id).copied().unwrap_or_default() {
+            push_warning(
+                warnings,
+                format!(
+                    "MCP Armor check {check_id} finding count did not match its findings; result processing is incomplete"
+                ),
+            );
+        }
+    }
+    if declared_complete == Some(false) && upstream_warning_count == 0 {
+        push_warning(
+            warnings,
+            "MCP Armor reported incomplete configuration coverage without a usable structured warning",
+        );
+    }
+    if declared_complete == Some(true)
+        && (upstream_warning_count != 0
+            || input_count != evaluated_input_count
+            || checks.len() != MCP_ARMOR_CHECKS.len()
+            || checks.values().any(|(status, _)| status != "completed"))
+    {
+        push_warning(
+            warnings,
+            "MCP Armor completeness did not agree with its input and check ledger; result processing is incomplete",
+        );
+    }
+    records
+}
+
+fn mcp_armor_text(value: Option<&Value>) -> Option<String> {
+    let value = value?.as_str()?;
+    if value.is_empty()
+        || value.trim() != value
+        || value.chars().count() > MAX_SHORT_TEXT
+        || value.chars().any(char::is_control)
+    {
+        None
+    } else {
+        Some(value.to_owned())
+    }
+}
+
+fn mcp_armor_optional_text(value: Option<&Value>) -> Option<Option<String>> {
+    match value {
+        None | Some(Value::Null) => Some(None),
+        value => mcp_armor_text(value).map(Some),
+    }
+}
+
+fn mcp_armor_optional_string_array(value: Option<&Value>) -> Option<Vec<String>> {
+    let Some(value) = value else {
+        return Some(Vec::new());
+    };
+    if value.is_null() {
+        return Some(Vec::new());
+    }
+    let values = value.as_array()?;
+    if values.len() > 32 {
+        return None;
+    }
+    values
+        .iter()
+        .map(|value| mcp_armor_text(Some(value)))
+        .collect()
 }
 
 fn json_rows<'a>(
@@ -5954,6 +6580,9 @@ fn merge_finding(
         .as_ref()
         .and_then(|details| details.aws_iam_policy.clone());
     let rule_id = record.rule_id.clone();
+    let family = record
+        .family_override
+        .unwrap_or_else(|| family_for(adapter.profile));
     let location = redact_location(&record.location);
     let fingerprint_identity = record
         .fingerprint_identity
@@ -6065,7 +6694,7 @@ fn merge_finding(
     let impact = if exposure_observation {
         "The service responded within the tested scope. Reachability alone does not identify a vulnerability.".into()
     } else {
-        impact_for(adapter.profile, &severity, severity_basis)
+        impact_for(adapter.profile, family, &severity, severity_basis)
     };
     let plain_language_summary = if exposure_observation {
         format!(
@@ -6147,7 +6776,7 @@ fn merge_finding(
     } else if let Some(details) = aws_iam_policy.as_ref() {
         crate::finding_narrative::aws_iam_policy_action_english(adapter.expert_type, details)
     } else {
-        format!("{}.", remedy_for(adapter.profile))
+        format!("{}.", remedy_for(adapter.profile, family))
     };
     let verification_guidance = if exposure_observation {
         format!(
@@ -6199,7 +6828,7 @@ fn merge_finding(
             // The codes the prose above was composed from, so a client that
             // renders in another language composes its own sentence rather
             // than showing a translated heading over an English paragraph.
-            family: Some(family_for(adapter.profile)),
+            family: Some(family),
             severity_basis_code: severity_basis,
             confidence_basis_code: confidence_basis,
             context_factors: Vec::new(),
@@ -6285,6 +6914,7 @@ fn record_from_draft(draft: RecordDraft) -> SourceRecord {
         scanner_details: None,
         references: draft.references,
         tags: draft.tags,
+        family_override: None,
     }
 }
 
@@ -6673,6 +7303,7 @@ fn severity_article(severity: &Severity) -> &'static str {
 
 fn impact_for(
     profile: Profile,
+    family: FindingFamily,
     _severity: &Severity,
     _severity_basis: Option<SeverityBasisCode>,
 ) -> String {
@@ -6703,6 +7334,15 @@ fn impact_for(
         }
         Profile::Garak => "the model endpoint may produce output it is supposed to refuse",
         Profile::AgenticRadar => unreachable!("Agentic Radar emits inventory only"),
+        Profile::McpArmor => match family {
+            FindingFamily::McpSecret => {
+                "a credential embedded in MCP configuration may let anyone who obtains that file access the service without authorization"
+            }
+            FindingFamily::McpConfiguration => {
+                "an MCP server process or tool may receive broader local capabilities than its purpose requires"
+            }
+            _ => unreachable!("MCP Armor records carry one of its two reviewed families"),
+        },
     };
     format!("{consequence}.")
 }
@@ -6729,6 +7369,7 @@ fn family_for(profile: Profile) -> FindingFamily {
         Profile::Kubescape | Profile::KubeBench => FindingFamily::Kubernetes,
         Profile::Garak => FindingFamily::ModelBehavior,
         Profile::AgenticRadar => unreachable!("Agentic Radar emits inventory only"),
+        Profile::McpArmor => unreachable!("MCP Armor records carry an explicit family"),
     }
 }
 
@@ -6747,7 +7388,7 @@ fn family_for(profile: Profile) -> FindingFamily {
 /// Grouped the way [`impact_for`] groups the same profiles, except that secret
 /// scanners split away from Semgrep: the three share a consequence but not a
 /// remedy, and the remedy is the half that is urgent.
-fn remedy_for(profile: Profile) -> &'static str {
+fn remedy_for(profile: Profile, family: FindingFamily) -> &'static str {
     match profile {
         Profile::CloudQuery | Profile::Steampipe | Profile::Prowler | Profile::ScoutSuite => {
             "Apply least privilege to the affected resource's configuration or policy"
@@ -6778,6 +7419,15 @@ fn remedy_for(profile: Profile) -> &'static str {
             "Reproduce the probe, decide whether those replies actually breach this endpoint's usage policy, and if so add a guardrail in front of or behind the model"
         }
         Profile::AgenticRadar => unreachable!("Agentic Radar emits inventory only"),
+        Profile::McpArmor => match family {
+            FindingFamily::McpSecret => {
+                "Revoke and rotate the credential, then remove it from the MCP configuration and every retained history entry"
+            }
+            FindingFamily::McpConfiguration => {
+                "Remove unnecessary permissions and dangerous command flags from the MCP configuration, leaving only the capabilities the server's purpose requires"
+            }
+            _ => unreachable!("MCP Armor records carry one of its two reviewed families"),
+        },
     }
 }
 

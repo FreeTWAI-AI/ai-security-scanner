@@ -36,6 +36,8 @@ fn consequence(family: FindingFamily) -> &'static str {
         FindingFamily::VulnerableComponent => "容器或軟體元件可能讓工作負載暴露於已知弱點",
         FindingFamily::Kubernetes => "Kubernetes 叢集或工作負載的隔離或管理保護可能不足",
         FindingFamily::ModelBehavior => "這個模型端點可能會產生它原本應該拒絕的輸出",
+        FindingFamily::McpSecret => "MCP 設定中的憑證可能被取得設定檔的人用來未授權存取服務",
+        FindingFamily::McpConfiguration => "MCP 伺服器程序或工具可能取得超出其用途所需的本機能力",
     }
 }
 
@@ -68,6 +70,12 @@ fn consequence_english(family: FindingFamily) -> &'static str {
         FindingFamily::ModelBehavior => {
             "The model endpoint may produce output it is supposed to refuse"
         }
+        FindingFamily::McpSecret => {
+            "A credential embedded in MCP configuration may let anyone who obtains that file access the service without authorization"
+        }
+        FindingFamily::McpConfiguration => {
+            "An MCP server process or tool may receive broader local capabilities than its purpose requires"
+        }
     }
 }
 
@@ -97,6 +105,12 @@ fn remedy(family: FindingFamily) -> &'static str {
         FindingFamily::Kubernetes => "調整這項檢查所指出的工作負載或叢集設定",
         FindingFamily::ModelBehavior => {
             "重現這個探測項目，判斷這些回覆是否確實違反該端點的使用政策；若是，請在模型之前或之後加上防護措施"
+        }
+        FindingFamily::McpSecret => {
+            "先撤銷並輪替這組憑證，再從 MCP 設定以及仍保留它的歷史紀錄中移除"
+        }
+        FindingFamily::McpConfiguration => {
+            "移除 MCP 設定中不必要的權限與危險命令旗標，只保留伺服器用途確實需要的能力"
         }
     }
 }
@@ -128,6 +142,12 @@ fn remedy_english(family: FindingFamily) -> &'static str {
         FindingFamily::Kubernetes => "Correct the workload or cluster setting named by this check",
         FindingFamily::ModelBehavior => {
             "Reproduce the probe, decide whether those replies actually breach this endpoint's usage policy, and if so add a guardrail in front of or behind the model"
+        }
+        FindingFamily::McpSecret => {
+            "Revoke and rotate the credential, then remove it from the MCP configuration and every retained history entry"
+        }
+        FindingFamily::McpConfiguration => {
+            "Remove unnecessary permissions and dangerous command flags from the MCP configuration, leaving only the capabilities the server's purpose requires"
         }
     }
 }
@@ -1268,6 +1288,14 @@ const CONTROL_MAPPING_RATIONALE_PROSE: &[(&str, &str)] = &[
     (
         "Every TruffleHog result is a detected credential, so this reference covers the engine's whole detector surface rather than one detector. Evidence of a credential in source material is related to managing credentials and protecting authentication information. AIDEFEND's static-admission coordinate applies when the selected artifact was generated or materially changed by AI.",
         "每一筆 TruffleHog 結果都是偵測到的憑證，因此這項參照涵蓋該掃描工具的完整偵測範圍，而不是單一偵測器。原始資料中含有憑證的證據，與管理憑證及保護驗證資訊有關。當所選構件由 AI 產生或經 AI 實質修改時，AIDEFEND 的靜態准入座標才適用。",
+    ),
+    (
+        "Static evidence that an MCP configuration embeds a credential pattern is related to credential lifecycle management, authentication-information protection, and sensitive-information disclosure.",
+        "MCP 設定內嵌憑證樣式的靜態證據，與憑證生命週期管理、驗證資訊保護及敏感資訊外洩有關。",
+    ),
+    (
+        "Static evidence that an MCP server configuration grants a risky tool, permission, command, or command flag is related to least privilege, configuration management, privileged access safeguards, and excessive agency.",
+        "MCP 伺服器設定授予高風險工具、權限、命令或命令旗標的靜態證據，與最小權限、組態管理、特權存取保護及過度代理能力有關。",
     ),
     (
         "Infrastructure-as-code evidence that access logging is disabled is related to security-relevant audit records. AIDEFEND's IaC-scanning coordinate applies when the selected configuration provisions an AI system.",

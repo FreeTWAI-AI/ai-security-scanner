@@ -1256,7 +1256,9 @@ export type FindingFamily =
   | "infrastructure_as_code"
   | "vulnerable_component"
   | "kubernetes"
-  | "model_behavior";
+  | "model_behavior"
+  | "mcp_secret"
+  | "mcp_configuration";
 
 /**
  * Why this case raised a finding's priority above the scanner's own rating.

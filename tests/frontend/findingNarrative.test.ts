@@ -35,6 +35,9 @@ const FAMILIES: FindingFamily[] = [
   "infrastructure_as_code",
   "vulnerable_component",
   "kubernetes",
+  "model_behavior",
+  "mcp_secret",
+  "mcp_configuration",
 ];
 
 const BASES: SeverityBasisCode[] = [

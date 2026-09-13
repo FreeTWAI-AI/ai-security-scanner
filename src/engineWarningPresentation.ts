@@ -73,6 +73,18 @@ const FIXED_ENGINE_WARNINGS: ReadonlyArray<readonly [string, string]> = [
   ["Agentic Radar graph membership did not agree with its workflow status; the graph was retained, but workflow inventory is incomplete", "Agentic Radar 圖內容與工作流程狀態不一致；工作流程盤點不完整"],
   ["Agentic Radar agents exceeded the record safety boundary; later agent metadata remains only in the raw artifact", "Agentic Radar agents 超過記錄安全界線；額外代理中繼資料未納入"],
   ["Agentic Radar edges exceeded the record safety boundary; later relationships remain only in the raw artifact", "Agentic Radar edges 超過記錄安全界線；額外關係未納入"],
+  ["MCP Armor output was not its supported configuration-only JSON document; result processing is incomplete", "MCP Armor 輸出不是支援的僅設定 JSON 文件；結果處理不完整"],
+  ["MCP Armor output did not match the supported configuration-only schema, scanner version, and mode; result processing is incomplete", "MCP Armor 輸出不符合支援的僅設定結構描述、掃描器版本與模式；結果處理不完整"],
+  ["MCP Armor input counts did not describe the one approved configuration snapshot; result processing is incomplete", "MCP Armor 輸入計數不符合唯一一份已核准設定快照；結果處理不完整"],
+  ["MCP Armor output lacked its completeness flag; result processing is incomplete", "MCP Armor 輸出缺少完整性旗標；結果處理不完整"],
+  ["MCP Armor warnings exceeded the result safety boundary; additional diagnostics excluded", "MCP Armor 警告超過結果安全界線；額外診斷未納入"],
+  ["MCP Armor output lacked its structured warnings array; result processing is incomplete", "MCP Armor 輸出缺少結構化警告陣列；結果處理不完整"],
+  ["MCP Armor check ledger did not contain exactly the two supported configuration checks; result processing is incomplete", "MCP Armor 檢查清冊未恰好包含兩項支援的設定檢查；結果處理不完整"],
+  ["MCP Armor output lacked its check ledger; result processing is incomplete", "MCP Armor 輸出缺少檢查清冊；結果處理不完整"],
+  ["MCP Armor output lacked its findings array; result processing is incomplete", "MCP Armor 輸出缺少問題陣列；結果處理不完整"],
+  ["MCP Armor findings exceeded the result safety boundary; additional findings remain only in raw evidence", "MCP Armor 問題超過結果安全界線；額外問題未納入"],
+  ["MCP Armor reported incomplete configuration coverage without a usable structured warning", "MCP Armor 回報設定涵蓋不完整，但沒有可用的結構化警告"],
+  ["MCP Armor completeness did not agree with its input and check ledger; result processing is incomplete", "MCP Armor 的完整性狀態與輸入及檢查清冊不一致；結果處理不完整"],
   ["Runtime object ownership is unavailable. Retry uses a new isolated attempt.", "無法確認執行階段物件的所有權；重試會使用新的隔離嘗試。"],
   ["Scan batch stopped. Unfinished work: not tested.", "掃描批次已停止；未完成工作：未檢測。"],
   ["Scan cancelled. Remaining planned work: not tested.", "掃描已取消；其餘規劃工作：未檢測。"],
@@ -217,6 +229,11 @@ const normalizeLegacyEngineWarning = (warning: string): string => {
 };
 
 const directEngineWarningEnglish = (warning: string): string => {
+  if (warning.startsWith("MCP Armor")) {
+    return warning
+      .replace("pinned check shape", "supported check shape")
+      .replace("; additional findings remain only in raw evidence", "; additional findings excluded");
+  }
   if (warning.startsWith("Agentic Radar")) {
     return warning
       .replace("did not match the pinned", "did not match the supported")
@@ -412,6 +429,37 @@ export const recognizedEngineWarningZhTW = (warning: string): string | undefined
   const fixed = FIXED_ENGINE_WARNINGS.find(([english]) => english === normalized)?.[1];
   if (fixed) return directEngineWarningZhTW(fixed);
   const rules: ReadonlyArray<readonly [RegExp, (...values: string[]) => string]> = [
+    [/^MCP Armor warning at (.+) was malformed; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 警告格式錯誤；結果處理不完整`],
+    [/^MCP Armor warning at (.+) lacked a bounded code; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 警告缺少有界代碼；結果處理不完整`],
+    [/^MCP Armor warning at (.+) used an unsupported code; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 警告使用不支援的代碼；結果處理不完整`],
+    [/^MCP Armor warning at (.+) lacked a bounded message; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 警告缺少有界訊息；結果處理不完整`],
+    [/^MCP Armor warning at (.+) had invalid context; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 警告帶有無效的上下文；結果處理不完整`],
+    [/^MCP Armor reported incomplete configuration coverage \((.+)\) for (.+)$/u, (code, context) => `MCP Armor 回報 ${context} 的設定涵蓋不完整（${code}）`],
+    [/^MCP Armor check at (.+) was malformed; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 檢查格式錯誤；結果處理不完整`],
+    [/^MCP Armor check at (.+) lacked a bounded id; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 檢查缺少有界識別碼；結果處理不完整`],
+    [/^MCP Armor check at (.+) named an unsupported id; result processing is incomplete$/u, (pointer) => `${pointer} 的 MCP Armor 檢查指名不支援的識別碼；結果處理不完整`],
+    [/^MCP Armor check (.+) had an unsupported status; result processing is incomplete$/u, (check) => `MCP Armor 檢查 ${check} 使用不支援的狀態；結果處理不完整`],
+    [/^MCP Armor check (.+) lacked its finding count; result processing is incomplete$/u, (check) => `MCP Armor 檢查 ${check} 缺少問題計數；結果處理不完整`],
+    [/^MCP Armor check (.+) exceeded the finding safety boundary; result processing is incomplete$/u, (check) => `MCP Armor 檢查 ${check} 超過問題安全界線；結果處理不完整`],
+    [/^MCP Armor check (.+) reported findings without completing; result processing is incomplete$/u, (check) => `MCP Armor 檢查 ${check} 未完成卻回報問題；結果處理不完整`],
+    [/^MCP Armor check ledger repeated (.+); result processing is incomplete$/u, (check) => `MCP Armor 檢查清冊重複列出 ${check}；結果處理不完整`],
+    [/^MCP Armor did not complete configuration check (.+)$/u, (check) => `MCP Armor 未完成設定檢查 ${check}`],
+    [/^MCP Armor check ledger lacked (.+); result processing is incomplete$/u, (check) => `MCP Armor 檢查清冊缺少 ${check}；結果處理不完整`],
+    [/^MCP Armor finding at (.+) was malformed and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題格式錯誤，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked a bounded check id and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少有界檢查識別碼，因此未正規化`],
+    [/^MCP Armor finding at (.+) named an unsupported check and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題指名不支援的檢查，因此未正規化`],
+    [/^MCP Armor finding at (.+) belonged to a check that did not complete and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題屬於未完成的檢查，因此未正規化`],
+    [/^MCP Armor finding at (.+) did not match its pinned check shape and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題不符合支援的檢查格式，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked a bounded configuration path and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少有界設定路徑，因此未正規化`],
+    [/^MCP Armor finding at (.+) carried unsupported detail fields and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題帶有不支援的詳細欄位，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked a bounded server name and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少有界伺服器名稱，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked bounded affected entities and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少有界受影響實體，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked a bounded secret type and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少有界機密類型，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked a valid line number and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少有效行號，因此未正規化`],
+    [/^MCP Armor finding at (.+) lacked its redacted match marker and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題缺少遮蔽後的比對標記，因此未正規化`],
+    [/^MCP Armor finding at (.+) carried malformed permission evidence and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題帶有格式錯誤的權限證據，因此未正規化`],
+    [/^MCP Armor finding at (.+) carried no permission evidence and was not normalized$/u, (pointer) => `${pointer} 的 MCP Armor 問題沒有權限證據，因此未正規化`],
+    [/^MCP Armor check (.+) finding count did not match its findings; result processing is incomplete$/u, (check) => `MCP Armor 檢查 ${check} 的問題計數與問題資料不一致；結果處理不完整`],
     [/^Agentic Radar warning at (.+) was malformed; the partial graph was retained$/u, (pointer) => `${pointer} 的 Agentic Radar 警告格式錯誤；工作流程盤點不完整`],
     [/^Agentic Radar warning at (.+) used an unsupported code; the partial graph was retained$/u, (pointer) => `${pointer} 的 Agentic Radar 警告使用不支援的代碼；工作流程盤點不完整`],
     [/^Agentic Radar warning at (.+) lacked a bounded message; the partial graph was retained$/u, (pointer) => `${pointer} 的 Agentic Radar 警告缺少有界訊息；工作流程盤點不完整`],

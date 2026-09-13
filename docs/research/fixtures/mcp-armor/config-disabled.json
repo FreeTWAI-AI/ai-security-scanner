@@ -1,0 +1,41 @@
+{
+  "schema_version": "1",
+  "scanner_version": "1.0.2",
+  "mode": "configuration_only",
+  "input_count": 1,
+  "evaluated_input_count": 1,
+  "complete": true,
+  "warnings": [],
+  "checks": [
+    {
+      "id": "hardcoded_secrets",
+      "status": "completed",
+      "finding_count": 0
+    },
+    {
+      "id": "excessive_tool_permissions",
+      "status": "completed",
+      "finding_count": 1
+    }
+  ],
+  "findings": [
+    {
+      "check_id": "excessive_tool_permissions",
+      "finding_type": "Excessive Tool Permissions",
+      "severity": "low",
+      "description": null,
+      "recommendation": null,
+      "entity_type": "configuration",
+      "affected_server": "fixture-disabled",
+      "config_file": "tests/fixtures/config-disabled.json",
+      "affected_tool": null,
+      "affected_resource": null,
+      "affected_resource_uri": null,
+      "affected_entities": {
+        "disabled": true,
+        "risky_tools": [],
+        "risky_command": "python3"
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": "1",
+  "scanner_version": "1.0.2",
+  "mode": "configuration_only",
+  "input_count": 1,
+  "evaluated_input_count": 1,
+  "complete": true,
+  "warnings": [],
+  "checks": [
+    {
+      "id": "hardcoded_secrets",
+      "status": "completed",
+      "finding_count": 0
+    },
+    {
+      "id": "excessive_tool_permissions",
+      "status": "completed",
+      "finding_count": 0
+    }
+  ],
+  "findings": []
+}

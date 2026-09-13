@@ -40,6 +40,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/research/agentic-radar-upstream-drafts.md",
   "docs/research/agentic-radar-evaluation.md",
   "docs/research/fixtures/agentic-radar/README.md",
+  "docs/research/fixtures/mcp-armor/README.md",
   "docs/research/mcp-armor-evaluation.md",
   "docs/research/vibescan-evaluation.md",
   "docs/threat-model.md",
@@ -90,6 +91,14 @@ const AGENTIC_RADAR_RESEARCH_FIXTURES = {
 };
 const AGENTIC_RADAR_RESEARCH_PATCH_SHA256 =
   "d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72";
+const MCP_ARMOR_RESEARCH_PATCH_SHA256 =
+  "ae7732b5f9c922fbf2bee54e0246cccde6e1e5af829db112eb0f948cbd424122";
+const MCP_ARMOR_RESEARCH_FIXTURES = {
+  "config-clean.json": [true, "7df09184de483652621090124e0b5aa593ad08552a3fe4527865b0712f78742f"],
+  "config-disabled.json": [true, "1932bd98c099da927f00f4e6c94f2dbbe9a8eb3d87c5039d0b60a0561f0c5550"],
+  "config-findings.json": [true, "8a94b0b7aa717b106896bf3e86c5da063ab5f8023fcff2b97cac85990a72cffa"],
+  "config-partial.json": [false, "804519c14a8e265ef82010c5836a7354aa23732273bf9a3a2e3e487957258669"],
+};
 
 function localMarkdownTargets(markdown) {
   const targets = [];
@@ -291,4 +300,76 @@ test("Agentic Radar research patch and fixtures retain the audited machine-outpu
 
   const empty = fixtures.get("no-supported-workflow.json");
   assert.deepEqual(empty.graph, { name: "input", nodes: [], edges: [], agents: [], tools: [] });
+});
+
+test("MCP Armor research patch and fixtures retain the model-free fail-closed contract", async () => {
+  const patchContent = await load(
+    "docs/research/patches/mcp-armor-1.0.2-config-only.patch",
+  );
+  assert.equal(
+    createHash("sha256").update(patchContent).digest("hex"),
+    MCP_ARMOR_RESEARCH_PATCH_SHA256,
+  );
+  assert.match(patchContent, /--config-only/u);
+  assert.match(patchContent, /prompt-injection/u);
+  assert.match(patchContent, /CONFIGURATION_CHECKS/u);
+  const decision = await load("docs/research/mcp-armor-evaluation.md");
+  assert.match(decision, new RegExp(MCP_ARMOR_RESEARCH_PATCH_SHA256, "u"));
+  assert.match(decision, /d5fbb944d35c98495a64f97a4270112c48fcdcda/u);
+
+  const fixtures = new Map();
+  for (const [name, [expectedComplete, expectedSha256]] of Object.entries(
+    MCP_ARMOR_RESEARCH_FIXTURES,
+  )) {
+    const content = await load(`docs/research/fixtures/mcp-armor/${name}`);
+    assert.equal(
+      createHash("sha256").update(content).digest("hex"),
+      expectedSha256,
+      `${name} changed without review`,
+    );
+    const fixture = JSON.parse(content);
+    fixtures.set(name, fixture);
+    assert.equal(fixture.schema_version, "1", name);
+    assert.equal(fixture.scanner_version, "1.0.2", name);
+    assert.equal(fixture.mode, "configuration_only", name);
+    assert.equal(fixture.input_count, 1, name);
+    assert.equal(fixture.evaluated_input_count, 1, name);
+    assert.equal(fixture.complete, expectedComplete, name);
+    assert.deepEqual(
+      fixture.checks.map(({ id }) => id),
+      ["hardcoded_secrets", "excessive_tool_permissions"],
+      name,
+    );
+    assert.equal(
+      fixture.complete,
+      fixture.warnings.length === 0
+        && fixture.checks.every(({ status }) => status === "completed"),
+      `${name} must fail closed`,
+    );
+    for (const warning of fixture.warnings) {
+      assert.deepEqual(
+        Object.keys(warning).sort(),
+        ["check_id", "code", "config_file", "message"],
+      );
+      assert.ok(["config_invalid", "server_config_invalid", "check_failed"].includes(warning.code));
+      assert.equal(typeof warning.message, "string");
+      assert.notEqual(warning.message.trim(), "");
+    }
+  }
+
+  const findings = fixtures.get("config-findings.json");
+  assert.deepEqual(
+    findings.findings.map(({ check_id, severity }) => [check_id, severity]),
+    [["hardcoded_secrets", "high"], ["excessive_tool_permissions", "critical"]],
+  );
+  assert.equal(findings.findings[0].affected_entities.matched_text_redacted, 'sk-A...BBB"');
+  assert.deepEqual(fixtures.get("config-clean.json").findings, []);
+  assert.deepEqual(
+    fixtures.get("config-disabled.json").findings.map(({ check_id, severity }) => [check_id, severity]),
+    [["excessive_tool_permissions", "low"]],
+  );
+  assert.deepEqual(
+    fixtures.get("config-partial.json").warnings.map(({ code }) => code),
+    ["server_config_invalid"],
+  );
 });

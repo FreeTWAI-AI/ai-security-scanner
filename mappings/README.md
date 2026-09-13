@@ -34,6 +34,13 @@ finding title, severity, or target-controlled text. Inventory and discovery
 observations such as Syft, CloudQuery, Naabu, and httpx output are not mapped
 as control failures.
 
+MCP Armor's configuration-only machine output names exactly two stable check
+identifiers. Those exact identifiers are reviewed independently: the
+hardcoded-credential check maps to credential protection, while the excessive
+tool-permission check maps to least privilege, configuration management, and
+excessive agency. No title, severity, server name, command, permission string,
+or other configuration-controlled value can select a mapping.
+
 When changing the catalog:
 
 1. Verify the source rule against the pinned engine/rule-set revision.

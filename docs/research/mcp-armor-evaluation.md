@@ -1,15 +1,20 @@
 # MCP Armor integration decision
 
-Normative status: this is a pinned research decision, subordinate to the
-[canonical product specification](../product-spec.md). It evaluates one MCP Armor source revision
-and one referenced model snapshot. It does not admit an engine, define a production adapter,
-authorize MCP server contact, approve model terms, or start packaging or publication work.
+Normative status: this is a pinned research and integration decision, subordinate to the
+[canonical product specification](../product-spec.md). It evaluates one MCP Armor source revision,
+one retained configuration-only patch, and one referenced model snapshot. It admits only an
+experimental, non-runnable catalog record and thin result adapter. It does not authorize MCP server
+contact, approve model terms, or start packaging, publication, or real-target work.
 
-Decision: do not add MCP Armor to the engine catalog at this revision. Re-evaluate a static,
-configuration-only slice after upstream exposes it as an explicit machine-readable mode that never
-starts or contacts an MCP server and does not require the prompt-injection model. Do not integrate
-the model-backed checks until their artifact, license, dependency, provenance, and incomplete-check
-boundaries are separately resolved.
+Decision: integrate the patched static configuration-only slice as an experimental, fail-closed
+engine contract. It reads one exact MCP configuration snapshot and runs only upstream's existing
+`hardcoded_secrets` and `excessive_tool_permissions` checks. The adapter normalizes those results as
+findings, accepts a zero-finding result only when both checks completed, and preserves completed
+findings while any warning, failed check, malformed ledger, or unevaluated input marks coverage
+partial. Keep the engine non-runnable until the patch is upstreamed or deliberately packaged, and a
+typed product path binds exactly one approved configuration file. Do not integrate model-backed or
+live MCP checks until their separate artifact, license, dependency, provenance, authorization, and
+incomplete-check boundaries are resolved.
 
 ## Audited revisions
 
@@ -26,7 +31,7 @@ the public model metadata observed on 2026-09-13 is pinned to
 That observation does not change what MCP Armor will resolve at runtime, and no model weight was
 downloaded or executed.
 
-## The current scan is not a selectable static mode
+## The unmodified scan is not a selectable static mode
 
 The README calls the open-source product “static MCP configuration scanning,” but its documented
 inventory connects to MCP servers, and the CLI has no configuration-only option
@@ -111,7 +116,7 @@ decisions. Any future distribution of the model requires a separate product-owne
 exact weight revision and all applicable upstream terms. Avoiding the model entirely removes this
 blocker from the proposed configuration-only slice.
 
-## Reproducibility and completeness are not yet bounded
+## The unmodified full scan does not bound reproducibility or completeness
 
 At the observed fine-tuned model revision, `model.safetensors` is 283,347,432 bytes with SHA-256
 `4e18e9500a456d7acbd80031036b5e9a4b0429df0474bf5eb6fa2150f02ba8ee`
@@ -136,34 +141,82 @@ An adapter cannot reconstruct which checks really ran from zero findings. Until 
 structured completeness, model/check failures must not be normalized as completed clean coverage.
 Pinning only the weight would not fix this evidence boundary.
 
-## Conditions for a new evaluation
+## Evaluated configuration-only patch
 
-A future revision or narrow upstream patch can be reconsidered when all conditions for its selected
-slice are demonstrable:
+The locally evaluated upstream-oriented commit is
+`d5fbb944d35c98495a64f97a4270112c48fcdcda`, directly based on the audited upstream revision. Its
+mailbox patch is retained at
+[`patches/mcp-armor-1.0.2-config-only.patch`](patches/mcp-armor-1.0.2-config-only.patch), SHA-256
+`ae7732b5f9c922fbf2bee54e0246cccde6e1e5af829db112eb0f948cbd424122`. It has not been submitted to
+GitHub.
 
-1. A documented `--config-only` or equivalent mode accepts exact configuration paths and never
-   creates a connector, starts a configured command, contacts an endpoint, enters OAuth, uses
-   configuration credentials for authentication, or auto-discovers other files.
-2. That mode calls the existing upstream configuration checks without copying their patterns,
-   severities, or detection logic into a product wrapper.
-3. Model dependencies are optional and are not imported, resolved, downloaded, or initialized by
-   the static mode.
-4. Machine output has a versioned schema, stable finding identity, scanner provenance, and a
-   structured ledger for every selected check; errors and skipped checks make coverage incomplete.
-5. Representative upstream-produced fixtures cover findings, zero findings, malformed input, a
-   failed check, and proof that no server or model path was reached.
-6. If model-backed checks are considered later, the exact model revision, every fetched file
-   digest, dependency lock, offline loading behavior, inference parameters, output provenance, and
-   applicable redistribution record are reviewed together. Model failure must fail closed.
+The patch makes these bounded changes without changing either detector's patterns, severity, or
+decision logic:
 
-The smallest follow-up consistent with this decision is to prepare and locally evaluate an
-upstream-oriented patch for items 1–5 only. That patch would expose existing configuration checks;
-it would not rebuild detection, add model behavior, connect to MCP servers, or admit an engine.
+1. `mcp-armor scan --config-only --config <exact-json-path>` is mutually exclusive with baseline
+   mode and never runs automatic configuration discovery.
+2. The static runner imports neither FastMCP nor the prompt-injection classifier, creates no
+   connector, starts no configured command, and performs no OAuth or network operation.
+3. `transformers` and `torch` move behind a `prompt-injection` optional dependency. A full scan
+   fails before server contact if that extra is absent; the static slice does not need it.
+4. Both existing configuration detectors accept `fail_on_error=True`, allowing the orchestration
+   layer to record a check failure rather than turn it into a clean empty list. Detection behavior
+   is otherwise unchanged.
+5. The JSON envelope carries schema and scanner versions, mode, input/evaluated counts, a
+   `complete` boolean, structured warnings, an exact two-check ledger, and findings tagged with
+   their stable check identifier. Any warning or failed/not-run check clears `complete` while
+   findings from completed checks remain available.
+
+The patch's 11 configuration-only tests pass under the system Python without FastMCP,
+Transformers, PyTorch, or TheFuzz installed, and `compileall` passes. Those tests cover findings,
+clean zero findings, malformed configuration, failed-check retention, no-valid-input exit failure,
+CLI argument boundaries, lazy imports, and absence of file/stderr logging. The checked-in outputs
+were emitted by that patch with a minimal deterministic environment; their provenance and hashes
+are frozen in the [fixture record](fixtures/mcp-armor/README.md):
+
+- [`config-findings.json`](fixtures/mcp-armor/config-findings.json) contains one high hardcoded-secret
+  result and one critical excessive-permission result with a complete two-check ledger;
+- [`config-clean.json`](fixtures/mcp-armor/config-clean.json) proves that zero findings are clean only
+  after both checks complete; and
+- [`config-partial.json`](fixtures/mcp-armor/config-partial.json) proves that a structured
+  server-configuration warning clears completeness even though both selected checks ran; and
+- [`config-disabled.json`](fixtures/mcp-armor/config-disabled.json) preserves the detector's
+  low-severity result for a disabled server, distinct from its critical enabled-server result.
+
+The product adapter validates the exact envelope, versions, mode, one-input boundary, check set,
+status/count agreement, stable finding types and severities (including upstream's low rating for a
+disabled risky server), and bounded evidence shapes. It keeps
+the upstream check id as `source_rule`. A hardcoded credential becomes an MCP-secret finding; an
+over-privileged tool or command becomes an MCP-configuration finding. The upstream redacted token
+excerpt remains only in the raw artifact and never enters a finding. Control references are selected
+only from the two exact check ids, never from configuration-controlled names, commands, permissions,
+titles, or severities.
+
+## Remaining dispatch blockers
+
+The local proof is sufficient for adapter and catalog admission, not execution. The catalog stays
+`experimental`, `runnable: false`, with no image tag or digest. Dispatch remains blocked until all
+three conditions are deliberately resolved:
+
+1. The product owner authorizes packaging work and a pinned image is built and tested with the
+   retained patch (or an equivalent accepted upstream release). Publication remains a separate
+   owner decision.
+2. A typed UI/domain path selects exactly one relative MCP configuration file inside the approved
+   immutable repository snapshot; no launcher may search default home-directory locations.
+3. The local machine-output patch is accepted upstream or its exact bytes, application step, and
+   resulting source tree are made part of a reviewed build recipe.
+
+The model-backed and live MCP surface remains outside this slice. Considering it later still
+requires an exact model revision, every fetched-file digest, dependency lock, offline loading
+behavior, inference parameters, output provenance, applicable redistribution record, explicit
+target authorization, and fail-closed model/check errors.
 
 ## Research actions performed
 
-The source repository was shallow-cloned read-only into the ignored `.upstreams/` research area.
-Public Hugging Face repository metadata, model cards, file names, and the weight pointer were read
-to establish the model revision, size, digest, and stated terms. MCP Armor was not installed or
-executed. No model weight, dependency, container image, or credential was downloaded; no MCP
-server, scan target, OAuth flow, or hosted inference service was contacted.
+The source repository was shallow-cloned into the ignored `.upstreams/` research area. Public
+Hugging Face repository metadata, model cards, file names, and the weight pointer were read to
+establish the model revision, size, digest, and stated terms. The local configuration-only patch and
+its tests were executed only against checked-in synthetic JSON fixtures. No package dependency,
+model weight, container image, or credential was downloaded; no MCP server, external scan target,
+OAuth flow, or hosted inference service was contacted. Nothing was packaged, published, pushed to
+the product remote, or submitted upstream.

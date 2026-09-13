@@ -1,0 +1,64 @@
+{
+  "schema_version": "1",
+  "scanner_version": "1.0.2",
+  "mode": "configuration_only",
+  "input_count": 1,
+  "evaluated_input_count": 1,
+  "complete": true,
+  "warnings": [],
+  "checks": [
+    {
+      "id": "hardcoded_secrets",
+      "status": "completed",
+      "finding_count": 1
+    },
+    {
+      "id": "excessive_tool_permissions",
+      "status": "completed",
+      "finding_count": 1
+    }
+  ],
+  "findings": [
+    {
+      "check_id": "hardcoded_secrets",
+      "finding_type": "Hardcoded Secret",
+      "severity": "high",
+      "description": null,
+      "recommendation": null,
+      "entity_type": "configuration",
+      "affected_server": "fixture-risky",
+      "config_file": "tests/fixtures/config-findings.json",
+      "affected_tool": null,
+      "affected_resource": null,
+      "affected_resource_uri": null,
+      "affected_entities": {
+        "secret_type": "OpenAI",
+        "line_number": 12,
+        "matched_text_redacted": "sk-A...BBB\""
+      }
+    },
+    {
+      "check_id": "excessive_tool_permissions",
+      "finding_type": "Excessive Tool Permissions",
+      "severity": "critical",
+      "description": null,
+      "recommendation": null,
+      "entity_type": "configuration",
+      "affected_server": "fixture-risky",
+      "config_file": "tests/fixtures/config-findings.json",
+      "affected_tool": null,
+      "affected_resource": null,
+      "affected_resource_uri": null,
+      "affected_entities": {
+        "risky_tools": [],
+        "risky_permissions": [
+          "terminal:exec"
+        ],
+        "risky_command_flags": [
+          "--allow-terminal"
+        ],
+        "risky_command": "python3"
+      }
+    }
+  ]
+}

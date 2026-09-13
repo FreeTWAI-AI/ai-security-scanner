@@ -1,10 +1,10 @@
 {
   "schema_version": "1.1",
-  "mapping_version": "2026-09-13.1",
+  "mapping_version": "2026-09-13.2",
   "provenance": {
     "reviewed_at": "2026-09-13",
     "review_process": "source_coordinate_and_rationale_review_v1",
-    "canonical_sha256": "12dd26a5fc4a627c85ca30f1c78184dfd51ed5e5f925eea961b97447b3628906"
+    "canonical_sha256": "fc3ef6df01553677ac2cbc1d3b42b824d97be13e5742420258456ca5c65e59a4"
   },
   "relationship": "related",
   "disclaimer": "These evidence-to-control references indicate topical relationships only. They do not establish implementation, effectiveness, certification, or compliance.",
@@ -355,6 +355,14 @@
       "framework_version": "2025",
       "control_id": "LLM05:2025",
       "title": "Improper Output Handling",
+      "applicability": "ai_system"
+    },
+    {
+      "key": "owasp-llm-2025-06",
+      "framework": "OWASP Top 10 for LLM Applications",
+      "framework_version": "2025",
+      "control_id": "LLM06:2025",
+      "title": "Excessive Agency",
       "applicability": "ai_system"
     },
     {
@@ -920,6 +928,31 @@
         "owasp-llm-2025-02"
       ],
       "rationale": "garak's web_injection module tries to make the target emit markdown or script that a client will act on, either exfiltrating conversation content through a URI or running as cross-site scripting. A detector judging those attempts as failures is evidence related to improper output handling and to sensitive information disclosure."
+    },
+    {
+      "engine_id": "mcp-armor",
+      "match_kind": "exact",
+      "source_rule": "hardcoded_secrets",
+      "controls": [
+        "nist-pr-aa-01",
+        "iso-5-17",
+        "owasp-llm-2025-02"
+      ],
+      "rationale": "Static evidence that an MCP configuration embeds a credential pattern is related to credential lifecycle management, authentication-information protection, and sensitive-information disclosure."
+    },
+    {
+      "engine_id": "mcp-armor",
+      "match_kind": "exact",
+      "source_rule": "excessive_tool_permissions",
+      "controls": [
+        "nist-pr-aa-05",
+        "nist-pr-ps-01",
+        "iso-5-18",
+        "iso-8-2",
+        "iso-8-9",
+        "owasp-llm-2025-06"
+      ],
+      "rationale": "Static evidence that an MCP server configuration grants a risky tool, permission, command, or command flag is related to least privilege, configuration management, privileged access safeguards, and excessive agency."
     }
   ],
   "cwe_derived_controls": [

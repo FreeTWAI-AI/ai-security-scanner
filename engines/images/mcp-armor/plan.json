@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "engine_id": "mcp-armor",
+  "plan_kind": "managed_build",
+  "knowledge_date": "2026-09-13",
+  "support_until": "2026-12-12",
+  "maintenance_owner": "teddashh/ai-security-scanner maintainers",
+  "update_procedure": "docs/engine-maintenance.md",
+  "publish_state": "managed_artifact_not_published",
+  "source": {
+    "repository": "https://github.com/aira-security/mcp-armor",
+    "revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
+    "acquisition_source": "https://github.com/aira-security/mcp-armor/commit/6af4cee4665ab6242f02a88952f9127b6a04922a",
+    "local_research_checkout": ".upstreams/aira-security/mcp-armor"
+  },
+  "verified_upstream_artifact": null,
+  "final_artifact": {
+    "repository": "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
+    "tag": null,
+    "digest": null
+  },
+  "build_recipe": null,
+  "dockerfile": {
+    "emitted": false,
+    "reason": "Nothing has been packaged or published. This plan records the reviewed source pin, retained configuration-only patch, fixtures, and thin adapter without claiming owner-authorized image work."
+  },
+  "wrapper": {
+    "required": true,
+    "strategy": "Accept one immutable repository snapshot and one typed relative MCP configuration path, invoke only the configuration-only mode with network disabled and model dependencies absent, and pass only its versioned JSON envelope to the adapter.",
+    "entrypoint": null
+  },
+  "command": [
+    "--engine",
+    "mcp-armor",
+    "--workspace",
+    "/workspace",
+    "--output",
+    "/output"
+  ],
+  "output": {
+    "primary_format": "json",
+    "path": "/output/mcp-armor.json",
+    "media_type": "application/json",
+    "adapter_state": "workspace_unreleased"
+  },
+  "license": {
+    "disposition": "allow",
+    "rationale": "Apache-2.0 permits redistribution of the source-only configuration-check slice and local output patch with the upstream license and notices retained. No model files or model-backed dependencies are part of this integration.",
+    "source_offer_path": null
+  },
+  "blockers": [
+    "No image exists. The pinned source and local configuration-only patch have never been built or tested as a product image, or published.",
+    "No typed MCP configuration-selection path exists to bind exactly one file in the approved repository snapshot and prove that automatic discovery was disabled.",
+    "The configuration-only machine-output contract requires a local patch that is not part of an accepted upstream release."
+  ]
+}

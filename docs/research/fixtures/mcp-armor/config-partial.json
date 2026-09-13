@@ -1,0 +1,29 @@
+{
+  "schema_version": "1",
+  "scanner_version": "1.0.2",
+  "mode": "configuration_only",
+  "input_count": 1,
+  "evaluated_input_count": 1,
+  "complete": false,
+  "warnings": [
+    {
+      "code": "server_config_invalid",
+      "message": "Server 'fixture-invalid' could not be parsed: Server 'fixture-invalid' has invalid transport type 'unsupported'. Valid types: ['stdio', 'http', 'sse']",
+      "config_file": "tests/fixtures/config-partial.json",
+      "check_id": null
+    }
+  ],
+  "checks": [
+    {
+      "id": "hardcoded_secrets",
+      "status": "completed",
+      "finding_count": 0
+    },
+    {
+      "id": "excessive_tool_permissions",
+      "status": "completed",
+      "finding_count": 0
+    }
+  ],
+  "findings": []
+}

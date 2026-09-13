@@ -853,13 +853,14 @@ mod tests {
         "kube-bench",
         "garak",
         "agentic-radar",
+        "mcp-armor",
     ];
 
     #[test]
     fn embedded_catalog_is_bounded_and_only_uses_known_engines() {
         validate_catalog(ENGINES).expect("valid embedded mappings");
         let provenance = catalog_provenance().expect("embedded provenance");
-        assert_eq!(provenance.mapping_version, "2026-09-13.1");
+        assert_eq!(provenance.mapping_version, "2026-09-13.2");
         assert_eq!(provenance.reviewed_at, "2026-09-13");
         assert_eq!(provenance.review_process, REVIEW_PROCESS_V1);
         assert_eq!(provenance.catalog_sha256.len(), 64);
@@ -1063,10 +1064,10 @@ mod tests {
         );
         assert!(overprivileged_policy.iter().all(|item| {
             item.relationship == "related"
-                && item.mapping_version == "2026-09-13.1"
+                && item.mapping_version == "2026-09-13.2"
                 && item.mapping_provenance.as_ref().is_some_and(|provenance| {
                     provenance.catalog_sha256
-                        == "12dd26a5fc4a627c85ca30f1c78184dfd51ed5e5f925eea961b97447b3628906"
+                        == "fc3ef6df01553677ac2cbc1d3b42b824d97be13e5742420258456ca5c65e59a4"
                 })
                 && !item.rationale.to_ascii_lowercase().contains("compliant")
         }));

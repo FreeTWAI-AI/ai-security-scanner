@@ -134,6 +134,11 @@ fn fixture(engine_id: &str) -> (&'static [u8], &'static str, &'static str) {
             "agentic-radar.json",
             "application/json",
         ),
+        "mcp-armor" => (
+            include_bytes!("../../docs/research/fixtures/mcp-armor/config-findings.json"),
+            "mcp-armor.json",
+            "application/json",
+        ),
         other => panic!("no adapter fixture for {other}"),
     }
 }
@@ -152,7 +157,7 @@ fn normalize_bytes(
             Some("aws"),
             &[("aws_account_id", "123456789012")],
         )]
-    } else if engine_id == "agentic-radar" {
+    } else if matches!(engine_id, "agentic-radar" | "mcp-armor") {
         vec![authorized_asset(
             "asset-1",
             AssetKind::Repository,
@@ -331,7 +336,7 @@ fn normalize_ai_generated_fixture(engine_id: &str) -> AdapterOutput {
 }
 
 #[test]
-fn registry_covers_exactly_the_twenty_three_catalog_engines() {
+fn registry_covers_exactly_the_twenty_four_catalog_engines() {
     let catalog = EngineRegistry::load_builtin().expect("valid catalog");
     let catalog_ids = catalog
         .manifests()
@@ -340,8 +345,8 @@ fn registry_covers_exactly_the_twenty_three_catalog_engines() {
         .collect::<BTreeSet<_>>();
     let adapter_ids = BUILTIN_ENGINE_IDS.iter().copied().collect::<BTreeSet<_>>();
 
-    assert_eq!(BUILTIN_ENGINE_IDS.len(), 23);
-    assert_eq!(adapter_ids.len(), 23);
+    assert_eq!(BUILTIN_ENGINE_IDS.len(), 24);
+    assert_eq!(adapter_ids.len(), 24);
     assert_eq!(adapter_ids, catalog_ids);
 
     let adapters = builtin_adapter_registry().expect("valid built-in adapter registry");
@@ -363,6 +368,17 @@ fn registry_covers_exactly_the_twenty_three_catalog_engines() {
     assert_eq!(
         agentic_radar.source_revision.as_deref(),
         Some("65a7e4bd01e2034c7cb52e9620eeed287688cc53")
+    );
+
+    let mcp_armor = catalog.get("mcp-armor").expect("MCP Armor manifest");
+    assert_eq!(mcp_armor.category, EngineCategory::AiMcpConfiguration);
+    assert!(!mcp_armor.compatibility.runnable);
+    assert!(!mcp_armor.default_enabled);
+    assert!(mcp_armor.image.is_none());
+    assert!(mcp_armor.release_blocker().is_some());
+    assert_eq!(
+        mcp_armor.source_revision.as_deref(),
+        Some("6af4cee4665ab6242f02a88952f9127b6a04922a")
     );
 }
 
@@ -2730,6 +2746,297 @@ fn scubagear_run_with_diagnostics(diagnostics: serde_json::Value) -> AdapterOutp
 }
 
 #[test]
+fn mcp_armor_preserves_both_static_configuration_findings_without_secret_material() {
+    let output = normalize_fixture("mcp-armor");
+    assert!(output.complete, "{:?}", output.warnings);
+    assert!(output.warnings.is_empty());
+    assert!(output.observations.is_empty());
+    assert_eq!(output.findings.len(), 2);
+
+    let secret = output
+        .findings
+        .iter()
+        .find(|finding| finding.title == "Hardcoded Secret")
+        .expect("hardcoded-secret finding");
+    assert_eq!(secret.severity, Severity::High);
+    assert_eq!(secret.family, Some(FindingFamily::McpSecret));
+    assert!(secret.recommendation.contains("MCP configuration"));
+    assert_eq!(
+        secret.evidence[0].source_rule.as_deref(),
+        Some("hardcoded_secrets")
+    );
+    assert!(
+        secret.evidence[0]
+            .location
+            .as_deref()
+            .is_some_and(|location| location.contains("line 12") && location.contains("OpenAI"))
+    );
+
+    let permissions = output
+        .findings
+        .iter()
+        .find(|finding| finding.title == "Excessive Tool Permissions")
+        .expect("excessive-permission finding");
+    assert_eq!(permissions.severity, Severity::Critical);
+    assert_eq!(permissions.family, Some(FindingFamily::McpConfiguration));
+    assert!(
+        permissions
+            .recommendation
+            .contains("dangerous command flags")
+    );
+    assert_eq!(
+        permissions.evidence[0].source_rule.as_deref(),
+        Some("excessive_tool_permissions")
+    );
+    assert!(
+        permissions.evidence[0]
+            .location
+            .as_deref()
+            .is_some_and(|location| location.contains("terminal:exec")
+                && location.contains("--allow-terminal"))
+    );
+
+    let serialized = serde_json::to_string(&output.findings).unwrap();
+    for excluded in ["sk-A...BBB", "matched_text_redacted"] {
+        assert!(!serialized.contains(excluded), "{serialized}");
+    }
+}
+
+#[test]
+fn mcp_armor_accepts_a_proven_clean_ledger_and_fails_closed_on_partial_coverage() {
+    let clean = normalize_bytes(
+        "mcp-armor",
+        include_bytes!("../../docs/research/fixtures/mcp-armor/config-clean.json"),
+        "mcp-armor.json",
+        "application/json",
+        "run-mcp-armor-clean",
+    );
+    assert!(clean.complete, "{:?}", clean.warnings);
+    assert!(clean.findings.is_empty());
+    assert!(clean.warnings.is_empty());
+
+    let partial = normalize_bytes(
+        "mcp-armor",
+        include_bytes!("../../docs/research/fixtures/mcp-armor/config-partial.json"),
+        "mcp-armor.json",
+        "application/json",
+        "run-mcp-armor-partial",
+    );
+    assert!(!partial.complete);
+    assert!(partial.findings.is_empty());
+    assert!(partial.warnings.iter().any(|warning| {
+        warning.contains("incomplete configuration coverage (server_config_invalid)")
+            && warning.contains("config-partial.json")
+    }));
+    assert!(partial.warnings.iter().all(|warning| {
+        !warning.contains("fixture-invalid") && !warning.contains("unsupported")
+    }));
+}
+
+#[test]
+fn mcp_armor_preserves_the_upstream_low_rating_for_a_disabled_risky_server() {
+    let output = normalize_bytes(
+        "mcp-armor",
+        include_bytes!("../../docs/research/fixtures/mcp-armor/config-disabled.json"),
+        "mcp-armor.json",
+        "application/json",
+        "run-mcp-armor-disabled",
+    );
+    assert!(output.complete, "{:?}", output.warnings);
+    assert_eq!(output.findings.len(), 1);
+    let finding = &output.findings[0];
+    assert_eq!(finding.severity, Severity::Low);
+    assert_eq!(finding.family, Some(FindingFamily::McpConfiguration));
+    assert!(
+        finding
+            .tags
+            .iter()
+            .any(|tag| tag == "mcp-server-state:disabled")
+    );
+    assert!(
+        finding.evidence[0]
+            .location
+            .as_deref()
+            .is_some_and(|location| location.contains("disabled server"))
+    );
+
+    // Upstream emits the same low result for a disabled entry even when its
+    // command and permission fields carry no separate risky indicator. The
+    // adapter preserves that detector decision instead of rebuilding it.
+    let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../docs/research/fixtures/mcp-armor/config-disabled.json"
+    ))
+    .unwrap();
+    document["findings"][0]["affected_entities"] = serde_json::json!({
+        "disabled": true,
+        "risky_tools": []
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let disabled_only = normalize_bytes(
+        "mcp-armor",
+        &bytes,
+        "mcp-armor.json",
+        "application/json",
+        "run-mcp-armor-disabled-only",
+    );
+    assert!(disabled_only.complete, "{:?}", disabled_only.warnings);
+    assert_eq!(disabled_only.findings.len(), 1);
+    assert_eq!(disabled_only.findings[0].severity, Severity::Low);
+}
+
+#[test]
+fn mcp_armor_keeps_completed_findings_when_a_sibling_shortfall_makes_the_run_partial() {
+    let mut document: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../docs/research/fixtures/mcp-armor/config-findings.json"
+    ))
+    .unwrap();
+    document["complete"] = serde_json::json!(false);
+    document["warnings"] = serde_json::json!([{
+        "code": "server_config_invalid",
+        "message": "TARGET_CONTROLLED_DIAGNOSTIC_MUST_STAY_RAW",
+        "config_file": "tests/fixtures/config-findings.json",
+        "check_id": null
+    }]);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let output = normalize_bytes(
+        "mcp-armor",
+        &bytes,
+        "mcp-armor.json",
+        "application/json",
+        "run-mcp-armor-retained-partial",
+    );
+    assert!(!output.complete);
+    assert_eq!(output.findings.len(), 2);
+    let serialized = format!(
+        "{}{:?}",
+        serde_json::to_string(&output.findings).unwrap(),
+        output.warnings
+    );
+    assert!(serialized.contains("config-findings.json"));
+    assert!(!serialized.contains("TARGET_CONTROLLED_DIAGNOSTIC_MUST_STAY_RAW"));
+}
+
+#[test]
+fn mcp_armor_contract_drift_and_untrusted_detail_always_fail_closed() {
+    let baseline: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../docs/research/fixtures/mcp-armor/config-findings.json"
+    ))
+    .unwrap();
+    let cases = [
+        ("schema", {
+            let mut document = baseline.clone();
+            document["schema_version"] = serde_json::json!("2");
+            document
+        }),
+        ("input-count", {
+            let mut document = baseline.clone();
+            document["input_count"] = serde_json::json!(2);
+            document
+        }),
+        ("missing-warnings", {
+            let mut document = baseline.clone();
+            document.as_object_mut().unwrap().remove("warnings");
+            document
+        }),
+        ("failed-check", {
+            let mut document = baseline.clone();
+            document["complete"] = serde_json::json!(false);
+            document["warnings"] = serde_json::json!([{
+                "code": "check_failed",
+                "message": "UNTRUSTED_FAILURE_DETAIL",
+                "config_file": null,
+                "check_id": "hardcoded_secrets"
+            }]);
+            document["checks"][0]["status"] = serde_json::json!("failed");
+            document["checks"][0]["finding_count"] = serde_json::json!(0);
+            document
+        }),
+        ("unknown-check", {
+            let mut document = baseline.clone();
+            document["findings"][0]["check_id"] = serde_json::json!("invented_check");
+            document
+        }),
+        ("count-mismatch", {
+            let mut document = baseline.clone();
+            document["checks"][1]["finding_count"] = serde_json::json!(0);
+            document
+        }),
+        ("unsupported-detail", {
+            let mut document = baseline.clone();
+            document["findings"][0]["description"] = serde_json::json!("UNTRUSTED_FINDING_DETAIL");
+            document
+        }),
+        ("inconsistent-completeness", {
+            let mut document = baseline.clone();
+            document["warnings"] = serde_json::json!([{
+                "code": "server_config_invalid",
+                "message": "UNTRUSTED_WARNING_DETAIL",
+                "config_file": "tests/fixtures/config-findings.json",
+                "check_id": null
+            }]);
+            document
+        }),
+        ("unexplained-incompleteness", {
+            let mut document = baseline.clone();
+            document["complete"] = serde_json::json!(false);
+            document
+        }),
+    ];
+
+    for (name, document) in cases {
+        let bytes = serde_json::to_vec(&document).unwrap();
+        let output = normalize_bytes(
+            "mcp-armor",
+            &bytes,
+            "mcp-armor.json",
+            "application/json",
+            &format!("run-mcp-armor-drift-{name}"),
+        );
+        assert!(!output.complete, "{name}: {:?}", output.warnings);
+        assert!(!output.warnings.is_empty(), "{name}");
+        let normalized = format!(
+            "{}{:?}",
+            serde_json::to_string(&output.findings).unwrap(),
+            output.warnings
+        );
+        for excluded in [
+            "UNTRUSTED_FAILURE_DETAIL",
+            "UNTRUSTED_FINDING_DETAIL",
+            "UNTRUSTED_WARNING_DETAIL",
+        ] {
+            assert!(!normalized.contains(excluded), "{name}: {normalized}");
+        }
+    }
+}
+
+#[test]
+fn mcp_armor_exact_check_ids_map_without_using_configuration_controlled_text() {
+    let ordinary = normalize_fixture("mcp-armor");
+    let ordinary_controls = ordinary
+        .findings
+        .iter()
+        .flat_map(|finding| &finding.control_references)
+        .map(|reference| reference.control_id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        ordinary_controls,
+        BTreeSet::from([
+            "A.5.17", "A.5.18", "A.8.2", "A.8.9", "PR.AA-01", "PR.AA-05", "PR.PS-01"
+        ])
+    );
+
+    let ai = normalize_ai_system_fixture("mcp-armor");
+    let ai_controls = ai
+        .findings
+        .iter()
+        .flat_map(|finding| &finding.control_references)
+        .map(|reference| reference.control_id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert!(ai_controls.contains("LLM02:2025"));
+    assert!(ai_controls.contains("LLM06:2025"));
+}
+
+#[test]
 fn only_the_wrappers_declared_results_are_normalized() {
     // Every one of these objects carries a status and a rule id, so the
     // recursive walk this replaced would have turned each into a finding. Only
@@ -2917,7 +3224,7 @@ fn versioned_control_references_are_allowlisted_relationships_not_assurance_clai
         );
         assert!(references.iter().all(|reference| {
             reference.relationship == "related"
-                && reference.mapping_version == "2026-09-13.1"
+                && reference.mapping_version == "2026-09-13.2"
                 && matches!(
                     reference.framework.as_str(),
                     "NIST CSF"
@@ -6423,7 +6730,7 @@ fn garak_maps_the_probe_namespace_to_owasp_llm_only_for_a_declared_ai_system() {
         reference.relationship == "related"
             && reference.framework == "OWASP Top 10 for LLM Applications"
             && reference.framework_version == "2025"
-            && reference.mapping_version == "2026-09-13.1"
+            && reference.mapping_version == "2026-09-13.2"
     }));
 }
 
