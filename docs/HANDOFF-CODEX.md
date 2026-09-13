@@ -9,6 +9,11 @@
 > 專案全景與歷史請讀 [完整開發交接筆記](project-handover.zh-TW.md)（978 行，基線 `9f1f570`，**部分章節已被本文取代**，見 §7）。
 > 你的行為約束在 [AGENTS.md](../AGENTS.md)（與 `CLAUDE.md` 逐字相同，由 `tests/ci/skill-parity.test.mjs` 綁定）。
 
+## 0. Product doctrine (locked 2026-09-13 Ted)
+
+See [`PRODUCT-DOCTRINE.md`](PRODUCT-DOCTRINE.md). Short form: optimize **time-to-first-scan**; finish Augustus **Rules 8→14** as pure-data fail-closed evidence only (no launcher/network/credentials/push unless Ted says); **never** invent an advanced Augustus 14-knob UI — one simple starter path + short human reject one-liners; refuse incomplete exports / do not loosen contracts for green builds.
+
+
 ---
 
 ## 1. 目前目標與剛完成的里程碑
