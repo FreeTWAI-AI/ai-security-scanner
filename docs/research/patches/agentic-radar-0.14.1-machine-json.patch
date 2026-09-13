@@ -1,0 +1,349 @@
+From a622b9d62ea9fbab3c25f1ee7dd7ea59de8c1714 Mon Sep 17 00:00:00 2001
+From: Ted Huang <233386770+teddashh@users.noreply.github.com>
+Date: Sun, 13 Sep 2026 02:05:21 -0400
+Subject: [PATCH] feat: make graph JSON safe for machine consumers
+
+---
+ .../analysis/openai_agents/analyze.py         |   6 +-
+ agentic_radar/cli.py                          |  46 +++-
+ agentic_radar/graph.py                        |   8 +
+ tests/graph_json_export_test.py               | 196 ++++++++++++++++++
+ 4 files changed, 246 insertions(+), 10 deletions(-)
+ create mode 100644 tests/graph_json_export_test.py
+
+diff --git a/agentic_radar/analysis/openai_agents/analyze.py b/agentic_radar/analysis/openai_agents/analyze.py
+index d41edd6..8edcffc 100644
+--- a/agentic_radar/analysis/openai_agents/analyze.py
++++ b/agentic_radar/analysis/openai_agents/analyze.py
+@@ -17,8 +17,9 @@ from agentic_radar.graph import GraphDefinition
+ 
+ 
+ class OpenAIAgentsAnalyzer(Analyzer):
+-    def __init__(self):
++    def __init__(self, assess_vulnerabilities: bool = True):
+         super().__init__()
++        self.assess_vulnerabilities = assess_vulnerabilities
+ 
+     def analyze(self, root_directory: str) -> GraphDefinition:
+         tool_assignments = collect_tool_assignments(root_directory)
+@@ -31,7 +32,8 @@ class OpenAIAgentsAnalyzer(Analyzer):
+             mcp_servers=mcp_servers,
+         )
+         guardrails = collect_guardrails(root_directory, agent_assignments)
+-        get_agent_vulnerabilities(agent_assignments, guardrails)
++        if self.assess_vulnerabilities:
++            get_agent_vulnerabilities(agent_assignments, guardrails)
+         tool_categories = load_tool_categories()
+         graph_definition = create_graph_definition(
+             graph_name=Path(root_directory).name,
+diff --git a/agentic_radar/cli.py b/agentic_radar/cli.py
+index 823ef34..3925b59 100644
+--- a/agentic_radar/cli.py
++++ b/agentic_radar/cli.py
+@@ -4,7 +4,7 @@ import shlex
+ import time
+ from enum import Enum
+ from pathlib import Path
+-from typing import Optional
++from typing import Literal, Optional
+ 
+ import typer
+ from dotenv import load_dotenv
+@@ -20,7 +20,8 @@ from agentic_radar.analysis import (
+     N8nAnalyzer,
+     OpenAIAgentsAnalyzer,
+ )
+-from agentic_radar.graph import Agent
++from agentic_radar.graph import Agent, GraphExport
++from agentic_radar.graph import GraphDefinition as AnalyzedGraphDefinition
+ from agentic_radar.mapper import map_vulnerabilities
+ from agentic_radar.prompt_hardening.harden import harden_agent_prompts
+ from agentic_radar.prompt_hardening.pipeline import PromptHardeningPipeline
+@@ -116,7 +117,7 @@ def scan(
+     elif framework == AgenticFramework.n8n:
+         analyzer = N8nAnalyzer()
+     elif framework == AgenticFramework.openai_agents:
+-        analyzer = OpenAIAgentsAnalyzer()
++        analyzer = OpenAIAgentsAnalyzer(assess_vulnerabilities=not export_graph_json)
+     elif framework == AgenticFramework.autogen:
+         analyzer = AutogenAgentChatAnalyzer()
+     else:
+@@ -143,19 +144,29 @@ def analyze_and_generate_report(
+ ):
+     print(f"Analyzing {input_directory} for {framework} graphs")
+     graph = analyzer.analyze(input_directory)
++    sanitize_graph(graph)
+ 
+     if len(graph.nodes) <= 2:  # Only start and end nodes are present
++        if export_graph_json:
++            export_graph(
++                graph=graph,
++                framework=framework,
++                output_file=output_file,
++                status="no_supported_workflow",
++            )
++            raise typer.Exit(code=0)
+         print(
+             f"Agentic Radar didn't find any agentic workflow in input directory: {input_directory}"
+         )
+         raise typer.Exit(code=1)
+-    sanitize_graph(graph)
+ 
+     if export_graph_json:
+-        output_file = output_file.replace(".html", ".json")
+-        with open(output_file, "w") as f:
+-            f.write(graph.model_dump_json(indent=2))
+-        print(f"Graph exported to {output_file}")
++        export_graph(
++            graph=graph,
++            framework=framework,
++            output_file=output_file,
++            status="workflow_found",
++        )
+         raise typer.Exit(code=0)
+ 
+     print("Mapping vulnerabilities")
+@@ -194,6 +205,25 @@ def analyze_and_generate_report(
+     print(f"Report {output_file} generated")
+ 
+ 
++def export_graph(
++    graph: AnalyzedGraphDefinition,
++    framework: str,
++    output_file: str,
++    status: Literal["workflow_found", "no_supported_workflow"],
++):
++    output_file = output_file.replace(".html", ".json")
++    export = GraphExport(
++        scanner_version=__version__,
++        framework=framework,
++        status=status,
++        graph=graph,
++    )
++    with open(output_file, "w", encoding="utf-8") as f:
++        f.write(export.model_dump_json(indent=2))
++        f.write("\n")
++    print(f"Graph exported to {output_file}")
++
++
+ @app.command(
+     "test",
+     help="Test agents in an agentic workflow for various vulnerabilities. Requires OPENAI_API_KEY or AZURE_OPENAI_API_KEY set as an environment variable.",
+diff --git a/agentic_radar/graph.py b/agentic_radar/graph.py
+index a3ed4a1..0280972 100644
+--- a/agentic_radar/graph.py
++++ b/agentic_radar/graph.py
+@@ -72,3 +72,11 @@ class GraphDefinition(BaseModel):
+     edges: List[EdgeDefinition]
+     agents: List[Agent] = Field(default_factory=list)
+     tools: List[NodeDefinition] = Field(default_factory=list)
++
++
++class GraphExport(BaseModel):
++    schema_version: Literal["1"] = "1"
++    scanner_version: str
++    framework: str
++    status: Literal["workflow_found", "no_supported_workflow"]
++    graph: GraphDefinition
+diff --git a/tests/graph_json_export_test.py b/tests/graph_json_export_test.py
+new file mode 100644
+index 0000000..69e8b00
+--- /dev/null
++++ b/tests/graph_json_export_test.py
+@@ -0,0 +1,196 @@
++import json
++
++import pytest
++from typer.testing import CliRunner
++
++import agentic_radar.analysis.openai_agents.analyze as openai_agents_analyze
++import agentic_radar.cli as cli
++from agentic_radar.analysis.openai_agents import OpenAIAgentsAnalyzer
++from agentic_radar.graph import (
++    EdgeDefinition,
++    GraphDefinition,
++    NodeDefinition,
++    NodeType,
++)
++
++runner = CliRunner()
++
++
++class StaticAnalyzer:
++    def __init__(self, graph: GraphDefinition):
++        self.graph = graph
++
++    def analyze(self, _root_directory: str) -> GraphDefinition:
++        return self.graph.model_copy(deep=True)
++
++
++def workflow_graph() -> GraphDefinition:
++    return GraphDefinition(
++        name="fixture",
++        nodes=[
++            NodeDefinition(type=NodeType.BASIC, name="START"),
++            NodeDefinition(type=NodeType.AGENT, name="assistant"),
++            NodeDefinition(type=NodeType.BASIC, name="END"),
++        ],
++        edges=[
++            EdgeDefinition(start="START", end="assistant"),
++            EdgeDefinition(start="assistant", end="END"),
++        ],
++    )
++
++
++@pytest.mark.parametrize(
++    ("framework", "factory_name"),
++    [
++        ("langgraph", "LangGraphAnalyzer"),
++        ("crewai", "CrewAIAnalyzer"),
++        ("n8n", "N8nAnalyzer"),
++        ("openai-agents", "OpenAIAgentsAnalyzer"),
++        ("autogen", "AutogenAgentChatAnalyzer"),
++    ],
++)
++def test_json_export_has_a_versioned_envelope_for_every_framework(
++    monkeypatch, tmp_path, framework, factory_name
++):
++    factory_calls = []
++
++    def analyzer_factory(*args, **kwargs):
++        factory_calls.append((args, kwargs))
++        return StaticAnalyzer(workflow_graph())
++
++    monkeypatch.setattr(cli, factory_name, analyzer_factory)
++    monkeypatch.setattr(
++        cli,
++        "map_vulnerabilities",
++        lambda _graph: pytest.fail("JSON export must bypass vulnerability mapping"),
++    )
++    requested_output = tmp_path / "report.html"
++
++    result = runner.invoke(
++        cli.app,
++        [
++            "scan",
++            framework,
++            "--input-dir",
++            str(tmp_path),
++            "--output-file",
++            str(requested_output),
++            "--export-graph-json",
++        ],
++    )
++
++    assert result.exit_code == 0, result.stdout
++    exported_output = tmp_path / "report.json"
++    payload = json.loads(exported_output.read_text(encoding="utf-8"))
++    assert payload["schema_version"] == "1"
++    assert payload["scanner_version"] == cli.__version__
++    assert payload["framework"] == framework
++    assert payload["status"] == "workflow_found"
++    assert payload["graph"]["name"] == "fixture"
++    assert payload["graph"]["nodes"][1]["node_type"] == "agent"
++    if framework == "openai-agents":
++        assert factory_calls == [((), {"assess_vulnerabilities": False})]
++    else:
++        assert factory_calls == [((), {})]
++
++
++def test_json_export_reports_no_supported_workflow_as_data(monkeypatch, tmp_path):
++    empty_graph = GraphDefinition(
++        name="fixture",
++        nodes=[
++            NodeDefinition(type=NodeType.BASIC, name="START"),
++            NodeDefinition(type=NodeType.BASIC, name="END"),
++        ],
++        edges=[],
++    )
++    monkeypatch.setattr(cli, "LangGraphAnalyzer", lambda: StaticAnalyzer(empty_graph))
++    requested_output = tmp_path / "empty.html"
++
++    result = runner.invoke(
++        cli.app,
++        [
++            "scan",
++            "langgraph",
++            "--input-dir",
++            str(tmp_path),
++            "--output-file",
++            str(requested_output),
++            "--export-graph-json",
++        ],
++    )
++
++    assert result.exit_code == 0, result.stdout
++    payload = json.loads((tmp_path / "empty.json").read_text(encoding="utf-8"))
++    assert payload["status"] == "no_supported_workflow"
++    assert payload["graph"]["nodes"] == [
++        {
++            "node_type": "basic",
++            "name": "START",
++            "description": None,
++            "label": None,
++            "category": None,
++            "vulnerabilities": [],
++        },
++        {
++            "node_type": "basic",
++            "name": "END",
++            "description": None,
++            "label": None,
++            "category": None,
++            "vulnerabilities": [],
++        },
++    ]
++
++
++def test_html_output_keeps_the_existing_no_workflow_failure(monkeypatch, tmp_path):
++    empty_graph = GraphDefinition(name="fixture", nodes=[], edges=[])
++    monkeypatch.setattr(cli, "LangGraphAnalyzer", lambda: StaticAnalyzer(empty_graph))
++    output = tmp_path / "empty.html"
++
++    result = runner.invoke(
++        cli.app,
++        [
++            "scan",
++            "langgraph",
++            "--input-dir",
++            str(tmp_path),
++            "--output-file",
++            str(output),
++        ],
++    )
++
++    assert result.exit_code == 1
++    assert "didn't find any agentic workflow" in result.stdout
++    assert not output.exists()
++
++
++def test_openai_agents_static_analysis_can_skip_hosted_assessment(
++    monkeypatch, tmp_path
++):
++    monkeypatch.setattr(
++        openai_agents_analyze, "collect_tool_assignments", lambda _root: {}
++    )
++    monkeypatch.setattr(openai_agents_analyze, "load_predefined_tools", lambda: {})
++    monkeypatch.setattr(openai_agents_analyze, "collect_mcp_servers", lambda _root: {})
++    monkeypatch.setattr(
++        openai_agents_analyze,
++        "collect_agent_assignments",
++        lambda **_kwargs: {},
++    )
++    monkeypatch.setattr(
++        openai_agents_analyze,
++        "collect_guardrails",
++        lambda _root, _agents: {},
++    )
++    monkeypatch.setattr(openai_agents_analyze, "load_tool_categories", lambda: {})
++    monkeypatch.setattr(
++        openai_agents_analyze,
++        "get_agent_vulnerabilities",
++        lambda _agents, _guardrails: pytest.fail(
++            "static graph export must not initialize hosted assessment"
++        ),
++    )
++
++    graph = OpenAIAgentsAnalyzer(assess_vulnerabilities=False).analyze(str(tmp_path))
++
++    assert [node.name for node in graph.nodes] == ["start", "end"]

@@ -146,3 +146,41 @@ for all five framework values. It must serialize the same parser-produced graph 
 parsers, vulnerability matching, severity, evidence, or remediation logic. Until that contract is
 available and pinned, this repository may evaluate a minimal equivalent patch in the ignored
 research checkout, but it must not add the catalog entry, adapter, or packaged artifact.
+
+## Local patch evaluation
+
+On 2026-09-13, that minimal patch was evaluated against the pinned source in the ignored research
+checkout. The exact [`agentic-radar-0.14.1-machine-json.patch`](patches/agentic-radar-0.14.1-machine-json.patch)
+has SHA-256 `b32a6126472012e53794a5888e4af05285096e350eb38f469145ac429806c6b9`.
+It was generated from local research commit
+`a622b9d62ea9fbab3c25f1ee7dd7ea59de8c1714`, whose parent is the audited upstream commit.
+
+The patch changes only these behaviors:
+
+- wraps the existing parser-produced graph in schema version `1`, scanner version, selected
+  framework, and `workflow_found` or `no_supported_workflow` status;
+- emits the empty-workflow state with process exit 0 only for the JSON path, while preserving the
+  existing HTML exit-1 behavior; and
+- makes OpenAI Agents vulnerability assessment optional, retaining its existing default for HTML
+  while disabling it for static JSON export.
+
+The reviewed source-file hashes are:
+
+| File | Upstream SHA-256 | Patched SHA-256 |
+| --- | --- | --- |
+| `agentic_radar/analysis/openai_agents/analyze.py` | `9d608a2c18ee308fb3e3322d0a01541310eb63f5027de7eed6d68a9a8aa70cdc` | `8e6b284e2ff65ace79887f2e69c0c3ac318dff6679b7dae369f88338ac7c914c` |
+| `agentic_radar/cli.py` | `a9ff61e626b21ba58ea677b15834d0986609c4ba8d5a6ebff593b689c8ada0a2` | `c0a7bcf69da7dd54d0e7ddc779ce22eb4565b4ff2a578ee76977237a5a6ec520` |
+| `agentic_radar/graph.py` | `760e6badf7b0d61af20a62a4bf0eb3bac67d04d9d39f1cefdb8aa2ffc5030b0d` | `95c25ead6df18e2cb37030499fa4dd10e8ffd8d06779a689b3457b42d5059bcd` |
+
+The added focused test file has SHA-256
+`eb1440eebc1767e0759c3b166bafe66b1197ccde21bffc4815634179fa85e8e8`. Its eight tests cover all
+five framework selectors, the exact versioned envelope, bypass of generic vulnerability mapping,
+the explicit empty state, preservation of the HTML failure behavior, and the OpenAI Agents
+no-hosted-assessment branch. Ruff and formatting checks passed, mypy reported no issues in 90 source
+files, and all eight focused tests passed. The tests used in-memory graphs and temporary output
+directories; they did not execute Agentic Radar against a project or contact a target.
+
+This patch is retained as research evidence only. It has not been applied to product code, admitted
+to the engine catalog, packaged, published, or submitted upstream. Its removal condition is an
+upstream release with an equivalent documented and tested machine-output contract. A new upstream
+revision requires a fresh audit rather than rebasing these hashes by assumption.
