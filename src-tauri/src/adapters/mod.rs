@@ -4338,6 +4338,7 @@ fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
     }
     let rows = json_rows(parsed, warnings);
     let target = garak_target(&rows);
+    let contexts = garak_probe_contexts(&rows);
     let mut records = Vec::new();
     for (pointer, value) in &rows {
         let Some(object) = value.as_object() else {
@@ -4404,7 +4405,13 @@ fn extract_garak(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
                 vec![],
                 vec![],
             ),
-            Some(garak_counts_sentence(fails, evaluated, unjudged, processed)),
+            Some(garak_counts_sentence(
+                fails,
+                evaluated,
+                unjudged,
+                processed,
+                contexts.get(probe.as_str()),
+            )),
             None,
             None,
             None,
@@ -4440,6 +4447,91 @@ fn garak_target(rows: &[(String, &Value)]) -> String {
         .unwrap_or_else(|| "model endpoint".into())
 }
 
+/// What a garak probe said it was trying to do, and one prompt it sent doing it.
+///
+/// Both come from the run's own `attempt` rows. Neither is required: a report
+/// trimmed to its eval rows still normalizes, it just carries the counts alone.
+#[derive(Default)]
+struct GarakProbeContext {
+    goal: Option<String>,
+    prompt: Option<String>,
+}
+
+/// Index the run's attempt rows by the probe that produced them.
+///
+/// The eval rows carry a verdict and nothing else -- not what the probe was
+/// after, not what it sent. Without this a reader is told that
+/// `dan.AutoDANCached` failed four times and has no way to find out what that
+/// means without leaving the report.
+///
+/// Deliberately not the attempt that failed. Deciding which attempts failed is
+/// garak's own scoring, threshold included, and re-deriving it here to pick a
+/// prettier quote would be this product doing detection. The first attempt that
+/// carries each field is representative of what the probe sends, which is the
+/// question a reader actually has, and it is answered without judging anything.
+///
+/// Model outputs are never read. The prompt is garak's own test input; the
+/// reply is the target's content, and evidence does not carry it.
+fn garak_probe_contexts(rows: &[(String, &Value)]) -> BTreeMap<String, GarakProbeContext> {
+    let mut contexts: BTreeMap<String, GarakProbeContext> = BTreeMap::new();
+    for object in rows.iter().filter_map(|(_, value)| value.as_object()) {
+        if string_any(object, &["entry_type"]).as_deref() != Some("attempt") {
+            continue;
+        }
+        let Some(probe) = exact_rule_string_any(object, &["probe_classname"]) else {
+            continue;
+        };
+        let context = contexts.entry(probe).or_default();
+        if context.goal.is_none() {
+            context.goal = garak_bounded_line(string_any(object, &["goal"]), MAX_SHORT_TEXT);
+        }
+        // An empty first turn is normal -- `test.Test` sends empty strings -- so
+        // a later attempt still gets to supply the example.
+        if context.prompt.is_none() {
+            context.prompt = garak_bounded_line(garak_first_prompt_text(object), 240);
+        }
+    }
+    contexts
+}
+
+/// The text of the first turn garak sent, ignoring every later turn and every
+/// reply. Only the `user` role is read: an `assistant` turn in a multi-turn
+/// probe is generated content, not the probe's input.
+fn garak_first_prompt_text(object: &Map<String, Value>) -> Option<String> {
+    object
+        .get("prompt")?
+        .as_object()?
+        .get("turns")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_object)
+        .find(|turn| string_any(turn, &["role"]).as_deref() == Some("user"))?
+        .get("content")?
+        .as_object()?
+        .get("text")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// One printable line, bounded, with an explicit mark when it was cut short.
+///
+/// A probe prompt arrives with its own newlines and padding, and a sentence
+/// that inlines it verbatim stops being one line. Silently truncating is worse
+/// than either: a reader who cannot see that the quote ends early may go
+/// looking for why the prompt was so short.
+fn garak_bounded_line(value: Option<String>, max_chars: usize) -> Option<String> {
+    let collapsed = value?.split_whitespace().collect::<Vec<_>>().join(" ");
+    let bounded = safe_text(&collapsed, max_chars);
+    if bounded.is_empty() {
+        return None;
+    }
+    Some(if collapsed.chars().count() > bounded.chars().count() {
+        format!("{bounded}…")
+    } else {
+        bounded
+    })
+}
+
 fn garak_count(object: &Map<String, Value>, key: &str) -> Option<u64> {
     object.get(key)?.as_u64()
 }
@@ -4455,6 +4547,7 @@ fn garak_counts_sentence(
     evaluated: Option<u64>,
     unjudged: Option<u64>,
     processed: Option<u64>,
+    context: Option<&GarakProbeContext>,
 ) -> String {
     let mut sentence = match evaluated {
         Some(evaluated) => {
@@ -4475,6 +4568,12 @@ fn garak_counts_sentence(
         ));
     }
     sentence.push('.');
+    if let Some(goal) = context.and_then(|context| context.goal.as_deref()) {
+        sentence.push_str(&format!(" The probe's stated goal: {goal}."));
+    }
+    if let Some(prompt) = context.and_then(|context| context.prompt.as_deref()) {
+        sentence.push_str(&format!(" One of the prompts it sent: {prompt}"));
+    }
     sentence
 }
 
