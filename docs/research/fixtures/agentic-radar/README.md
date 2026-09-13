@@ -10,7 +10,9 @@ completed.
 The fixtures were generated on 2026-09-13 from upstream
 `splx-ai/agentic-radar@65a7e4bd01e2034c7cb52e9620eeed287688cc53` with the exact reviewed
 [`agentic-radar-0.14.1-machine-json.patch`](../../patches/agentic-radar-0.14.1-machine-json.patch)
-applied. The patched checkout was at local research commit
+applied. The patch has SHA-256
+`d32c61e4c2134141686e950a3f025c1b521a1f0096e5572c6846b65d0afb9d72`. The patched checkout was at
+local research commit
 `1a3e4d81e3b122a69a529f1553a0b7239b64750d`.
 
 Every invocation ran with an empty inherited environment except for fixed `PATH`, `PYTHONPATH`, and

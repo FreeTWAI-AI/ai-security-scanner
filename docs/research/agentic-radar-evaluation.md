@@ -223,3 +223,38 @@ The CrewAI graph's node and edge array order varied between two isolated invocat
 in-memory graph uses sets. This does not change completeness or graph membership, but it confirms
 that a future adapter must identify and deduplicate observations by stable content rather than array
 position.
+
+## Step 2b / Step 2c convergence audit
+
+The 2026-09-13 read-only audit found one converged evidence chain; no duplicate implementation is
+needed:
+
+- The pinned revision is identical in this decision, the fixture manifest, upstream drafts, engine
+  catalog, unpublished build-plan record, and upstream lock. Local research commit
+  `1a3e4d81e3b122a69a529f1553a0b7239b64750d` has that revision as its exact parent. The retained
+  patch digest is identical in this decision, the fixture manifest, upstream drafts, and CI
+  contract.
+- The catalog record is `experimental`, not default-enabled, and `runnable: false`; it has no image,
+  network destinations, or wrapper entrypoint. Its unpublished plan has no artifact tag, digest,
+  Dockerfile, or entrypoint. The catalog and plan retain the same three blockers.
+- Adapter version `0.1.4` agrees with the catalog and adapter provenance. The adapter admits only
+  schema `1`, scanner `0.14.1`, the five reviewed framework identifiers, and the two reviewed
+  structural statuses. It emits only typed workflow-component and workflow-relationship
+  observations, deduplicates by bounded content, excludes sensitive free text, and never emits a
+  finding. Structured warnings preserve the partial graph while clearing completeness; injected
+  vulnerability claims are ignored and also clear completeness.
+- The six retained fixtures cover all five frameworks plus the explicit empty state. Their hashes,
+  structure, and completeness relation remain pinned: CrewAI retains five diagnostics and is
+  incomplete; the other five documents carry no warnings. Inventory completion is not a security
+  result and cannot create a no-problems claim.
+- The issue and pull-request drafts use the same pin and patch digest, retain the unresolved
+  `#ISSUE` placeholder, and require an explicitly authorized live duplicate search, maintainer
+  acceptance, rebase, and fresh upstream checks before submission. The local patch commit is not in
+  any locally known remote-tracking ref. This audit made no network request and makes no claim about
+  the live issue tracker.
+
+Step 2b and Step 2c are therefore already present and internally consistent. Do not add a second
+catalog entry, adapter, patch, fixture family, or draft. Agentic Radar remains non-dispatchable until
+all three recorded blockers are resolved: there is no packaged image, no typed framework-selection
+path, and no accepted upstream release containing the machine-output contract. Resolving or acting
+on any of those blockers requires a separately authorized task.
