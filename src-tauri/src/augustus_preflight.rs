@@ -13,6 +13,7 @@ use thiserror::Error;
 
 use crate::augustus_terminal::{
     AUGUSTUS_FROZEN_DETECTOR, AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS, AUGUSTUS_FROZEN_PROBE,
+    AUGUSTUS_FROZEN_PROMPT_CORPUS_SHA256, MAX_AUGUSTUS_PROMPT_BYTES,
 };
 
 pub const AUGUSTUS_PREFLIGHT_SCHEMA_VERSION: &str = "1";
@@ -40,6 +41,9 @@ const AUGUSTUS_FROZEN_SCHEME: &str = "https";
 const AUGUSTUS_FROZEN_HOST: &str = "api.openai.com";
 const AUGUSTUS_FROZEN_PORT: u16 = 443;
 const AUGUSTUS_FROZEN_API_BASE_PATH: &str = "/v1";
+const AUGUSTUS_FROZEN_PROMPT_CANONICALIZATION: &str =
+    "UTF-8 JSON array in source order with no insignificant whitespace";
+const AUGUSTUS_FROZEN_PROMPT_TOTAL_UTF8_BYTES: usize = 3_212;
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -247,6 +251,28 @@ struct AugustusProfileAttemptShapeDocument {
     schema_version: String,
     profile_id: String,
     allowlist: Vec<AugustusProfileAttemptShapeEntryFields>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfilePromptCorpusFields {
+    canonicalization: String,
+    sha256: String,
+    count: u32,
+    total_utf8_bytes: usize,
+    maximum_prompt_utf8_bytes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfilePromptCorpusEntryFields {
+    prompt_corpus: AugustusProfilePromptCorpusFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfilePromptCorpusDocument {
+    schema_version: String,
+    profile_id: String,
+    source_revision: String,
+    allowlist: Vec<AugustusProfilePromptCorpusEntryFields>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -571,6 +597,73 @@ impl AugustusAttemptShapeEvidence {
 
     pub fn terminal_reconciliation_evidence_state(&self) -> AugustusAttemptShapeRuntimeState {
         self.terminal_reconciliation_evidence_state
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusFrozenPromptCorpusAttestation {
+    source_revision: String,
+    canonicalization: String,
+    sha256: String,
+    count: u32,
+    total_utf8_bytes: usize,
+    maximum_prompt_utf8_bytes: usize,
+}
+
+impl AugustusFrozenPromptCorpusAttestation {
+    pub fn source_revision(&self) -> &str {
+        &self.source_revision
+    }
+
+    pub fn canonicalization(&self) -> &str {
+        &self.canonicalization
+    }
+
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    pub fn total_utf8_bytes(&self) -> usize {
+        self.total_utf8_bytes
+    }
+
+    pub fn maximum_prompt_utf8_bytes(&self) -> usize {
+        self.maximum_prompt_utf8_bytes
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusPromptSourceBindingState {
+    Absent,
+}
+
+/// Pure-data Rule 8 evidence for the frozen ordered prompt corpus.
+///
+/// The profile attestation is retained only when its complete identity and all
+/// reviewed corpus bounds match the terminal verifier. It is not proof of the
+/// prompt source a future launcher would execute, so that binding stays absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusPromptCorpusEvidence {
+    frozen_attestation: Option<AugustusFrozenPromptCorpusAttestation>,
+    executed_source_binding_state: AugustusPromptSourceBindingState,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusPromptCorpusEvidence {
+    pub fn frozen_attestation(&self) -> Option<&AugustusFrozenPromptCorpusAttestation> {
+        self.frozen_attestation.as_ref()
+    }
+
+    pub fn executed_source_binding_state(&self) -> AugustusPromptSourceBindingState {
+        self.executed_source_binding_state
     }
 
     pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
@@ -1159,6 +1252,73 @@ fn produce_attempt_shape_evidence(profile_json: &[u8]) -> AugustusAttemptShapeEv
     }
 }
 
+/// Produces Rule 8 evidence without accepting a caller-declared corpus.
+///
+/// The ordered corpus digest, count, and byte bounds are read from the embedded
+/// profile and cross-checked against the terminal verifier's frozen constants.
+/// No executed-source statement is accepted until a separately reviewed typed
+/// launcher can bind its admitted artifact to that source.
+pub fn produce_augustus_prompt_corpus_evidence() -> AugustusPromptCorpusEvidence {
+    produce_prompt_corpus_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_prompt_corpus_evidence(profile_json: &[u8]) -> AugustusPromptCorpusEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfilePromptCorpusDocument>(profile_json).ok()
+    } else {
+        None
+    };
+    let corpus = profile
+        .as_ref()
+        .and_then(|profile| match profile.allowlist.as_slice() {
+            [entry] => Some(&entry.prompt_corpus),
+            _ => None,
+        });
+    let corpus_attestation_matches = corpus.is_some_and(|corpus| {
+        corpus.canonicalization == AUGUSTUS_FROZEN_PROMPT_CANONICALIZATION
+            && corpus.sha256 == AUGUSTUS_FROZEN_PROMPT_CORPUS_SHA256
+            && corpus.count == AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS
+            && corpus.total_utf8_bytes == AUGUSTUS_FROZEN_PROMPT_TOTAL_UTF8_BYTES
+            && corpus.maximum_prompt_utf8_bytes == MAX_AUGUSTUS_PROMPT_BYTES
+    });
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+                && profile.source_revision == AUGUSTUS_SOURCE_REVISION
+        });
+    let frozen_attestation = if profile_is_trusted && corpus_attestation_matches {
+        corpus.map(|corpus| AugustusFrozenPromptCorpusAttestation {
+            source_revision: AUGUSTUS_SOURCE_REVISION.to_owned(),
+            canonicalization: corpus.canonicalization.clone(),
+            sha256: corpus.sha256.clone(),
+            count: corpus.count,
+            total_utf8_bytes: corpus.total_utf8_bytes,
+            maximum_prompt_utf8_bytes: corpus.maximum_prompt_utf8_bytes,
+        })
+    } else {
+        None
+    };
+
+    let mut rejection_condition_indices = Vec::with_capacity(2);
+    if !corpus_attestation_matches {
+        rejection_condition_indices.push(0);
+    }
+    rejection_condition_indices.push(1);
+
+    AugustusPromptCorpusEvidence {
+        frozen_attestation,
+        executed_source_binding_state: AugustusPromptSourceBindingState::Absent,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 8,
+            rule_id: AugustusPreflightRuleId::PromptCorpusAttestation,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices,
+        },
+    }
+}
+
 fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
     let profile_admission = produce_augustus_profile_admission_evidence();
     input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
@@ -1178,6 +1338,9 @@ fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
 
     let attempt_shape = produce_augustus_attempt_shape_evidence();
     input.rule_evidence[6].clone_from(attempt_shape.rule_evidence());
+
+    let prompt_corpus = produce_augustus_prompt_corpus_evidence();
+    input.rule_evidence[7].clone_from(prompt_corpus.rule_evidence());
 }
 
 /// Evaluates a bounded, research-only Augustus preflight input.
@@ -1900,6 +2063,86 @@ mod tests {
             produce_augustus_attempt_shape_evidence().rule_evidence()
         );
         assert_eq!(input.rule_evidence[6].rejection_condition_indices(), &[2]);
+    }
+
+    #[test]
+    fn current_prompt_corpus_attestation_is_frozen_without_executed_source_binding() {
+        let evidence = produce_augustus_prompt_corpus_evidence();
+        let attestation = evidence
+            .frozen_attestation()
+            .expect("trusted frozen prompt-corpus attestation");
+
+        assert_eq!(attestation.source_revision(), AUGUSTUS_SOURCE_REVISION);
+        assert_eq!(
+            attestation.canonicalization(),
+            AUGUSTUS_FROZEN_PROMPT_CANONICALIZATION
+        );
+        assert_eq!(attestation.sha256(), AUGUSTUS_FROZEN_PROMPT_CORPUS_SHA256);
+        assert_eq!(attestation.count(), AUGUSTUS_FROZEN_EXPECTED_ATTEMPTS);
+        assert_eq!(
+            attestation.total_utf8_bytes(),
+            AUGUSTUS_FROZEN_PROMPT_TOTAL_UTF8_BYTES
+        );
+        assert_eq!(
+            attestation.maximum_prompt_utf8_bytes(),
+            MAX_AUGUSTUS_PROMPT_BYTES
+        );
+        assert_eq!(
+            evidence.executed_source_binding_state(),
+            AugustusPromptSourceBindingState::Absent
+        );
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 8,
+                rule_id: AugustusPreflightRuleId::PromptCorpusAttestation,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![1],
+            }
+        );
+    }
+
+    #[test]
+    fn prompt_corpus_metadata_drift_uses_condition_zero() {
+        for (field, drifted_value) in [
+            ("canonicalization", json!("unsupported")),
+            ("sha256", json!("0".repeat(64))),
+            ("count", json!(14)),
+            ("total_utf8_bytes", json!(3_211)),
+            ("maximum_prompt_utf8_bytes", json!(232)),
+        ] {
+            let mut profile: Value =
+                serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+            profile["allowlist"][0]["prompt_corpus"][field] = drifted_value;
+            let evidence = produce_prompt_corpus_evidence(
+                &serde_json::to_vec(&profile).expect("serializable prompt-corpus drift"),
+            );
+
+            assert_eq!(evidence.frozen_attestation(), None, "field: {field}");
+            assert_eq!(
+                evidence.rule_evidence().rejection_condition_indices(),
+                &[0, 1],
+                "field: {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn caller_cannot_mark_prompt_corpus_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[8].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[7].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[7],
+            produce_augustus_prompt_corpus_evidence().rule_evidence()
+        );
+        assert_eq!(input.rule_evidence[7].rejection_condition_indices(), &[1]);
     }
 
     #[test]

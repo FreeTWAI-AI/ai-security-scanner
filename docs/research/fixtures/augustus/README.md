@@ -68,8 +68,10 @@ as intent, while separately recording that neither launcher nor HTTP-gate enforc
 launcher and destination-gate enforcement remain absent. Rule 6 retains the exact one-entry
 probe/detector allowlist, case-insensitive setting, and 15-attempt metadata, but the machine plan
 remains absent. Rule 7 separately retains the 15-attempt, one-turn, one-generation, no-tools shape,
-while terminal reconciliation evidence remains absent. With the current profile, every
-schema-valid pair therefore stops at rule 1 when evaluated by the product.
+while terminal reconciliation evidence remains absent. Rule 8 retains the reviewed ordered corpus
+digest, source revision, count, and byte bounds, but has no launcher evidence binding the executed
+prompt source to that attestation. With the current profile, every schema-valid pair therefore stops
+at rule 1 when evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |
