@@ -12,9 +12,13 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 
 pub const AUGUSTUS_PREFLIGHT_SCHEMA_VERSION: &str = "1";
+pub const AUGUSTUS_PROFILE_SCHEMA_VERSION: &str = "1";
 pub const AUGUSTUS_PROFILE_ID: &str = "augustus-openai-promptinject-v1";
 pub const AUGUSTUS_PROFILE_SHA256: &str =
     "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4";
+pub const AUGUSTUS_SOURCE_REVISION: &str = "f032fc6373aaa9983868282b31dc9c59503c78a2";
+pub const AUGUSTUS_MACHINE_PATCH_SHA256: &str =
+    "4f6c1e0d16014ac2a638ec50ebbab053b7a3c6a7320911fbff14b8541f45b59a";
 pub const AUGUSTUS_ENFORCEMENT_MATRIX_SHA256: &str =
     "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df";
 pub const AUGUSTUS_REJECTION_VECTORS_SHA256: &str =
@@ -22,6 +26,11 @@ pub const AUGUSTUS_REJECTION_VECTORS_SHA256: &str =
 pub const MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES: usize = 64 * 1024;
 
 const RULE_COUNT: usize = 14;
+const PROFILE_ADMISSION_RULE_COUNT: usize = 2;
+const FROZEN_AUGUSTUS_PROFILE: &[u8] =
+    include_bytes!("../../docs/research/augustus-single-destination-profile.json");
+const RETAINED_AUGUSTUS_MACHINE_PATCH: &[u8] =
+    include_bytes!("../../docs/research/patches/augustus-0.14.29-machine-json.patch");
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -75,7 +84,7 @@ pub struct AugustusArtifactReferences {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-struct AugustusRuleEvidence {
+pub struct AugustusRuleEvidence {
     pre_contact_order: u8,
     rule_id: AugustusPreflightRuleId,
     state: AugustusEvidenceState,
@@ -84,10 +93,73 @@ struct AugustusRuleEvidence {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum AugustusEvidenceState {
+pub enum AugustusEvidenceState {
     Verified,
     Rejected,
     Unverified,
+}
+
+impl AugustusRuleEvidence {
+    pub fn pre_contact_order(&self) -> u8 {
+        self.pre_contact_order
+    }
+
+    pub fn rule_id(&self) -> AugustusPreflightRuleId {
+        self.rule_id
+    }
+
+    pub fn state(&self) -> AugustusEvidenceState {
+        self.state
+    }
+
+    pub fn rejection_condition_indices(&self) -> &[u8] {
+        &self.rejection_condition_indices
+    }
+}
+
+/// Pure-data evidence derived from the retained Augustus research artifacts.
+///
+/// This value covers only the first two checks. It does not grant scope, create
+/// an egress lease, or authorize execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusProfileAdmissionEvidence {
+    calculated_profile_sha256: String,
+    calculated_machine_patch_sha256: String,
+    source_revision: Option<String>,
+    dispatch_blocker_count: Option<usize>,
+    rule_evidence: [AugustusRuleEvidence; PROFILE_ADMISSION_RULE_COUNT],
+}
+
+impl AugustusProfileAdmissionEvidence {
+    pub fn calculated_profile_sha256(&self) -> &str {
+        &self.calculated_profile_sha256
+    }
+
+    pub fn calculated_machine_patch_sha256(&self) -> &str {
+        &self.calculated_machine_patch_sha256
+    }
+
+    pub fn source_revision(&self) -> Option<&str> {
+        self.source_revision.as_deref()
+    }
+
+    pub fn dispatch_blocker_count(&self) -> Option<usize> {
+        self.dispatch_blocker_count
+    }
+
+    pub fn rule_evidence(&self) -> &[AugustusRuleEvidence; PROFILE_ADMISSION_RULE_COUNT] {
+        &self.rule_evidence
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileAdmissionFields {
+    schema_version: String,
+    profile_id: String,
+    normative_status: String,
+    source_revision: String,
+    machine_patch_sha256: String,
+    dispatch_blockers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -274,6 +346,104 @@ const RULE_CONTRACTS: [RuleContract; RULE_COUNT] = [
     },
 ];
 
+/// Produces the first two preflight evidence rows from retained, frozen data.
+///
+/// The caller supplies no identity, provenance, status, or blocker claims. The
+/// complete profile and retained machine patch are compiled into this module,
+/// hashed again here, and compared with their reviewed constants.
+pub fn produce_augustus_profile_admission_evidence() -> AugustusProfileAdmissionEvidence {
+    produce_profile_admission_evidence(FROZEN_AUGUSTUS_PROFILE, RETAINED_AUGUSTUS_MACHINE_PATCH)
+}
+
+fn produce_profile_admission_evidence(
+    profile_json: &[u8],
+    machine_patch: &[u8],
+) -> AugustusProfileAdmissionEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let calculated_machine_patch_sha256 = hex::encode(Sha256::digest(machine_patch));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileAdmissionFields>(profile_json).ok()
+    } else {
+        None
+    };
+
+    let profile_identity_matches = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let provenance_matches = calculated_machine_patch_sha256 == AUGUSTUS_MACHINE_PATCH_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.source_revision == AUGUSTUS_SOURCE_REVISION
+                && profile.machine_patch_sha256 == AUGUSTUS_MACHINE_PATCH_SHA256
+                && profile.machine_patch_sha256 == calculated_machine_patch_sha256
+        });
+
+    let mut profile_rejections = Vec::with_capacity(3);
+    if !profile_identity_matches {
+        profile_rejections.push(0);
+    }
+    if !provenance_matches {
+        profile_rejections.push(1);
+    }
+    if profile
+        .as_ref()
+        .is_some_and(|profile| profile.normative_status == "research_only_blocked")
+    {
+        profile_rejections.push(2);
+    }
+
+    let profile_state = if profile_rejections.is_empty() {
+        AugustusEvidenceState::Verified
+    } else {
+        AugustusEvidenceState::Rejected
+    };
+    let source_revision = if profile_identity_matches {
+        profile
+            .as_ref()
+            .map(|profile| profile.source_revision.clone())
+    } else {
+        None
+    };
+    let (blocker_state, blocker_rejections, dispatch_blocker_count) = if profile_identity_matches {
+        let blocker_count = profile
+            .as_ref()
+            .map_or(0, |profile| profile.dispatch_blockers.len());
+        if blocker_count == 0 {
+            (AugustusEvidenceState::Verified, Vec::new(), Some(0))
+        } else {
+            (
+                AugustusEvidenceState::Rejected,
+                vec![0],
+                Some(blocker_count),
+            )
+        }
+    } else {
+        (AugustusEvidenceState::Unverified, vec![0], None)
+    };
+
+    AugustusProfileAdmissionEvidence {
+        calculated_profile_sha256,
+        calculated_machine_patch_sha256,
+        source_revision,
+        dispatch_blocker_count,
+        rule_evidence: [
+            AugustusRuleEvidence {
+                pre_contact_order: 1,
+                rule_id: AugustusPreflightRuleId::ProfileIdentityAndProvenance,
+                state: profile_state,
+                rejection_condition_indices: profile_rejections,
+            },
+            AugustusRuleEvidence {
+                pre_contact_order: 2,
+                rule_id: AugustusPreflightRuleId::UnresolvedDispatchBlockers,
+                state: blocker_state,
+                rejection_condition_indices: blocker_rejections,
+            },
+        ],
+    }
+}
+
 /// Evaluates a bounded, research-only Augustus preflight input.
 ///
 /// The only successful output is `reject_before_contact`. Invalid input is an
@@ -285,9 +455,13 @@ pub fn evaluate_augustus_research_preflight(
         return Err(AugustusPreflightError::InputTooLarge);
     }
 
-    let input: AugustusPreflightInput =
+    let mut input: AugustusPreflightInput =
         serde_json::from_slice(input_json).map_err(|_| AugustusPreflightError::InvalidDocument)?;
     validate_input(&input)?;
+
+    let profile_admission = produce_augustus_profile_admission_evidence();
+    input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
+        .clone_from_slice(profile_admission.rule_evidence());
 
     let (evidence, contract) = input
         .rule_evidence
@@ -549,14 +723,111 @@ mod tests {
     ];
 
     #[test]
-    fn valid_fixture_pairs_produce_the_exact_reject_only_outputs() {
-        for (input, expected_output) in VALID_FIXTURE_PAIRS {
+    fn frozen_profile_admission_overrides_caller_evidence_in_every_valid_pair() {
+        for (index, (input, expected_output)) in VALID_FIXTURE_PAIRS.into_iter().enumerate() {
             let output = evaluate_augustus_research_preflight(input).expect("valid fixture input");
-            let actual = serde_json::to_value(output).expect("serializable output");
             let expected: Value =
                 serde_json::from_slice(expected_output).expect("valid expected output");
-            assert_eq!(actual, expected);
+            assert_eq!(
+                expected["first_rejection"]["pre_contact_order"],
+                json!(index + 1),
+                "fixture remains a valid isolated rule example"
+            );
+            assert_eq!(output.first_rejection.pre_contact_order, 1);
+            assert_eq!(
+                output.first_rejection.rule_id,
+                AugustusPreflightRuleId::ProfileIdentityAndProvenance
+            );
+            assert_eq!(
+                output.first_rejection.error_code,
+                AugustusPreflightErrorCode::AugustusProfileNotAdmitted
+            );
+            assert_eq!(output.input_sha256(), hex::encode(Sha256::digest(input)));
+
+            if index == 0 {
+                assert_eq!(
+                    serde_json::to_value(output).expect("serializable output"),
+                    expected
+                );
+            }
         }
+    }
+
+    #[test]
+    fn current_profile_admission_evidence_is_derived_from_retained_bytes() {
+        let evidence = produce_augustus_profile_admission_evidence();
+
+        assert_eq!(
+            evidence.calculated_profile_sha256(),
+            AUGUSTUS_PROFILE_SHA256
+        );
+        assert_eq!(
+            evidence.calculated_machine_patch_sha256(),
+            AUGUSTUS_MACHINE_PATCH_SHA256
+        );
+        assert_eq!(evidence.source_revision(), Some(AUGUSTUS_SOURCE_REVISION));
+        assert_eq!(evidence.dispatch_blocker_count(), Some(5));
+        assert_eq!(
+            evidence.rule_evidence(),
+            &[
+                AugustusRuleEvidence {
+                    pre_contact_order: 1,
+                    rule_id: AugustusPreflightRuleId::ProfileIdentityAndProvenance,
+                    state: AugustusEvidenceState::Rejected,
+                    rejection_condition_indices: vec![2],
+                },
+                AugustusRuleEvidence {
+                    pre_contact_order: 2,
+                    rule_id: AugustusPreflightRuleId::UnresolvedDispatchBlockers,
+                    state: AugustusEvidenceState::Rejected,
+                    rejection_condition_indices: vec![0],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn profile_identity_drift_makes_the_blocker_ledger_unverified() {
+        let mut profile: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        profile["unreviewed_field"] = json!(true);
+        let drifted_profile = serde_json::to_vec(&profile).expect("serializable drifted profile");
+
+        let evidence =
+            produce_profile_admission_evidence(&drifted_profile, RETAINED_AUGUSTUS_MACHINE_PATCH);
+
+        assert_eq!(
+            evidence.rule_evidence()[0].rejection_condition_indices(),
+            &[0, 2]
+        );
+        assert_eq!(
+            evidence.rule_evidence()[1].state(),
+            AugustusEvidenceState::Unverified
+        );
+        assert_eq!(
+            evidence.rule_evidence()[1].rejection_condition_indices(),
+            &[0]
+        );
+        assert_eq!(evidence.source_revision(), None);
+        assert_eq!(evidence.dispatch_blocker_count(), None);
+    }
+
+    #[test]
+    fn retained_patch_drift_is_a_provenance_rejection() {
+        let mut drifted_patch = RETAINED_AUGUSTUS_MACHINE_PATCH.to_vec();
+        drifted_patch.push(b'\n');
+
+        let evidence = produce_profile_admission_evidence(FROZEN_AUGUSTUS_PROFILE, &drifted_patch);
+
+        assert_eq!(
+            evidence.rule_evidence()[0].rejection_condition_indices(),
+            &[1, 2]
+        );
+        assert_eq!(
+            evidence.rule_evidence()[1].state(),
+            AugustusEvidenceState::Rejected
+        );
+        assert_eq!(evidence.dispatch_blocker_count(), Some(5));
     }
 
     #[test]

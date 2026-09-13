@@ -58,7 +58,11 @@ invariants; there is no accepted or dispatchable output shape.
 
 Each pair below independently validates against the schema. Its input has exactly one `rejected`
 rule and 13 `verified` rules; its output returns the matching first rejection and binds the exact
-input file bytes by SHA-256. CI pins every input and output digest.
+input file bytes by SHA-256. CI pins every input and output digest. These are isolated schema
+examples, not caller authority: the product evaluator mechanically replaces rules 1 and 2 with
+evidence from the embedded profile, retained machine-patch digest, frozen source revision, and
+profile blocker ledger. With the current profile, every schema-valid pair therefore stops at rule 1
+when evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |

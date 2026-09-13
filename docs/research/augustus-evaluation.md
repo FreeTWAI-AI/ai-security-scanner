@@ -218,6 +218,9 @@ input by SHA-256. Schema validity alone never grants scope or authorizes executi
 The [14 schema-valid synthetic input/output pairs](fixtures/augustus/preflight/) exercise exactly
 one rejected rule and one stable error code apiece. Every other rule is `verified`, so each output's
 first rejection is unambiguous; every output remains zero-contact and is byte-bound to its input.
+These pairs remain isolated schema examples: product evaluation replaces their first two
+caller-carried evidence rows with evidence derived from the retained frozen artifacts before it
+selects a rejection.
 Four [schema-negative fixtures](fixtures/augustus/preflight-negative/) separately pin an accepted
 decision, an all-verified input, a mismatched error code, and an extra `argv` field as invalid. They
 are rejection evidence only and are never candidate preflight inputs.
@@ -225,10 +228,14 @@ are rejection evidence only and are never candidate preflight inputs.
 The product now contains a pure Rust
 [`augustus_preflight`](../../src-tauri/src/augustus_preflight.rs) evaluator for this frozen exchange.
 It bounds input at 64 KiB, denies unknown fields, checks the exact artifact references and ordered
-condition indices, and emits only the first `reject_before_contact` result. Malformed, drifted, or
-all-verified input returns an error. The module is not connected to the engine catalog,
-orchestrator, process runtime, credential handling, gateway, or network path, so this implementation
-still cannot dispatch Augustus or contact a model endpoint.
+condition indices, and emits only the first `reject_before_contact` result. Its pure-data profile
+admission producer hashes the embedded complete profile and retained machine patch, checks their
+frozen identity and provenance, and counts blockers directly from the trusted profile. The
+evaluator replaces rules 1 and 2 with that evidence, so caller statements cannot clear
+`research_only_blocked` or the five-entry blocker ledger. Malformed, drifted, or all-verified input
+returns an error. The module is not connected to the engine catalog, orchestrator, process runtime,
+credential handling, gateway, or network path, so this implementation still cannot dispatch
+Augustus or contact a model endpoint.
 
 The pure Rust [`augustus_terminal`](../../src-tauri/src/augustus_terminal.rs) verifier now checks an
 already captured machine document against the pinned scanner provenance, an exact comparison-only
