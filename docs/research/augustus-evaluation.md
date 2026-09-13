@@ -206,6 +206,15 @@ provider request, target contact, or finding. For the profile as checked in, ord
 `augustus_profile_not_admitted`; later vectors are isolated contract examples, not evidence that an
 earlier blocker was cleared.
 
+The corresponding reject-only
+[`augustus-preflight.schema.json`](augustus-preflight.schema.json) exchange schema, SHA-256
+`eba52bc18c2954df58c127084a6408a76666083e7fa65df32a9908ff9f35cd04`, carries only the exact
+research artifact references and 14 ordered rule-evidence states. It has no target, model,
+configuration, process, network, or secret-bearing input. Its output has no success variant: the
+decision is always `reject_before_contact`, and `first_rejection` is a closed union of the 14 frozen
+order/rule/code triplets. Each output repeats the exact artifact references and binds the evaluated
+input by SHA-256. Schema validity alone never grants scope or authorizes execution.
+
 The audit initially found one fail-closed integration gap: `HijackLongPrompt` is a custom prober
 rather than `SimpleProbe`, so the first machine patch could not know its expected-attempt count. The
 retained patch now implements `ExpectedAttempts()` as the length of the probe's already-constructed

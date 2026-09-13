@@ -47,6 +47,13 @@ The vectors are not executable launcher inputs and do not claim that later rules
 current profile runnable. The actual frozen profile stops at order 1 with
 `augustus_profile_not_admitted` because its normative status remains `research_only_blocked`.
 
+The reject-only [`augustus-preflight.schema.json`](../../augustus-preflight.schema.json), SHA-256
+`eba52bc18c2954df58c127084a6408a76666083e7fa65df32a9908ff9f35cd04`, defines the typed input and
+output that carry this contract. Input contains only fixed artifact references plus 14 ordered
+`verified`, `rejected`, or `unverified` evidence states. Output can carry only the first stable
+rejection triplet, the input SHA-256, exact artifact references, and the same zero-contact
+invariants; there is no accepted or dispatchable output shape.
+
 ## Contract audit
 
 All three machine-output files contain schema version `1`, scanner version `v0.14.29`, the exact

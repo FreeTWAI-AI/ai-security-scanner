@@ -1,0 +1,824 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ai-security-scanner:research:augustus-preflight:1",
+  "title": "Augustus research-only typed preflight exchange",
+  "description": "Pure-data contract for fail-closed research preflight. It defines no successful or dispatchable output and grants no authority to start a process or contact a target.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/input"
+    },
+    {
+      "$ref": "#/$defs/output"
+    }
+  ],
+  "$defs": {
+    "artifact_references": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "profile_sha256",
+        "enforcement_matrix_sha256",
+        "rejection_vectors_sha256"
+      ],
+      "properties": {
+        "profile_id": {
+          "const": "augustus-openai-promptinject-v1"
+        },
+        "profile_sha256": {
+          "const": "9dedd3695cd38575ba4137754803e50114c5a0f868a0f71ce5fd6305377e55b4"
+        },
+        "enforcement_matrix_sha256": {
+          "const": "cd212569b48ad8186df0924cf0c86b2cbcac9bb7cb9a1bd71e1faed8a85240df"
+        },
+        "rejection_vectors_sha256": {
+          "const": "3376e1757f658acbb13863584e105acc043192997ce3c02e71a73c174bedbab7"
+        }
+      }
+    },
+    "rule_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pre_contact_order",
+        "rule_id",
+        "state",
+        "rejection_condition_indices"
+      ],
+      "properties": {
+        "pre_contact_order": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 14
+        },
+        "rule_id": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "verified",
+            "rejected",
+            "unverified"
+          ]
+        },
+        "rejection_condition_indices": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "const": "verified"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "rejection_condition_indices": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "rejection_condition_indices": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_kind",
+        "schema_version",
+        "normative_status",
+        "evaluation_id",
+        "artifact_references",
+        "rule_evidence"
+      ],
+      "properties": {
+        "document_kind": {
+          "const": "preflight_input"
+        },
+        "schema_version": {
+          "const": "1"
+        },
+        "normative_status": {
+          "const": "research_only_non_executable"
+        },
+        "evaluation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "artifact_references": {
+          "$ref": "#/$defs/artifact_references"
+        },
+        "rule_evidence": {
+          "type": "array",
+          "minItems": 14,
+          "maxItems": 14,
+          "prefixItems": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 1
+                    },
+                    "rule_id": {
+                      "const": "profile_identity_and_provenance"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 3,
+                      "items": {
+                        "maximum": 2
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 2
+                    },
+                    "rule_id": {
+                      "const": "unresolved_dispatch_blockers"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 3
+                    },
+                    "rule_id": {
+                      "const": "exact_destination_and_model_binding"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 4,
+                      "items": {
+                        "maximum": 3
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 4
+                    },
+                    "rule_id": {
+                      "const": "base_url_and_redirect_denial"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 5
+                    },
+                    "rule_id": {
+                      "const": "denied_capabilities"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 6
+                    },
+                    "rule_id": {
+                      "const": "probe_detector_allowlist"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 3,
+                      "items": {
+                        "maximum": 2
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 7
+                    },
+                    "rule_id": {
+                      "const": "attempt_shape"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 3,
+                      "items": {
+                        "maximum": 2
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 8
+                    },
+                    "rule_id": {
+                      "const": "prompt_corpus_attestation"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 9
+                    },
+                    "rule_id": {
+                      "const": "token_request_and_cost_budget"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 4,
+                      "items": {
+                        "maximum": 3
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 10
+                    },
+                    "rule_id": {
+                      "const": "single_connection_execution"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 11
+                    },
+                    "rule_id": {
+                      "const": "request_rate_retry_and_timeout"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 12
+                    },
+                    "rule_id": {
+                      "const": "probe_scanner_and_process_deadlines"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 13
+                    },
+                    "rule_id": {
+                      "const": "process_resource_sandbox"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rule_evidence"
+                },
+                {
+                  "properties": {
+                    "pre_contact_order": {
+                      "const": 14
+                    },
+                    "rule_id": {
+                      "const": "response_and_process_output_bounds"
+                    },
+                    "rejection_condition_indices": {
+                      "maxItems": 2,
+                      "items": {
+                        "maximum": 1
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "items": false,
+          "contains": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "rejected",
+                  "unverified"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "first_rejection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 1
+            },
+            "rule_id": {
+              "const": "profile_identity_and_provenance"
+            },
+            "error_code": {
+              "const": "augustus_profile_not_admitted"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 2
+            },
+            "rule_id": {
+              "const": "unresolved_dispatch_blockers"
+            },
+            "error_code": {
+              "const": "augustus_dispatch_blocked"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 3
+            },
+            "rule_id": {
+              "const": "exact_destination_and_model_binding"
+            },
+            "error_code": {
+              "const": "augustus_scope_binding_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 4
+            },
+            "rule_id": {
+              "const": "base_url_and_redirect_denial"
+            },
+            "error_code": {
+              "const": "augustus_destination_policy_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 5
+            },
+            "rule_id": {
+              "const": "denied_capabilities"
+            },
+            "error_code": {
+              "const": "augustus_capability_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 6
+            },
+            "rule_id": {
+              "const": "probe_detector_allowlist"
+            },
+            "error_code": {
+              "const": "augustus_plan_allowlist_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 7
+            },
+            "rule_id": {
+              "const": "attempt_shape"
+            },
+            "error_code": {
+              "const": "augustus_attempt_shape_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 8
+            },
+            "rule_id": {
+              "const": "prompt_corpus_attestation"
+            },
+            "error_code": {
+              "const": "augustus_prompt_corpus_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 9
+            },
+            "rule_id": {
+              "const": "token_request_and_cost_budget"
+            },
+            "error_code": {
+              "const": "augustus_cost_budget_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 10
+            },
+            "rule_id": {
+              "const": "single_connection_execution"
+            },
+            "error_code": {
+              "const": "augustus_concurrency_policy_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 11
+            },
+            "rule_id": {
+              "const": "request_rate_retry_and_timeout"
+            },
+            "error_code": {
+              "const": "augustus_request_policy_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 12
+            },
+            "rule_id": {
+              "const": "probe_scanner_and_process_deadlines"
+            },
+            "error_code": {
+              "const": "augustus_deadline_policy_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 13
+            },
+            "rule_id": {
+              "const": "process_resource_sandbox"
+            },
+            "error_code": {
+              "const": "augustus_sandbox_policy_rejected"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pre_contact_order",
+            "rule_id",
+            "error_code"
+          ],
+          "properties": {
+            "pre_contact_order": {
+              "const": 14
+            },
+            "rule_id": {
+              "const": "response_and_process_output_bounds"
+            },
+            "error_code": {
+              "const": "augustus_output_bound_rejected"
+            }
+          }
+        }
+      ]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_kind",
+        "schema_version",
+        "normative_status",
+        "evaluation_id",
+        "artifact_references",
+        "input_sha256",
+        "decision",
+        "first_rejection",
+        "egress_lease_created",
+        "target_contact_attempted",
+        "provider_request_count",
+        "finding_count"
+      ],
+      "properties": {
+        "document_kind": {
+          "const": "preflight_output"
+        },
+        "schema_version": {
+          "const": "1"
+        },
+        "normative_status": {
+          "const": "research_only_non_executable"
+        },
+        "evaluation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "artifact_references": {
+          "$ref": "#/$defs/artifact_references"
+        },
+        "input_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "decision": {
+          "const": "reject_before_contact"
+        },
+        "first_rejection": {
+          "$ref": "#/$defs/first_rejection"
+        },
+        "egress_lease_created": {
+          "const": false
+        },
+        "target_contact_attempted": {
+          "const": false
+        },
+        "provider_request_count": {
+          "const": 0
+        },
+        "finding_count": {
+          "const": 0
+        }
+      }
+    }
+  }
+}
