@@ -2994,6 +2994,64 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "a task phase stayed in English in the Chinese report"
             );
 
+            // Severity is a closed list and the profile is read as one: the
+            // reader who wants to know whether anything was Critical reads the
+            // Critical row. A severity with no findings still gets a row, for
+            // the same reason the cover keeps a zero tile -- a missing row
+            // cannot be told from an unmeasured one.
+            for (html, named, severities) in [
+                (
+                    &ordered_html,
+                    "English",
+                    [
+                        "Critical",
+                        "High",
+                        "Medium",
+                        "Low",
+                        "Informational",
+                        "Unknown",
+                    ],
+                ),
+                (
+                    &zh_html,
+                    "Chinese",
+                    ["嚴重", "高", "中", "低", "資訊", "未知"],
+                ),
+            ] {
+                let rows = html
+                    .match_indices("<span class=\"severity-row__label\">")
+                    .map(|(at, marker)| {
+                        let rest = &html[at + marker.len()..];
+                        let label = &rest[..rest.find('<').expect("a label closes")];
+                        let counted = rest
+                            .find("<span class=\"severity-row__count\">")
+                            .expect("a severity row carries its count");
+                        let rest = &rest[counted + "<span class=\"severity-row__count\">".len()..];
+                        let count: usize = rest[..rest.find('<').expect("a count closes")]
+                            .parse()
+                            .expect("a severity count is a number");
+                        (label.to_owned(), count)
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    rows.iter()
+                        .map(|(label, _)| label.as_str())
+                        .collect::<Vec<_>>(),
+                    severities,
+                    "the {named} severity profile dropped or reordered a severity"
+                );
+                assert!(
+                    rows.iter().any(|(_, count)| *count == 0),
+                    "the {named} run stopped exercising a zero severity row"
+                );
+                // The zero is dimmed rather than drawn as a bar of its own.
+                assert_eq!(
+                    html.matches("severity-row severity-row--none").count(),
+                    rows.iter().filter(|(_, count)| *count == 0).count(),
+                    "a zero severity row is not marked as one in {named}"
+                );
+            }
+
             // A reader moving by heading -- a screen reader, a print outline,
             // an export to a document -- follows the levels. A skipped level
             // is a hole they cannot see around.

@@ -14310,6 +14310,7 @@ fn html_executive_summary(
 /// from the problem count -- a severity chart that counted them would show
 /// twelve Unknown "problems" that are really open ports nobody rated.
 fn problem_severity_counts(report: &BeginnerMasterReport) -> Vec<(crate::domain::Severity, usize)> {
+    use crate::domain::Severity;
     let mut counts = BTreeMap::new();
     for finding in &report.findings {
         if finding
@@ -14320,6 +14321,24 @@ fn problem_severity_counts(report: &BeginnerMasterReport) -> Vec<(crate::domain:
             continue;
         }
         *counts.entry(finding.severity.clone()).or_insert(0usize) += 1;
+    }
+    if counts.is_empty() {
+        return Vec::new();
+    }
+    // Severity is a closed list, and the profile is read as one: the reader
+    // who wants to know whether anything was Critical reads the Critical row.
+    // Only the severities that happened had a row, for the same reason the
+    // cover would have dropped a zero tile -- and with the same cost, that a
+    // missing row cannot be told from an unmeasured one.
+    for severity in [
+        Severity::Critical,
+        Severity::High,
+        Severity::Medium,
+        Severity::Low,
+        Severity::Informational,
+        Severity::Unknown,
+    ] {
+        counts.entry(severity).or_insert(0usize);
     }
     let mut ordered = counts.into_iter().collect::<Vec<_>>();
     ordered.sort_by(|left, right| right.0.cmp(&left.0));
@@ -14365,11 +14384,15 @@ fn html_severity_profile(report: &BeginnerMasterReport, catalog: HtmlReportCatal
         let width = (count * 100).div_ceil(largest.max(1));
         rows.push_str(&format!(
             concat!(
-                "<div class=\"severity-row\"><span class=\"severity-row__label\">{}</span>",
+                "<div class=\"severity-row{}\"><span class=\"severity-row__label\">{}</span>",
                 "<span class=\"severity-bar\"><span class=\"severity-bar__fill severity-bar__fill--{}\" ",
                 "style=\"width:{}%\"></span></span>",
                 "<span class=\"severity-row__count\">{}</span></div>"
             ),
+            match count {
+                0 => " severity-row--none",
+                _ => "",
+            },
             html_escape(&catalog.identifier(&enum_key(severity))),
             severity_slug(severity),
             width,
@@ -18161,6 +18184,7 @@ fn html_report_bytes(
         ".severity-row{display:grid;grid-template-columns:7.5rem 1fr 3.5rem;gap:.75rem;align-items:center;margin:.3rem 0}",
         ".severity-row__label{font-size:.9rem}",
         ".severity-row__count{text-align:right;font-variant-numeric:tabular-nums}",
+        ".severity-row--none .severity-row__label,.severity-row--none .severity-row__count{color:var(--muted)}",
         ".severity-bar{display:block;background:#eceff1;border-radius:.2rem;height:1.1rem;overflow:hidden}",
         ".severity-bar__fill{display:block;height:100%;border-radius:.2rem}",
         ".severity-bar__fill--critical{background:#7a271a}.severity-bar__fill--high{background:#b42318}",
