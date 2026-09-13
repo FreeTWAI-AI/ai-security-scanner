@@ -2523,6 +2523,111 @@ mod tests {
     }
 
     #[test]
+    fn complete_mechanical_ladder_matches_the_frozen_contract() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[13].0).expect("valid rule-14 fixture");
+        validate_input(&input).expect("rule-14 fixture must satisfy the caller input contract");
+        let caller_evidence = input.rule_evidence.clone();
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(input.rule_evidence.len(), RULE_COUNT);
+        assert!(
+            input
+                .rule_evidence
+                .iter()
+                .zip(caller_evidence.iter())
+                .all(|(derived, supplied)| derived != supplied),
+            "every caller-carried row must be replaced"
+        );
+
+        let expected: [(AugustusPreflightRuleId, AugustusEvidenceState, &[u8]); RULE_COUNT] = [
+            (
+                AugustusPreflightRuleId::ProfileIdentityAndProvenance,
+                AugustusEvidenceState::Rejected,
+                &[2],
+            ),
+            (
+                AugustusPreflightRuleId::UnresolvedDispatchBlockers,
+                AugustusEvidenceState::Rejected,
+                &[0],
+            ),
+            (
+                AugustusPreflightRuleId::ExactDestinationAndModelBinding,
+                AugustusEvidenceState::Rejected,
+                &[0],
+            ),
+            (
+                AugustusPreflightRuleId::BaseUrlAndRedirectDenial,
+                AugustusEvidenceState::Unverified,
+                &[0, 1],
+            ),
+            (
+                AugustusPreflightRuleId::DeniedCapabilities,
+                AugustusEvidenceState::Unverified,
+                &[0, 1],
+            ),
+            (
+                AugustusPreflightRuleId::ProbeDetectorAllowlist,
+                AugustusEvidenceState::Rejected,
+                &[2],
+            ),
+            (
+                AugustusPreflightRuleId::AttemptShape,
+                AugustusEvidenceState::Rejected,
+                &[2],
+            ),
+            (
+                AugustusPreflightRuleId::PromptCorpusAttestation,
+                AugustusEvidenceState::Rejected,
+                &[1],
+            ),
+            (
+                AugustusPreflightRuleId::TokenRequestAndCostBudget,
+                AugustusEvidenceState::Rejected,
+                &[0, 1, 2],
+            ),
+            (
+                AugustusPreflightRuleId::SingleConnectionExecution,
+                AugustusEvidenceState::Rejected,
+                &[0, 1],
+            ),
+            (
+                AugustusPreflightRuleId::RequestRateRetryAndTimeout,
+                AugustusEvidenceState::Rejected,
+                &[0, 1],
+            ),
+            (
+                AugustusPreflightRuleId::ProbeScannerAndProcessDeadlines,
+                AugustusEvidenceState::Rejected,
+                &[0, 1],
+            ),
+            (
+                AugustusPreflightRuleId::ProcessResourceSandbox,
+                AugustusEvidenceState::Rejected,
+                &[0],
+            ),
+            (
+                AugustusPreflightRuleId::ResponseAndProcessOutputBounds,
+                AugustusEvidenceState::Rejected,
+                &[0, 1],
+            ),
+        ];
+
+        for (index, (evidence, (rule_id, state, rejection_indices))) in
+            input.rule_evidence.iter().zip(expected).enumerate()
+        {
+            assert_eq!(evidence.pre_contact_order(), (index + 1) as u8);
+            assert_eq!(evidence.rule_id(), rule_id);
+            assert_eq!(evidence.state(), state);
+            assert_eq!(evidence.rejection_condition_indices(), rejection_indices);
+            assert_ne!(evidence.state(), AugustusEvidenceState::Verified);
+            validate_evidence(evidence, &RULE_CONTRACTS[index])
+                .expect("mechanical evidence must satisfy its ordered rule contract");
+        }
+    }
+
+    #[test]
     fn current_profile_admission_evidence_is_derived_from_retained_bytes() {
         let evidence = produce_augustus_profile_admission_evidence();
 

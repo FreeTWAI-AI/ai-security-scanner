@@ -5,11 +5,13 @@ Normative status: this is a pinned research decision, subordinate to the
 execution, and machine-output boundary for one audited Augustus revision. It does not authorize a
 model-endpoint scan, admit an engine, or initiate packaging or publication.
 
-Decision: Augustus is a viable upstream for future active testing of a hosted model endpoint, but
-the audited output cannot yet support a fail-closed thin adapter. Do not add Augustus to the engine
-catalog or adapter registry until a bounded machine-output patch and synthetic fixtures prove the
-contract below. A catalog entry and adapter must then land together as one experimental,
-non-runnable integration.
+Decision: Augustus is a viable upstream for future active testing of a hosted model endpoint. The
+retained narrow machine-output patch, synthetic fixtures, terminal verifier, and 14-rule pure-data
+preflight now prove a fail-closed research contract. Do not add Augustus to the engine catalog or
+adapter registry without a new product-owner direction: the current profile remains blocked before
+contact, and no launcher, egress, scope-grant, credential, or packaging path is authorized. If an
+experimental record is later requested, its catalog entry and adapter must land together as one
+non-runnable integration that retains every unresolved blocker. No such record is created here.
 
 This static review is pinned to
 [`praetorian-inc/augustus@f032fc6373aaa9983868282b31dc9c59503c78a2`](https://github.com/praetorian-inc/augustus/tree/f032fc6373aaa9983868282b31dc9c59503c78a2),
@@ -292,6 +294,36 @@ The module is not connected
 to the engine catalog, orchestrator, process runtime, credential handling, gateway, or network
 path, so this implementation still cannot dispatch Augustus or contact a model endpoint.
 
+### 14-rule convergence audit
+
+The 2026-09-13 local convergence audit compared the frozen profile, 50-field enforcement matrix,
+35 rejection vectors, reject-only schema, 14 fixture pairs, and Rust producer order. Every profile
+leaf has one matrix owner, every rejection condition has one synthetic vector, every rule has one
+stable order/code/schema fixture, and every caller evidence row is replaced mechanically. Condition
+numbers below are zero-based indices into each matrix rule's `reject_conditions` array.
+
+| Order | Rule | Current mechanical evidence | Deciding absent or blocked proof |
+| --- | --- | --- | --- |
+| 1 | `profile_identity_and_provenance` | `rejected [2]` | Frozen profile remains research-only blocked |
+| 2 | `unresolved_dispatch_blockers` | `rejected [0]` | Five frozen blockers remain |
+| 3 | `exact_destination_and_model_binding` | `rejected [0]` | Exact scope grant and bound model are absent |
+| 4 | `base_url_and_redirect_denial` | `unverified [0,1]` | Launcher base-URL and HTTP redirect enforcement are absent |
+| 5 | `denied_capabilities` | `unverified [0,1]` | Closed launcher and destination-gate enforcement are absent |
+| 6 | `probe_detector_allowlist` | `rejected [2]` | Launcher-built machine plan is absent |
+| 7 | `attempt_shape` | `rejected [2]` | Plan and terminal reconciliation evidence are absent |
+| 8 | `prompt_corpus_attestation` | `rejected [1]` | Executed prompt-source binding is absent |
+| 9 | `token_request_and_cost_budget` | `rejected [0,1,2]` | Trusted pricing/tokenizer, `max_tokens`, and HTTP request counter are absent |
+| 10 | `single_connection_execution` | `rejected [0,1]` | Scanner options and run-bound egress policy are absent |
+| 11 | `request_rate_retry_and_timeout` | `rejected [0,1]` | Retry enforcement and HTTP request gate are absent |
+| 12 | `probe_scanner_and_process_deadlines` | `rejected [0,1]` | Scanner deadline proof, process supervision, and egress revocation are absent |
+| 13 | `process_resource_sandbox` | `rejected [0]` | Created sandbox and verified mount inventory are absent |
+| 14 | `response_and_process_output_bounds` | `rejected [0,1]` | Decoded-response gate, bounded capture, and durable terminal parse are absent |
+
+The aggregate Rust convergence test pins this entire ordered state and proves that all 14 rows in a
+valid caller fixture change when replaced. The first current rejection remains Rule 1, with zero
+egress leases, target contacts, provider requests, and findings. This is complete pre-contact
+evidence coverage, not a dispatch path or a claim that any runtime control exists.
+
 The pure Rust [`augustus_terminal`](../../src-tauri/src/augustus_terminal.rs) verifier now checks an
 already captured machine document against the pinned scanner provenance, an exact comparison-only
 run/endpoint/model binding, the single allowed probe and detector, the 15-attempt ledger, and the
@@ -310,7 +342,7 @@ contains one `promptinject.HijackLongPrompt` entry with exactly 15 expected atte
 `promptinject.AttackRogueString`. This closes the count-metadata gap; it does not authorize or make
 the profile runnable.
 
-## Why the current machine output is not admissible
+## Why unpatched upstream machine output is not admissible
 
 The documented JSONL record carries an upstream `probe`, `detector`, score array, four-way verdict,
 status, error, timestamp, and the complete prompt and target response
@@ -341,14 +373,15 @@ That is a useful fail-closed signal, and the product must retain its existing ru
 engine exit produces no findings. It does not repair detector skips or silently missing JSONL rows
 that can occur without an errored attempt.
 
-For those reasons, adapting the current JSONL would require the product to infer whether the
-declared scan completed. That would invent scanner meaning and could report a false clean result.
+For those reasons, adapting the unpatched upstream JSONL would require the product to infer whether
+the declared scan completed. That would invent scanner meaning and could report a false clean
+result.
 
-## Required machine-output patch
+## Machine-output contract retained by the research patch
 
-The next research step is a narrow upstream-oriented patch, exercised only with Augustus's local
-`test.Repeat` generator and synthetic fixtures. It may change output and orchestration plumbing, but
-must not change probe prompts, detector scores, thresholds, verdicts, evidence, or remediation.
+The retained patch is narrow and upstream-oriented, and was exercised only with Augustus's local
+`test.Repeat` generator and synthetic fixtures. It changes output and orchestration plumbing, but
+does not change probe prompts, detector scores, thresholds, verdicts, evidence, or remediation.
 
 The machine envelope must include:
 
@@ -372,7 +405,7 @@ arbitrary metadata, credential, or unbounded error text into a normal finding.
 
 ## Future normalization decision
 
-Once the contract above is fixture-proven, the thin adapter may normalize only what Augustus states:
+If an experimental thin adapter is later authorized, it may normalize only what Augustus states:
 
 - only an upstream `vuln` verdict becomes a finding;
 - the exact upstream probe and detector identifiers, scores, bounded evidence pointer, and remedy are
@@ -432,7 +465,7 @@ qualification or engine admission.
 
 ## Remaining blockers
 
-Augustus remains outside the catalog until all of these are independently resolved:
+Augustus remains non-dispatchable until all of these are independently resolved:
 
 1. an exact provider/model endpoint scope-grant path for active external testing;
 2. a product-owned ephemeral credential-delivery and cleanup path;
@@ -440,8 +473,9 @@ Augustus remains outside the catalog until all of these are independently resolv
 4. a typed launcher and exact-destination egress gate that enforce the frozen profile; and
 5. a separately authorized packaging decision by the product owner.
 
-Packaging is deliberately not started by this research decision. Clearing the first four blockers
-does not authorize the fifth.
+This research decision does not authorize catalog admission or packaging. A product-owner-requested
+experimental catalog entry and adapter must remain non-runnable while any blocker above remains.
+Clearing the first four blockers does not authorize the fifth.
 
 ## Research actions performed
 

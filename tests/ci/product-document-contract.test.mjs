@@ -119,6 +119,22 @@ const AUGUSTUS_PRECONTACT_RULE_CODES = [
   [13, "process_resource_sandbox", "augustus_sandbox_policy_rejected"],
   [14, "response_and_process_output_bounds", "augustus_output_bound_rejected"],
 ];
+const AUGUSTUS_CURRENT_MECHANICAL_EVIDENCE = [
+  [1, "profile_identity_and_provenance", "rejected", [2]],
+  [2, "unresolved_dispatch_blockers", "rejected", [0]],
+  [3, "exact_destination_and_model_binding", "rejected", [0]],
+  [4, "base_url_and_redirect_denial", "unverified", [0, 1]],
+  [5, "denied_capabilities", "unverified", [0, 1]],
+  [6, "probe_detector_allowlist", "rejected", [2]],
+  [7, "attempt_shape", "rejected", [2]],
+  [8, "prompt_corpus_attestation", "rejected", [1]],
+  [9, "token_request_and_cost_budget", "rejected", [0, 1, 2]],
+  [10, "single_connection_execution", "rejected", [0, 1]],
+  [11, "request_rate_retry_and_timeout", "rejected", [0, 1]],
+  [12, "probe_scanner_and_process_deadlines", "rejected", [0, 1]],
+  [13, "process_resource_sandbox", "rejected", [0]],
+  [14, "response_and_process_output_bounds", "rejected", [0, 1]],
+];
 const AUGUSTUS_PREFLIGHT_FIXTURE_PAIRS = [
   ["01-profile-identity", "b8d84b3209badf438256af9a6dac4b44a04900f644d4dcd7dacc2473a73223b2", "b0fa66557b9a37eab418d43d03dd48bb621433bc68e451e31a7f228818faf5a5"],
   ["02-dispatch-blockers", "190c4bf8b969e6019347292d70df4b0f7c4ad948ed2fded4dd9ff724a2943125", "5ff2e8efc83fdc873f65d48a91552d324e69da72d0eac116d3f59329cf266899"],
@@ -296,7 +312,11 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.match(decision, /f032fc6373aaa9983868282b31dc9c59503c78a2/u);
   assert.match(decision, /tagged `v0\.14\.29`/u);
   assert.match(decision, /RESEARCH \/ NOT_DISTRIBUTED/u);
-  assert.match(decision, /Do not add Augustus to the engine\s+catalog or adapter registry/u);
+  assert.match(decision, /Do not add Augustus to the engine\s+catalog or\s+adapter registry/u);
+  assert.match(decision, /retained narrow machine-output patch.*14-rule pure-data\s+preflight/su);
+  assert.match(decision, /### 14-rule convergence audit/u);
+  assert.doesNotMatch(decision, /cannot yet support a fail-closed thin adapter/u);
+  assert.doesNotMatch(decision, /The next research step is a narrow upstream-oriented patch/u);
   assert.match(decision, /rest\.Rest.*out of scope/su);
   assert.match(decision, /SkipOnError/su);
   assert.match(decision, /complete: false/u);
@@ -336,6 +356,16 @@ test("Augustus research keeps hosted model testing fail closed", async () => {
   assert.equal(enforcement.profile_id, profile.profile_id);
   assert.equal(enforcement.profile_sha256, AUGUSTUS_RESEARCH_PROFILE_SHA256);
   assert.equal(enforcement.dispatch_enabled, false);
+
+  const auditRows = [...decision.matchAll(
+    /^\| (\d+) \| `([a-z0-9_]+)` \| `(rejected|unverified) \[([0-9,]+)\]` \|/gmu,
+  )].map(([, order, ruleId, state, indices]) => [
+    Number(order),
+    ruleId,
+    state,
+    indices.split(",").map(Number),
+  ]);
+  assert.deepEqual(auditRows, AUGUSTUS_CURRENT_MECHANICAL_EVIDENCE);
 
   const leafPaths = (value, prefix = "") => {
     if (Array.isArray(value)) {
