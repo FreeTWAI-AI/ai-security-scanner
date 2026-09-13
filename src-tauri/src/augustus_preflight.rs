@@ -31,6 +31,11 @@ const FROZEN_AUGUSTUS_PROFILE: &[u8] =
     include_bytes!("../../docs/research/augustus-single-destination-profile.json");
 const RETAINED_AUGUSTUS_MACHINE_PATCH: &[u8] =
     include_bytes!("../../docs/research/patches/augustus-0.14.29-machine-json.patch");
+const AUGUSTUS_FROZEN_GENERATOR: &str = "openai.OpenAI";
+const AUGUSTUS_FROZEN_SCHEME: &str = "https";
+const AUGUSTUS_FROZEN_HOST: &str = "api.openai.com";
+const AUGUSTUS_FROZEN_PORT: u16 = 443;
+const AUGUSTUS_FROZEN_API_BASE_PATH: &str = "/v1";
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum AugustusPreflightError {
@@ -160,6 +165,101 @@ struct AugustusProfileAdmissionFields {
     source_revision: String,
     machine_patch_sha256: String,
     dispatch_blockers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AugustusModelBindingRequirement {
+    ExactScopeGrant,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileDestinationFields {
+    generator: String,
+    scheme: String,
+    host: String,
+    port: u16,
+    api_base_path: String,
+    model_binding: AugustusModelBindingRequirement,
+}
+
+#[derive(Debug, Deserialize)]
+struct AugustusProfileScopeFields {
+    schema_version: String,
+    profile_id: String,
+    destination: AugustusProfileDestinationFields,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusFrozenDestination {
+    generator: String,
+    scheme: String,
+    host: String,
+    port: u16,
+    api_base_path: String,
+    model_binding: AugustusModelBindingRequirement,
+}
+
+impl AugustusFrozenDestination {
+    pub fn generator(&self) -> &str {
+        &self.generator
+    }
+
+    pub fn scheme(&self) -> &str {
+        &self.scheme
+    }
+
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn api_base_path(&self) -> &str {
+        &self.api_base_path
+    }
+
+    pub fn model_binding(&self) -> AugustusModelBindingRequirement {
+        self.model_binding
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugustusScopeGrantState {
+    Absent,
+}
+
+/// Pure-data Rule 3 evidence for the frozen endpoint and model binding.
+///
+/// There is deliberately no caller-supplied grant or model input. Until a
+/// separately reviewed product scope-grant path exists, both remain absent and
+/// this evidence rejects before contact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AugustusScopeBindingEvidence {
+    frozen_destination: Option<AugustusFrozenDestination>,
+    scope_grant_state: AugustusScopeGrantState,
+    bound_model: Option<String>,
+    rule_evidence: AugustusRuleEvidence,
+}
+
+impl AugustusScopeBindingEvidence {
+    pub fn frozen_destination(&self) -> Option<&AugustusFrozenDestination> {
+        self.frozen_destination.as_ref()
+    }
+
+    pub fn scope_grant_state(&self) -> AugustusScopeGrantState {
+        self.scope_grant_state
+    }
+
+    pub fn bound_model(&self) -> Option<&str> {
+        self.bound_model.as_deref()
+    }
+
+    pub fn rule_evidence(&self) -> &AugustusRuleEvidence {
+        &self.rule_evidence
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -444,6 +544,86 @@ fn produce_profile_admission_evidence(
     }
 }
 
+/// Produces Rule 3 evidence without accepting a caller-provided grant claim.
+///
+/// The frozen destination is returned only when the complete embedded profile
+/// still matches its reviewed hash and exact endpoint fields. The current
+/// product has no admitted Augustus model-endpoint scope grant, so the bound
+/// model is absent and the rule always rejects before contact.
+pub fn produce_augustus_scope_binding_evidence() -> AugustusScopeBindingEvidence {
+    produce_scope_binding_evidence(FROZEN_AUGUSTUS_PROFILE)
+}
+
+fn produce_scope_binding_evidence(profile_json: &[u8]) -> AugustusScopeBindingEvidence {
+    let calculated_profile_sha256 = hex::encode(Sha256::digest(profile_json));
+    let profile = if profile_json.len() <= MAX_AUGUSTUS_PREFLIGHT_INPUT_BYTES {
+        serde_json::from_slice::<AugustusProfileScopeFields>(profile_json).ok()
+    } else {
+        None
+    };
+    let destination_matches = profile
+        .as_ref()
+        .is_some_and(|profile| destination_matches_frozen_profile(&profile.destination));
+    let profile_is_trusted = calculated_profile_sha256 == AUGUSTUS_PROFILE_SHA256
+        && profile.as_ref().is_some_and(|profile| {
+            profile.schema_version == AUGUSTUS_PROFILE_SCHEMA_VERSION
+                && profile.profile_id == AUGUSTUS_PROFILE_ID
+        });
+    let frozen_destination = if profile_is_trusted && destination_matches {
+        profile
+            .as_ref()
+            .map(|profile| frozen_destination(&profile.destination))
+    } else {
+        None
+    };
+
+    let mut rejection_condition_indices = vec![0];
+    if !destination_matches {
+        rejection_condition_indices.push(1);
+    }
+
+    AugustusScopeBindingEvidence {
+        frozen_destination,
+        scope_grant_state: AugustusScopeGrantState::Absent,
+        bound_model: None,
+        rule_evidence: AugustusRuleEvidence {
+            pre_contact_order: 3,
+            rule_id: AugustusPreflightRuleId::ExactDestinationAndModelBinding,
+            state: AugustusEvidenceState::Rejected,
+            rejection_condition_indices,
+        },
+    }
+}
+
+fn destination_matches_frozen_profile(destination: &AugustusProfileDestinationFields) -> bool {
+    destination.generator == AUGUSTUS_FROZEN_GENERATOR
+        && destination.scheme == AUGUSTUS_FROZEN_SCHEME
+        && destination.host == AUGUSTUS_FROZEN_HOST
+        && destination.port == AUGUSTUS_FROZEN_PORT
+        && destination.api_base_path == AUGUSTUS_FROZEN_API_BASE_PATH
+        && destination.model_binding == AugustusModelBindingRequirement::ExactScopeGrant
+}
+
+fn frozen_destination(destination: &AugustusProfileDestinationFields) -> AugustusFrozenDestination {
+    AugustusFrozenDestination {
+        generator: destination.generator.clone(),
+        scheme: destination.scheme.clone(),
+        host: destination.host.clone(),
+        port: destination.port,
+        api_base_path: destination.api_base_path.clone(),
+        model_binding: destination.model_binding,
+    }
+}
+
+fn replace_caller_mechanical_evidence(input: &mut AugustusPreflightInput) {
+    let profile_admission = produce_augustus_profile_admission_evidence();
+    input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
+        .clone_from_slice(profile_admission.rule_evidence());
+
+    let scope_binding = produce_augustus_scope_binding_evidence();
+    input.rule_evidence[2].clone_from(scope_binding.rule_evidence());
+}
+
 /// Evaluates a bounded, research-only Augustus preflight input.
 ///
 /// The only successful output is `reject_before_contact`. Invalid input is an
@@ -459,9 +639,7 @@ pub fn evaluate_augustus_research_preflight(
         serde_json::from_slice(input_json).map_err(|_| AugustusPreflightError::InvalidDocument)?;
     validate_input(&input)?;
 
-    let profile_admission = produce_augustus_profile_admission_evidence();
-    input.rule_evidence[..PROFILE_ADMISSION_RULE_COUNT]
-        .clone_from_slice(profile_admission.rule_evidence());
+    replace_caller_mechanical_evidence(&mut input);
 
     let (evidence, contract) = input
         .rule_evidence
@@ -723,7 +901,7 @@ mod tests {
     ];
 
     #[test]
-    fn frozen_profile_admission_overrides_caller_evidence_in_every_valid_pair() {
+    fn mechanical_admission_overrides_caller_evidence_in_every_valid_pair() {
         for (index, (input, expected_output)) in VALID_FIXTURE_PAIRS.into_iter().enumerate() {
             let output = evaluate_augustus_research_preflight(input).expect("valid fixture input");
             let expected: Value =
@@ -787,6 +965,77 @@ mod tests {
     }
 
     #[test]
+    fn current_scope_binding_evidence_has_no_grant_or_bound_model() {
+        let evidence = produce_augustus_scope_binding_evidence();
+        let destination = evidence
+            .frozen_destination()
+            .expect("trusted frozen destination");
+
+        assert_eq!(destination.generator(), AUGUSTUS_FROZEN_GENERATOR);
+        assert_eq!(destination.scheme(), AUGUSTUS_FROZEN_SCHEME);
+        assert_eq!(destination.host(), AUGUSTUS_FROZEN_HOST);
+        assert_eq!(destination.port(), AUGUSTUS_FROZEN_PORT);
+        assert_eq!(destination.api_base_path(), AUGUSTUS_FROZEN_API_BASE_PATH);
+        assert_eq!(
+            destination.model_binding(),
+            AugustusModelBindingRequirement::ExactScopeGrant
+        );
+        assert_eq!(
+            evidence.scope_grant_state(),
+            AugustusScopeGrantState::Absent
+        );
+        assert_eq!(evidence.bound_model(), None);
+        assert_eq!(
+            evidence.rule_evidence(),
+            &AugustusRuleEvidence {
+                pre_contact_order: 3,
+                rule_id: AugustusPreflightRuleId::ExactDestinationAndModelBinding,
+                state: AugustusEvidenceState::Rejected,
+                rejection_condition_indices: vec![0],
+            }
+        );
+    }
+
+    #[test]
+    fn destination_profile_drift_adds_the_exact_mismatch_condition() {
+        let mut profile: Value =
+            serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
+        profile["destination"]["host"] = json!("api.example.invalid");
+        let drifted_profile = serde_json::to_vec(&profile).expect("serializable drifted profile");
+
+        let evidence = produce_scope_binding_evidence(&drifted_profile);
+
+        assert_eq!(evidence.frozen_destination(), None);
+        assert_eq!(evidence.bound_model(), None);
+        assert_eq!(
+            evidence.rule_evidence().state(),
+            AugustusEvidenceState::Rejected
+        );
+        assert_eq!(
+            evidence.rule_evidence().rejection_condition_indices(),
+            &[0, 1]
+        );
+    }
+
+    #[test]
+    fn caller_cannot_mark_scope_binding_verified() {
+        let mut input: AugustusPreflightInput =
+            serde_json::from_slice(VALID_FIXTURE_PAIRS[3].0).expect("valid later-rule fixture");
+        assert_eq!(
+            input.rule_evidence[2].state(),
+            AugustusEvidenceState::Verified
+        );
+
+        replace_caller_mechanical_evidence(&mut input);
+
+        assert_eq!(
+            &input.rule_evidence[2],
+            produce_augustus_scope_binding_evidence().rule_evidence()
+        );
+        assert_eq!(input.rule_evidence[2].rejection_condition_indices(), &[0]);
+    }
+
+    #[test]
     fn profile_identity_drift_makes_the_blocker_ledger_unverified() {
         let mut profile: Value =
             serde_json::from_slice(FROZEN_AUGUSTUS_PROFILE).expect("valid frozen profile");
@@ -810,6 +1059,14 @@ mod tests {
         );
         assert_eq!(evidence.source_revision(), None);
         assert_eq!(evidence.dispatch_blocker_count(), None);
+
+        let scope_evidence = produce_scope_binding_evidence(&drifted_profile);
+        assert_eq!(scope_evidence.frozen_destination(), None);
+        assert_eq!(
+            scope_evidence.rule_evidence().rejection_condition_indices(),
+            &[0],
+            "unrelated profile drift must not invent a destination mismatch"
+        );
     }
 
     #[test]

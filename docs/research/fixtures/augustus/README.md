@@ -61,8 +61,9 @@ rule and 13 `verified` rules; its output returns the matching first rejection an
 input file bytes by SHA-256. CI pins every input and output digest. These are isolated schema
 examples, not caller authority: the product evaluator mechanically replaces rules 1 and 2 with
 evidence from the embedded profile, retained machine-patch digest, frozen source revision, and
-profile blocker ledger. With the current profile, every schema-valid pair therefore stops at rule 1
-when evaluated by the product.
+profile blocker ledger. It also replaces Rule 3 with the frozen destination plus an explicit absent
+scope-grant and bound-model state. With the current profile, every schema-valid pair therefore
+stops at rule 1 when evaluated by the product.
 
 | Order | Pair | Stable error code |
 | --- | --- | --- |
