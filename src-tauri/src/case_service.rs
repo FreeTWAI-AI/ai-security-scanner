@@ -14512,16 +14512,13 @@ fn html_page_rule(report: &BeginnerMasterReport, catalog: HtmlReportCatalog) -> 
         head_rule,
     ));
 
-    // The foot carries the standing caveat and the one number a reader looks
-    // for. This is the marker that travels with a page torn out of the stack;
-    // the full terms are set out at the end of the report, where there is room
-    // to state them without crowding the page number off its own line.
+    // The foot identifies the document and carries the one number a reader
+    // looks for. This is the marker that travels with a page torn out of the
+    // stack; the full terms remain at the end of the report, where there is
+    // room to state them once without crowding the page number.
     rule.push_str(&format!(
         "@bottom-left{{content:{};{};{}}}",
-        css_string_literal(catalog.text(
-            "Preliminary scanner output. Not an audit or certification.",
-            "初步的掃描工具輸出。不是稽核或認證。",
-        )),
+        css_string_literal(catalog.text("Security scan report", "資安掃描報告")),
         quiet,
         foot_rule,
     ));
@@ -33877,6 +33874,46 @@ mod tests {
             );
         }
         assert_eq!(css_string_literal("plain title"), "\"plain title\"");
+    }
+
+    #[test]
+    fn running_footer_identifies_the_report_without_repeating_document_terms() {
+        let fixture = Fixture::new();
+        let prepared = crate::localhost_quick_scan::prepare_localhost_quick_scan(
+            &fixture.storage,
+            fixture.engines.manifests(),
+            9001,
+        )
+        .unwrap();
+        let mut case = fixture
+            .storage
+            .get_case(&prepared.prepared.case_id)
+            .unwrap();
+        close_run_without_execution_for_report_fixture(&mut case, &prepared.prepared.scan_run_id);
+        let report = build_beginner_master_report(&case, &prepared.prepared.scan_run_id).unwrap();
+
+        for (locale, identity, repeated_terms) in [
+            (
+                crate::export::ReportLocale::En,
+                "Security scan report",
+                "Preliminary scanner output. Not an audit or certification.",
+            ),
+            (
+                crate::export::ReportLocale::ZhHant,
+                "資安掃描報告",
+                "初步的掃描工具輸出。不是稽核或認證。",
+            ),
+        ] {
+            let rule = html_page_rule(&report, HtmlReportCatalog::new(locale));
+            assert!(
+                rule.contains(&format!("@bottom-left{{content:\"{identity}\";")),
+                "the running footer did not identify the report: {rule}"
+            );
+            assert!(
+                !rule.contains(repeated_terms),
+                "the running footer repeated the document terms: {rule}"
+            );
+        }
     }
 
     #[test]

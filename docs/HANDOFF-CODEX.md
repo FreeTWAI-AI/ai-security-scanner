@@ -98,20 +98,21 @@ cargo 1622 的分佈：lib 1032、cli 35、`adapter_fixtures` 95、`all_engine_r
 | Step 2 Agentic Radar | **已完成**（`7a07d65` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
 | Step 3 MCP Armor | 已在 `5e01895` 收斂；experimental、不可派送 | `docs/research/mcp-armor-evaluation.md` |
 | Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `89091fa` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
-| 報告 header／footer 美化 | Ted 排隊中的需求（原話：「header footer 還可以做得更漂亮一點」） | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
-| 資產看板 Severity mix 空白格 | **下一條可開軸線；尚未開始** | `html_asset_severity_strip`（`case_service.rs:15172`）在 `counts.is_empty()` 時回 `String::new()`，於是「確實是 0」和「根本沒量到」印出同一個空白 |
+| 報告 header／footer 美化 | **本輪小幅可讀性修正已完成**；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
+| 資產看板 Severity mix 空白格 | **已完成**（`bda3f3a`） | `html_asset_severity_strip` 現在把「已量測且為零」呈現為 `0 problems`／`0 個問題`，把「沒有量測」呈現為 `Not measured`／`未量測` |
 | `npm run validate:aidefend` 紅燈 | **HEAD 上就是紅的**，不是這輪改壞的 | 見 §4.4 |
 
 ---
 
-## 3. 下一條可開軸線（尚未開始）
+## 3. 本輪接續的最小軸線
 
-**資產看板 Severity mix 的空白狀態誠實性。** `html_asset_severity_strip` 在
-`counts.is_empty()` 時回傳空字串，讓「已量測且問題數為 0」與「沒有足夠資料可量測」都
-呈現空白。這會直接影響新手理解結果，且獨立於 Agentic Radar 的三項 blocker。
+**資產看板 Severity mix 的空白狀態誠實性已在 `bda3f3a` 完成。** 報告 fixture 已釘死
+兩種資料狀態：真正完成安全檢查且零問題會明示 `0 problems`／`0 個問題`；只有 inventory
+或沒有可量測的安全結果則明示 `Not measured`／`未量測`，不再共用空白格。
 
-下一個任務若由 Ted 開始，最小範圍是先釘死這兩種資料狀態的呈現契約與報告 fixture，
-再修正該 helper；不要順手做 header／footer 重設計。**本次交接更新沒有開始這條軸線。**
+本輪已接續 Ted 排隊中的一項小型報告可讀性修正：running header 保留案例與輪次識別，
+running footer 改用精簡、在地化的文件身分，不在每一頁重複正式條款。完整條款仍只放在
+報告末端。這不是 header／footer 重設計，也不改報告資訊架構。
 
 Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／release 仍是明確
 排除項目，不是下一步。
