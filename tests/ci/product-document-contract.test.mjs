@@ -291,6 +291,19 @@ test("release records and optional mappings do not choose the roadmap", async ()
     mappings,
     /Only a CWE identifier assigned by the upstream scanner can select a published\s+OWASP Top 10 2021 category/iu,
   );
+
+  const architecture = await load("docs/architecture.md");
+  assert.match(
+    architecture,
+    /Both AIDEFEND and OWASP Top 10 for LLM Applications coordinates use the same control-level\s+`applicability` gate/iu,
+  );
+
+  const threatModel = await load("docs/threat-model.md");
+  assert.match(
+    threatModel,
+    /explicit control-level applicability for both AI-gated frameworks/iu,
+  );
+  assert.match(threatModel, /does not satisfy or invent an AIDEFEND or\s+OWASP LLM applicability state/iu);
 });
 
 test("public development status stays catalog-backed and excludes local handoff detail", async () => {

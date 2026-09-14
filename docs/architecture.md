@@ -364,7 +364,7 @@ The active-group collection is a reversible presentation projection. Creating or
 ControlMapping
   id
   finding_category
-  framework: nist_csf | iso_27001 | aidefend
+  framework: reviewed catalog framework identifier
   framework_version
   control_id
   relationship: related              # exact literal; other relationship claims are rejected
@@ -378,9 +378,13 @@ ControlMapping
 
 There is deliberately no `pass`, `fail`, or compliance score field.
 
-AIDEFEND is available only as a versioned relationship coordinate for findings that actually apply
-to an AI system or AI-generated artifact. The mapping input is a selected CC BY 4.0-derived snapshot
-of AIDEFEND `1.20260805`, pinned to source commit
+Both AIDEFEND and OWASP Top 10 for LLM Applications coordinates use the same control-level
+`applicability` gate. Each coordinate declares `ai_system` or `ai_generated_artifact`, and the
+relationship is withheld unless attributed case facts satisfy that exact condition. Finding text
+and mapping entries cannot establish the condition.
+
+AIDEFEND additionally uses a selected CC BY 4.0-derived metadata snapshot of version `1.20260805`,
+pinned to source commit
 `e10c1678ee49f03f8fb0c97d446ba3fbc3543655`; provenance records the selected fields and changes.
 Non-applicable scanners receive no AIDEFEND relationship. The integration is independent and
 unofficial, and a coordinate does not state implementation, effectiveness, certification, pass/fail,
@@ -654,7 +658,7 @@ The primary result is one versioned beginner master report for every run state. 
 
 - HTML/print and master-report JSON are the default readable exports and work for complete, partial, failed, timed-out, cancelled, and no-checks runs.
 - OCSF and OSCAL are optional Advanced interoperability formats. If they cannot express coverage, they ship with a mandatory coverage sidecar and limitation rather than disabling preservation of existing findings.
-- NIST CSF, ISO/IEC 27001, and applicable AIDEFEND coordinates are optional `related` links derived from findings/evidence. They never start or block a scan, finding, master report, or readable export and never produce compliance, implementation, certification, endorsement, score, pass, or fail claims.
+- Reviewed framework coordinates, including applicable AIDEFEND and OWASP Top 10 for LLM Applications coordinates, are optional `related` links derived from findings/evidence. They never start or block a scan, finding, master report, or readable export and never produce compliance, implementation, certification, endorsement, score, pass, or fail claims.
 - Invalid, missing, stale, historically unauthenticated, or inapplicable mappings are unavailable relationship entries, not invalid findings. Historical relationships are emitted only from the selected run's immutable snapshots and retain mapping version/rationale when available.
 - The raw engine artifact remains available under its sensitivity policy even when an exporter or mapping cannot represent a field.
 

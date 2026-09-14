@@ -253,7 +253,7 @@ Active template collections require policy classification. Destructive, denial-o
 | T-18 | No findings, failed engine, or unknown source appears green. | False reassurance. | Independent coverage ledger; state-specific presentation; zero findings cannot set coverage; `unverifiable` comparison state. |
 | T-19 | Normalization incorrectly merges distinct findings. | A real issue is hidden. | Preserve every source finding and evidence; never destructively merge canonical records; allow one reversible presentation issue to correlate related source findings; retain append-only create/remove events, versioned fingerprints, and expert access to every raw result. |
 | T-20 | Normalization double-counts corroborating evidence. | Inflated risk and unusable report. | One user-facing issue can reference multiple source findings; prioritization records corroboration separately. |
-| T-21 | Automated NIST, ISO, or AIDEFEND mapping implies audit status, control implementation, certification, or official endorsement; AIDEFEND is also attached to findings with no AI-system applicability. | Misrepresentation and bad decisions. | Relationship-only mapping enum; no pass/fail/score field; reviewed, versioned rationale; explicit AIDEFEND applicability; attribution and non-endorsement notice; mapping failure removes only the relationship and never blocks findings, master report, or scanning. |
+| T-21 | Automated framework mapping implies audit status, control implementation, certification, or official endorsement; an AIDEFEND or OWASP LLM coordinate is also attached without matching declared AI context. | Misrepresentation and bad decisions. | Relationship-only mapping enum; no pass/fail/score field; reviewed, versioned rationale; explicit control-level applicability for both AI-gated frameworks; AIDEFEND attribution and non-endorsement notice; mapping failure removes only the relationship and never blocks findings, master report, or scanning. |
 | T-22 | AI agent follows prompt injection in a finding or widens a scan. | Data exfiltration, unauthorized scanning, or host changes. | Treat evidence as untrusted data; no secrets in model context; AI calls same backend authorization; no runtime socket; no remediation command. |
 | T-23 | Remediation advice is executed automatically or mistaken for endorsed code. | Production outage or permission escalation. | No execute/copy-run controls, no write credential in scan runtime, advisory wording, official reference and expert-role guidance. |
 | T-24 | Demo findings are mistaken for real scans. | False product or environment claims. | Persistent Demo badge and provenance, synthetic namespaces, export marker, no demo-to-real state transition. |
@@ -341,11 +341,11 @@ They must not:
   and engine ID, or either the relationship or that execution lacks matching verified-current mapping
   provenance, the relationship is reported as unavailable or mismatched rather than exact. A current
   catalog digest is insufficient unless the coordinate, title, relationship, rationale, evidence
-  engine, and AIDEFEND applicability condition also match one exact catalog entry. Historical catalog
+  engine, and AI applicability condition also match one exact catalog entry. Historical catalog
   identities without an authenticated local snapshot remain unverified and unavailable. Same-engine
   executions are never pooled.
-- Legacy or unanswered AI context remains unknown; it is not converted to an AIDEFEND
-  not-applicable statement.
+- Legacy or unanswered AI context remains unknown; it does not satisfy or invent an AIDEFEND or
+  OWASP LLM applicability state.
 - A zero-asset capture is `confirmed_empty` only when the bounded source operation completed,
   exhausted every required page/parent, and durably recorded that completeness. A missing,
   interrupted, expired, or otherwise incomplete capture remains unknown; a zero count by itself is
