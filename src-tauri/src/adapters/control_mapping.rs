@@ -22,6 +22,8 @@ const MAX_CWE_DERIVED_CONTROLS: usize = 1_024;
 /// An OWASP Top 10 category is defined by a few dozen CWEs at most; the widest
 /// published 2021 category names 40.
 const MAX_CWE_IDS_PER_DERIVED_CONTROL: usize = 64;
+const CATALOG_SCHEMA_VERSION: &str = "1.1";
+const MAPPING_RELATIONSHIP: &str = "related";
 const REVIEW_PROCESS_V1: &str = "source_coordinate_and_rationale_review_v1";
 
 #[derive(Debug, Deserialize)]
@@ -406,7 +408,7 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
     let parsed: MappingCatalog = serde_json::from_value(raw)
         .map_err(|error| format!("invalid embedded control mapping JSON: {error}"))?;
 
-    if parsed.schema_version != "1.1" {
+    if parsed.schema_version != CATALOG_SCHEMA_VERSION {
         return Err(format!(
             "unsupported control mapping schema version {}",
             parsed.schema_version
@@ -437,8 +439,10 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
             parsed.provenance.canonical_sha256
         ));
     }
-    if parsed.relationship != "related" {
-        return Err("control mapping relationship must be related".into());
+    if parsed.relationship != MAPPING_RELATIONSHIP {
+        return Err(format!(
+            "control mapping relationship must be {MAPPING_RELATIONSHIP}"
+        ));
     }
     validate_text("mapping disclaimer", &parsed.disclaimer, 40, 512)?;
     let disclaimer = parsed.disclaimer.to_ascii_lowercase();
@@ -882,14 +886,26 @@ mod tests {
         assert_eq!(provenance.catalog_sha256.len(), 64);
 
         let schema = mapping_schema_fixture();
+        let properties = &schema["properties"];
         assert_eq!(
-            schema["properties"]["controls"]["items"]["allOf"][0]["if"]["properties"]["framework"]
-                ["enum"],
+            properties["schema_version"]["const"],
+            serde_json::json!(CATALOG_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            properties["relationship"]["const"],
+            serde_json::json!(MAPPING_RELATIONSHIP)
+        );
+        assert_eq!(
+            properties["provenance"]["properties"]["review_process"]["const"],
+            serde_json::json!(REVIEW_PROCESS_V1)
+        );
+        assert_eq!(
+            properties["controls"]["items"]["allOf"][0]["if"]["properties"]["framework"]["enum"],
             serde_json::json!(AI_GATED_FRAMEWORKS),
             "Rust and JSON Schema must gate the same AI frameworks"
         );
         let applicability_values =
-            schema["properties"]["controls"]["items"]["properties"]["applicability"]["enum"]
+            properties["controls"]["items"]["properties"]["applicability"]["enum"]
                 .as_array()
                 .expect("AI applicability schema enum");
         assert_eq!(applicability_values.len(), 2);
@@ -899,7 +915,7 @@ mod tests {
         }
 
         assert_eq!(
-            schema["properties"]["sources"]["items"]["properties"]["url"],
+            properties["sources"]["items"]["properties"]["url"],
             serde_json::json!({
                 "type": "string",
                 "format": "uri",
@@ -913,8 +929,15 @@ mod tests {
         assert!(validate_https_url("https://user@example.com").is_err());
         assert!(validate_https_url(&format!("https://{}", "a".repeat(2_041))).is_err());
 
-        let properties = &schema["properties"];
         let entry_schema = &properties["entries"]["items"];
+        let match_kinds = entry_schema["properties"]["match_kind"]["enum"]
+            .as_array()
+            .expect("mapping match-kind schema enum");
+        assert_eq!(match_kinds.len(), 2);
+        for value in match_kinds {
+            serde_json::from_value::<MatchKind>(value.clone())
+                .expect("every schema match kind must deserialize in Rust");
+        }
         assert_eq!(
             entry_schema["properties"]["source_rule"],
             serde_json::json!({
@@ -1178,7 +1201,7 @@ mod tests {
                     && item.framework == "CIS Amazon Web Services Foundations Benchmark")
         );
         assert!(overprivileged_policy.iter().all(|item| {
-            item.relationship == "related"
+            item.relationship == MAPPING_RELATIONSHIP
                 && item.mapping_version == "2026-09-13.2"
                 && item.mapping_provenance.as_ref().is_some_and(|provenance| {
                     provenance.catalog_sha256
