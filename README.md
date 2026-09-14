@@ -97,6 +97,7 @@ Use network scanning only for assets you own or are authorized to assess. The ap
 - [Scanning scope](docs/scanning-scope.md)
 - [Results and exports](docs/results-and-exports.md)
 - [Documentation index](docs/README.md)
+- [Development status](docs/development-status.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 

@@ -43,3 +43,6 @@ credentials.json
 *.log
 tmp/
 temp/
+
+# Local development handoffs
+docs/HANDOFF-*.local.md

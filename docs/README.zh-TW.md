@@ -21,6 +21,7 @@
 
 ## 開發與維護
 
+- [目前開發狀態](development-status.md)：目前實作、驗證基準與尚未通過的閘門。
 - [參與開發](../CONTRIBUTING.md)：產品優先順序、實作規則與驗證方式。
 - [引擎維護](engine-maintenance.md)：上游更新、adapter 邊界與 patch 例外。
 - [威脅模型](threat-model.md)：保護資產、威脅與必要控制。

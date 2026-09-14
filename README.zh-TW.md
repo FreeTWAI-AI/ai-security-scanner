@@ -97,7 +97,7 @@
 - [掃描範圍](docs/scanning-scope.zh-TW.md)
 - [結果與匯出](docs/results-and-exports.zh-TW.md)
 - [文件索引](docs/README.zh-TW.md)
-- [完整開發交接筆記](docs/project-handover.zh-TW.md)
+- [目前開發狀態](docs/development-status.md)
 - [參與開發](CONTRIBUTING.md)
 - [安全政策](SECURITY.md)
 

@@ -21,6 +21,7 @@ Use the shortest path that matches the task.
 
 ## Build and maintain
 
+- [Development status](development-status.md) — current implementation, verification, and open gates.
 - [Contributing](../CONTRIBUTING.md) — product priorities, implementation rules, and verification.
 - [Engine maintenance](engine-maintenance.md) — upstream updates, adapter boundaries, and patch exceptions.
 - [Threat model](threat-model.md) — protected assets, threats, and required controls.

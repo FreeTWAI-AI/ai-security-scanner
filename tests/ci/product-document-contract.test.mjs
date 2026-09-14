@@ -21,6 +21,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/README.md",
   "docs/README.zh-TW.md",
   "docs/architecture.md",
+  "docs/development-status.md",
   "docs/engine-catalog.md",
   "docs/engine-maintenance.md",
   "docs/managed-runtime.md",

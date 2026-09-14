@@ -31,5 +31,5 @@ The whole product optimizes **time-to-first-scan** for beginners.
 
 ## Pointers
 
-- Dev handoff context: [`HANDOFF-CODEX.md`](HANDOFF-CODEX.md)
+- Current engineering status: [`development-status.md`](development-status.md)
 - Product behavior source of truth: [`product-spec.md`](product-spec.md)
