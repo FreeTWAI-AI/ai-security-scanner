@@ -93,9 +93,11 @@ The source and license below identify the pinned engine family. Exact release, s
 
 ### Experimental, non-dispatchable engine contracts
 
-These catalog records have thin adapters and pinned evidence contracts, but no packaged image and
-`runnable: false`. They are not current scan capabilities. Their blockers are enforced by the
-registry rather than left as an operator convention.
+These catalog records have thin adapters and pinned evidence contracts, and all remain
+`runnable: false`. None has a verified published image digest. A local build candidate, where
+present, is build evidence only and does not make a record dispatchable. They are not current scan
+capabilities. Their blockers are enforced by the registry rather than left as an operator
+convention.
 
 | Capability | Upstream engine / source | Pinned license record | Evaluated boundary |
 |---|---|---|---|

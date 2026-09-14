@@ -368,6 +368,17 @@ test("public development status stays catalog-backed and excludes local handoff 
   }
 });
 
+test("experimental engine documentation distinguishes local builds from published artifacts", async () => {
+  const engineCatalog = await load("docs/engine-catalog.md");
+
+  assert.match(engineCatalog, /all remain\s+`runnable: false`/iu);
+  assert.match(engineCatalog, /None has a verified published image digest/iu);
+  assert.match(
+    engineCatalog,
+    /local build candidate[\s\S]*build evidence only[\s\S]*does not make a record dispatchable/iu,
+  );
+});
+
 test("current product documents do not contain broken local Markdown links", async () => {
   for (const document of CURRENT_PRODUCT_DOCUMENTS) {
     const content = await load(document);
