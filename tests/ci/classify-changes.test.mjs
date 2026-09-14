@@ -232,13 +232,14 @@ test("the master-framework producer exercises Rust, desktop, and release contrac
   assert.equal(result.windows_runtime, false);
 });
 
-test("AIDEFEND machine inputs use the focused framework lane without full release work", () => {
+test("AIDEFEND machine inputs and mapping schema use the focused framework lane", () => {
   assert.deepEqual(classifyChangedPaths([
+    "mappings/control-mappings.schema.json",
     "mappings/vendor/aidefend/1.20260805/selected-controls.json",
     "mappings/vendor/aidefend/1.20260805/PROVENANCE.json",
     "scripts/validate-aidefend-snapshot.mjs",
   ]), {
-    changed_path_count: 3,
+    changed_path_count: 4,
     docs_only: false,
     frontend: false,
     rust_core: false,
