@@ -2,7 +2,7 @@
 
 交接日期：2026-09-14（America/New_York）
 交接基準 commit：`9032d96`（`main`，**未 push**）
-最新續接紀錄：`e2bb36d`（MCP Armor immutable image publication workflow，`main`，**未 push**）
+最新續接紀錄：`16dfb80`（移除 credential-shaped fixture text 並重驗 MCP Armor publication candidate，`main`，**已 push**）
 交接者：Claude Code session `284f7d7a-b6c3-4a29-b652-c31fa7be49dd`，工作區間 2026-09-09 01:07 → 2026-09-13 01:16（America/New_York），該區間共 183 個 commit
 
 > 這份文件是**開發交接**，不是產品規格、發布核准、合規聲明或安全保證。
@@ -40,7 +40,8 @@ image ID 寫成可發布 artifact digest，也不要用 branch／本機 push 繞
 | commit | 內容 |
 | --- | --- |
 | `f246241` | typed 單檔選擇、pre-contact snapshot 驗證、restricted launcher、pinned local image 與 finding-producing offline smoke；catalog 維持不可派送 |
-| `e2bb36d` | 固定 `1.0.2-config-only.1` publication candidate；新增 amd64＋arm64 build、離線 finding smoke、SBOM／provenance／promotion、artifact verifier；尚未 push 或觸發 |
+| `e2bb36d` | 固定 `1.0.2-config-only.1` publication candidate；新增 amd64＋arm64 build、離線 finding smoke、SBOM／provenance／promotion、artifact verifier；該 commit 當時尚未 push 或觸發 |
+| `16dfb80` | 移除 retained upstream patch 裡未被測試引用的 credential-shaped 靜態 fixture、重建 image 並重跑離線 finding smoke；`main` 已推到 `origin/main` |
 
 ### 前一里程碑：報告誠實性與可讀性收尾
 
@@ -59,8 +60,9 @@ image ID 寫成可發布 artifact digest，也不要用 branch／本機 push 繞
 | `fb9cee0` | 重新核對 shallow checkout、pin、license 與文件時態 |
 | `713d272` | Step 2b／2c 收斂稽核：pin、patch、fixtures、catalog、adapter 與草稿一致 |
 
-**未 push。`e2bb36d` 時 `main` 有 57 個未推送 commit。** Image publication 已獲同意，
-但 `main 未推送先不要 push` 尚未被明確解除；workflow 因此還不能在合格的 `main` provenance 下觸發。
+`e2bb36d` 時 `main` 有 57 個未推送 commit；Ted 在 2026-09-14 明確指示 `push main`，
+既有的 push 限制因此已就這次同步解除。清除 GitHub Push Protection 指出的合成 token 後，
+`main` 已於 `16dfb80` 推到 `origin/main`。Image publication workflow 尚未手動觸發。
 
 ### 交接時的測試數字（全綠）
 
@@ -121,7 +123,7 @@ cargo 1690 的分佈：lib 1090、cli 35、`adapter_fixtures` 105、`all_engine_
 | 項目 | 狀態 | 位置 |
 | --- | --- | --- |
 | Step 2 Agentic Radar | **已完成**（`713d272` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
-| Step 3 MCP Armor | `f246241` 完成本機 execution slice；`e2bb36d` 完成 immutable publication workflow／verifier。只剩允許 push `main`、遠端 workflow 成功與 digest writeback；目前仍是 experimental、不可派送 | `docs/research/mcp-armor-evaluation.md`、`engines/images/mcp-armor/plan.json` |
+| Step 3 MCP Armor | `f246241` 完成本機 execution slice；`e2bb36d` 完成 immutable publication workflow／verifier；`16dfb80` 重驗 candidate 並推送 `main`。只剩遠端 workflow 執行、evidence 驗證與 digest writeback；目前仍是 experimental、不可派送 | `docs/research/mcp-armor-evaluation.md`、`engines/images/mcp-armor/plan.json` |
 | Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `c35cb91` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
 | 報告 header／footer 美化 | **已完成本輪排定的小幅可讀性修正**（`6e9e2cd`）；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
 | 資產看板 Severity mix 空白格 | **已完成**（`a740bfb`） | `html_asset_severity_strip` 現在把「已量測且為零」呈現為 `0 problems`／`0 個問題`，把「沒有量測」呈現為 `Not measured`／`未量測` |
@@ -145,9 +147,9 @@ model-endpoint scope grant 與 credential path；Agentic Radar 仍缺 image、ty
 與 accepted upstream machine-output release；Augustus 只有已稽核的 14-rule pure-data preflight，
 沒有 catalog／adapter／launcher／provider path。
 
-Owner 已批准 MCP Armor image publication，`e2bb36d` 也已把發佈與驗證路徑接好。現在唯一
-無法在本機完成的前置動作，是解除這一次 `main` push 限制，讓 workflow 取得契約要求的
-`refs/heads/main` provenance。遠端 workflow 成功後，必須下載並以
+Owner 已批准 MCP Armor image publication，`e2bb36d` 也已把發佈與驗證路徑接好；Ted 隨後
+明確指示 `push main`，`16dfb80` 已成功推到 `origin/main`，所以 workflow 現在可取得契約要求的
+`refs/heads/main` provenance。尚未手動觸發 publication workflow。遠端 workflow 成功後，必須下載並以
 `scripts/release/verify-publication-artifact.mjs` 驗證 evidence，再把 published tag／digest／
 platform digests／workflow run 寫回 plan 與 catalog，最後才可把 `runnable` 改成 true。
 
@@ -170,11 +172,11 @@ Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／
 
 ### 4.1 站立約束（Ted 的原話，一律遵守）
 
-- **`main 未推送先不要 push`。** `e2bb36d` 時有 57 個未推送 commit；publication 授權不等於此限制已解除。
+- **`main 未推送先不要 push` 是歷史限制。** Ted 在 2026-09-14 明確指示 `push main`，本次同步已於 `16dfb80` 完成；不要把這次許可外推成後續任意 push 授權。
 - **`不要對外掃描、不要要憑證、不要擅自推 image`。** 整條 garak 線沒有跑過任何真實掃描、沒有接觸任何外部端點；唯一的網路動作是 GitHub 唯讀存取（`git ls-remote` 查 tag、`curl` 上游已 checked-in 的 fixture、`--depth 1` clone 到 gitignore 的 `.upstreams/`）。
 - **`不要擅自遠端破壞性操作`** / `勿擅自對遠端做破壞性操作`。
 - **`不要開 SSO／正式環境`**。
-- **MCP Armor image publication 已在 2026-09-14 獲 Ted 明確同意**；但 push `main` 仍需另外解除既有禁止。任何對真實 LLM endpoint 的實際掃描仍需明確點頭。
+- **MCP Armor image publication 已在 2026-09-14 獲 Ted 明確同意**；`main` 的本次 push 也已另行明確授權並完成。任何對真實 LLM endpoint 的實際掃描仍需明確點頭。
 - **完成一小步就停**，跑完 gates、回報測試數字，用繁體中文簡述。
 - **不要開大重構、不要開新大軸。**
 - **不要為綠燈放寬契約。**
