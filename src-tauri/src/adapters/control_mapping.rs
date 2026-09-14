@@ -944,9 +944,13 @@ mod tests {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 512,
-                "pattern": "^[^*?\\[\\]]+$",
+                "allOf": [
+                    { "pattern": "^[^*?\\[\\]]+$" },
+                    { "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+                    { "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]+$" },
+                ],
             }),
-            "mapping Schema must reject the wildcard selectors Rust rejects"
+            "mapping Schema must reject the wildcard, whitespace-edge, and control-character source rules Rust rejects"
         );
         assert_eq!(
             entry_schema["allOf"],
@@ -1002,6 +1006,21 @@ mod tests {
         let error = parse_and_validate_json(&catalog_json_with_recalculated_digest(short_prefix))
             .unwrap_err();
         assert!(error.contains("prefix mapping") && error.contains("is too broad"));
+
+        for unsafe_source_rule in [
+            " ",
+            " upstream-rule",
+            "upstream-rule ",
+            "upstream\nrule",
+            "upstream\u{0085}rule",
+        ] {
+            let mut unsafe_catalog = catalog_fixture();
+            unsafe_catalog["entries"][0]["source_rule"] = Value::String(unsafe_source_rule.into());
+            let error =
+                parse_and_validate_json(&catalog_json_with_recalculated_digest(unsafe_catalog))
+                    .unwrap_err();
+            assert!(error.contains("mapping source rule must contain 1 to 512 safe characters"));
+        }
     }
 
     /// Guards the failure that broke five entries at once: a `source_rule`
