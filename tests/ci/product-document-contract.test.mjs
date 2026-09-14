@@ -320,6 +320,15 @@ test("release records and optional mappings do not choose the roadmap", async ()
 });
 
 test("public development status stays catalog-backed and excludes local handoff detail", async () => {
+  const ciTestDirectory = path.join(REPOSITORY_ROOT, "tests", "ci");
+  const ciTestFiles = (await readdir(ciTestDirectory)).filter((name) => name.endsWith(".test.mjs"));
+  const ciTestSources = await Promise.all(
+    ciTestFiles.map((name) => readFile(path.join(ciTestDirectory, name), "utf8")),
+  );
+  const ciTestCount = ciTestSources.reduce(
+    (count, source) => count + (source.match(/^test\(/gmu)?.length ?? 0),
+    0,
+  );
   const [statusContent, catalogContent, ignoreContent] = await Promise.all([
     load("docs/development-status.md"),
     load("engines/catalog.json"),
@@ -339,6 +348,8 @@ test("public development status stays catalog-backed and excludes local handoff 
       "iu",
     ),
   );
+  assert.ok(ciTestCount > 0, "CI test census must find top-level tests");
+  assert.match(statusContent, new RegExp(`CI document and contract tests: ${ciTestCount} tests`, "u"));
   for (const engine of experimental) {
     assert.equal(engine.compatibility?.runnable, false, `${engine.id} must remain non-runnable`);
     assert.equal(engine.image, null, `${engine.id} must not claim a published image`);
