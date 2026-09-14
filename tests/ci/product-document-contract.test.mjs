@@ -351,6 +351,12 @@ test("public development status stays catalog-backed and excludes local handoff 
 
   assert.equal(catalog.some((engine) => engine.id === "augustus"), false);
   assert.match(statusContent, /Augustus.*Research-only/is);
+  assert.match(statusContent, /^## Current blockers$/mu);
+  assert.match(
+    statusContent,
+    /blockers describe fail-closed admission state; they do not authorize a publication or release\s+plan/iu,
+  );
+  assert.doesNotMatch(statusContent, /^## Open work$/mu);
   assert.doesNotMatch(
     statusContent,
     /(?:\/home\/|HANDOFF-CODEX|session(?: id| uuid)?|\b(?:Ted|Codex|Claude)\b|\b[0-9a-f]{7,40}\b)/iu,

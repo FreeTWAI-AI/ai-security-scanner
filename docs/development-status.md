@@ -18,11 +18,11 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 
 ## AI integration work
 
-| Integration | Implemented | Remaining before it can run |
+| Integration | Implemented | Current fail-closed boundary |
 | --- | --- | --- |
 | Garak | A thin adapter preserves probe identifiers and failure counts without inventing severity. | A managed image, an exact model-endpoint scope grant, and a product-owned credential path where a selected endpoint requires one. |
 | Agentic Radar | Its workflow graph is normalized as observations rather than unsupported vulnerability findings; incomplete machine output fails closed. | A managed image, typed framework selection, and an accepted upstream machine-output contract. |
-| MCP Armor | One exact MCP configuration file can be selected from an immutable repository snapshot and checked by a restricted, model-free configuration launcher. The local image produced a complete two-check report and an excessive-permission finding from a synthetic fixture with networking disabled. | Run and verify the approved immutable-image publication workflow, then record its published digest before enabling dispatch. |
+| MCP Armor | One exact MCP configuration file can be selected from an immutable repository snapshot and checked by a restricted, model-free configuration launcher. The local image produced a complete two-check report and an excessive-permission finding from a synthetic fixture with networking disabled. | No verified published digest exists, so dispatch remains disabled. |
 | Augustus | Research-only, pure-data 14-rule preflight contracts and rejection fixtures define the required endpoint, cost, request, deadline, sandbox, and output boundaries. | No production catalog entry, adapter, launcher, provider connection, credential path, or dispatch path exists yet. |
 
 Experimental entries remain `runnable: false`. Research artifacts and local image identifiers are not
@@ -43,12 +43,14 @@ After removing credential-shaped text from an upstream test fixture, the MCP Arm
 and its offline synthetic smoke test again produced one finding, two completed checks, no warning, and
 `complete: true` under `network=none`.
 
-## Open work
+## Current blockers
 
-1. Complete MCP Armor publication evidence and digest writeback before changing its runnable status.
-2. Keep the other experimental AI integrations fail closed until their catalog blockers are resolved.
+- MCP Armor has no verified published digest and remains non-runnable.
+- The other experimental AI integrations remain non-runnable while their catalog blockers exist.
 
-Publication, packaging, signing, versioning, and compliance posture remain product-owner decisions.
+These blockers describe fail-closed admission state; they do not authorize a publication or release
+plan. Publication, packaging, signing, versioning, and compliance posture remain product-owner
+decisions.
 Real endpoint scans require explicit scope and must never infer authorization or accept credentials
 through chat or command arguments.
 
