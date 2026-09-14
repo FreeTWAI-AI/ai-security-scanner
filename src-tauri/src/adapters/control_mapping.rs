@@ -966,6 +966,19 @@ mod tests {
             "mapping Schema must reject the whitespace-edge and control-character rationales Rust rejects"
         );
         assert_eq!(
+            properties["cwe_derived_controls"]["items"]["properties"]["rationale"],
+            serde_json::json!({
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 512,
+                "allOf": [
+                    { "pattern": "^\\S(?:[\\s\\S]*\\S)?$" },
+                    { "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]+$" },
+                ],
+            }),
+            "CWE-derived mapping Schema must reject the whitespace-edge and control-character rationales Rust rejects"
+        );
+        assert_eq!(
             entry_schema["allOf"],
             serde_json::json!([{
                 "if": {
@@ -1048,6 +1061,22 @@ mod tests {
                 parse_and_validate_json(&catalog_json_with_recalculated_digest(unsafe_catalog))
                     .unwrap_err();
             assert!(error.contains("mapping rationale must contain 20 to 512 safe characters"));
+        }
+
+        for unsafe_rationale in [
+            "                    ",
+            " CWE-derived text has a leading space.",
+            "CWE-derived text has a trailing space. ",
+            "CWE-derived text has a\ncontrol character.",
+            "CWE-derived text has a\u{0085}control character.",
+        ] {
+            let mut unsafe_catalog = catalog_fixture();
+            unsafe_catalog["cwe_derived_controls"][0]["rationale"] =
+                Value::String(unsafe_rationale.into());
+            let error =
+                parse_and_validate_json(&catalog_json_with_recalculated_digest(unsafe_catalog))
+                    .unwrap_err();
+            assert!(error.contains("cwe-derived rationale must contain 20 to 512 safe characters"));
         }
     }
 

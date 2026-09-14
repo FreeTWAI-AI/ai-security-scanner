@@ -149,7 +149,15 @@ const EXPECTED_CWE_DERIVED_SCHEMA = Object.freeze({
         uniqueItems: true,
         items: { type: "string", pattern: "^CWE-[0-9]+$" },
       },
-      rationale: { type: "string", minLength: 20, maxLength: 512 },
+      rationale: {
+        type: "string",
+        minLength: 20,
+        maxLength: 512,
+        allOf: [
+          { pattern: "^\\S(?:[\\s\\S]*\\S)?$" },
+          { pattern: "^[^\\u0000-\\u001F\\u007F-\\u009F]+$" },
+        ],
+      },
     },
   },
 });
