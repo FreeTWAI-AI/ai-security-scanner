@@ -8,7 +8,7 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 
 ## At a glance
 
-- The engine catalog contains 24 records: 21 integrated, runnable engines and three experimental AI
+- The engine catalog contains 24 records: 21 integrated, runnable engines and 3 experimental AI
   integrations that remain non-runnable.
 - Repository, website/API, infrastructure, cloud, Microsoft 365, and Kubernetes paths use bounded
   upstream checks and feed one product-owned report.

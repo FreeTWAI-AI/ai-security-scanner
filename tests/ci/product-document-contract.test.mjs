@@ -285,6 +285,55 @@ test("release records and optional mappings do not choose the roadmap", async ()
   assert.match(mappings, /not a compliance result|不是合規結果/i);
 });
 
+test("public development status stays catalog-backed and excludes local handoff detail", async () => {
+  const [statusContent, catalogContent, ignoreContent] = await Promise.all([
+    load("docs/development-status.md"),
+    load("engines/catalog.json"),
+    load(".gitignore"),
+  ]);
+  const catalog = JSON.parse(catalogContent);
+  const integrated = catalog.filter(
+    (engine) => engine.status === "integrated" && engine.compatibility?.runnable === true,
+  );
+  const experimental = catalog.filter((engine) => engine.status === "experimental");
+
+  assert.equal(integrated.length + experimental.length, catalog.length);
+  assert.match(
+    statusContent,
+    new RegExp(
+      `contains ${catalog.length} records: ${integrated.length} integrated, runnable engines and ${experimental.length} experimental AI\\s+integrations that remain non-runnable`,
+      "iu",
+    ),
+  );
+  for (const engine of experimental) {
+    assert.equal(engine.compatibility?.runnable, false, `${engine.id} must remain non-runnable`);
+    assert.equal(engine.image, null, `${engine.id} must not claim a published image`);
+    assert.ok(engine.compatibility?.blocked_by?.length > 0, `${engine.id} must retain blockers`);
+    assert.ok(
+      statusContent.toLowerCase().includes(engine.display_name.toLowerCase()),
+      `${engine.id} must appear in development status`,
+    );
+  }
+
+  assert.equal(catalog.some((engine) => engine.id === "augustus"), false);
+  assert.match(statusContent, /Augustus.*Research-only/is);
+  assert.doesNotMatch(
+    statusContent,
+    /(?:\/home\/|HANDOFF-CODEX|session(?: id| uuid)?|\b(?:Ted|Codex|Claude)\b|\b[0-9a-f]{7,40}\b)/iu,
+  );
+  assert.match(ignoreContent, /^docs\/HANDOFF-\*\.local\.md$/mu);
+
+  for (const document of [
+    "README.md",
+    "README.zh-TW.md",
+    "docs/README.md",
+    "docs/README.zh-TW.md",
+    "docs/PRODUCT-DOCTRINE.md",
+  ]) {
+    assert.doesNotMatch(await load(document), /HANDOFF-CODEX/u, `${document} must use public status`);
+  }
+});
+
 test("current product documents do not contain broken local Markdown links", async () => {
   for (const document of CURRENT_PRODUCT_DOCUMENTS) {
     const content = await load(document);
