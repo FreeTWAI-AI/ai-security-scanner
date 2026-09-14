@@ -374,7 +374,21 @@ test("public development status stays catalog-backed and excludes local handoff 
   }
 
   assert.equal(catalog.some((engine) => engine.id === "augustus"), false);
-  assert.match(statusContent, /Augustus.*Research-only/is);
+  const augustusStatusRow = statusContent
+    .split("\n")
+    .find((line) => line.startsWith("| Augustus |"));
+  assert.ok(augustusStatusRow, "Augustus must appear in public development status");
+  for (const term of [
+    /Research-only/iu,
+    /No production catalog entry/iu,
+    /adapter/iu,
+    /launcher/iu,
+    /provider connection/iu,
+    /credential path/iu,
+    /dispatch path/iu,
+  ]) {
+    assert.match(augustusStatusRow, term, "Augustus public status omits a production boundary");
+  }
   assert.match(statusContent, /^## Current blockers$/mu);
   assert.match(
     statusContent,
