@@ -898,6 +898,21 @@ mod tests {
                 .expect("every schema applicability value must deserialize in Rust");
         }
 
+        assert_eq!(
+            schema["properties"]["sources"]["items"]["properties"]["url"],
+            serde_json::json!({
+                "type": "string",
+                "format": "uri",
+                "minLength": 9,
+                "maxLength": 2_048,
+                "pattern": "^https://[^@]+$",
+            }),
+            "Rust and JSON Schema must enforce the same credential-free source URL bounds"
+        );
+        validate_https_url("https://example.com").expect("ordinary HTTPS source URL");
+        assert!(validate_https_url("https://user@example.com").is_err());
+        assert!(validate_https_url(&format!("https://{}", "a".repeat(2_041))).is_err());
+
         let properties = &schema["properties"];
         for (label, schema_limit, rust_limit) in [
             ("sources", &properties["sources"]["maxItems"], MAX_SOURCES),
