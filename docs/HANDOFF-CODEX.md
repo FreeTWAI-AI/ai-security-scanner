@@ -2,7 +2,7 @@
 
 交接日期：2026-09-14（America/New_York）
 交接基準 commit：`9032d96`（`main`，**未 push**）
-最新續接紀錄：`7537d5d`（MCP Armor immutable image publication workflow，`main`，**未 push**）
+最新續接紀錄：`e2bb36d`（MCP Armor immutable image publication workflow，`main`，**未 push**）
 交接者：Claude Code session `284f7d7a-b6c3-4a29-b652-c31fa7be49dd`，工作區間 2026-09-09 01:07 → 2026-09-13 01:16（America/New_York），該區間共 183 個 commit
 
 > 這份文件是**開發交接**，不是產品規格、發布核准、合規聲明或安全保證。
@@ -21,33 +21,33 @@ See [`PRODUCT-DOCTRINE.md`](PRODUCT-DOCTRINE.md). Short form: optimize **time-to
 
 ### 當前軸
 
-**MCP Armor 已從研究／adapter 準備推進到可重現的本機 execution slice。** `04367af`
+**MCP Armor 已從研究／adapter 準備推進到可重現的本機 execution slice。** `f246241`
 接上不可變 repository snapshot 內的 bounded MCP 設定探索、單檔 typed selection、dispatch 前
 digest 驗證、固定 `configuration_only` launcher、pinned local image build 與 `network=none`
 合成端到端 smoke。它確實產生並驗證一筆 excessive-permission finding；不是 setup-only 測試。
-Ted 已在 2026-09-14 明確同意繼續 image publication；`7537d5d` 因此補上 immutable
+Ted 已在 2026-09-14 明確同意繼續 image publication；`e2bb36d` 因此補上 immutable
 multi-platform workflow、signed evidence 與下載後 verifier，catalog 進入 `publication_in_progress`。
 它仍是 `experimental`、`runnable: false`，因為 workflow 尚未在遠端產生 digest。不要把本機
 image ID 寫成可發布 artifact digest，也不要用 branch／本機 push 繞過只接受 `refs/heads/main`
 的 provenance 契約。
 
-**報告的兩項小型誠實性／可讀性工作也已收斂：** Severity mix 在 `bda3f3a` 區分
-「已量測且為零」與「未量測」；running header／footer 在 `9fda6f4` 完成一項小幅可讀性
+**報告的兩項小型誠實性／可讀性工作也已收斂：** Severity mix 在 `a740bfb` 區分
+「已量測且為零」與「未量測」；running header／footer 在 `6e9e2cd` 完成一項小幅可讀性
 修正。本次文件同步不命名或開始新的產品軸，後續等待 Ted 明示。
 
 ### 剛完成：MCP Armor 本機 configuration-only 執行路徑
 
 | commit | 內容 |
 | --- | --- |
-| `04367af` | typed 單檔選擇、pre-contact snapshot 驗證、restricted launcher、pinned local image 與 finding-producing offline smoke；catalog 維持不可派送 |
-| `7537d5d` | 固定 `1.0.2-config-only.1` publication candidate；新增 amd64＋arm64 build、離線 finding smoke、SBOM／provenance／promotion、artifact verifier；尚未 push 或觸發 |
+| `f246241` | typed 單檔選擇、pre-contact snapshot 驗證、restricted launcher、pinned local image 與 finding-producing offline smoke；catalog 維持不可派送 |
+| `e2bb36d` | 固定 `1.0.2-config-only.1` publication candidate；新增 amd64＋arm64 build、離線 finding smoke、SBOM／provenance／promotion、artifact verifier；尚未 push 或觸發 |
 
 ### 前一里程碑：報告誠實性與可讀性收尾
 
 | commit | 內容 |
 | --- | --- |
-| `bda3f3a` | Severity mix 明示 measured-zero 與 not-measured，不再共用空白格 |
-| `9fda6f4` | 保留 running header 的案例／輪次識別；running footer 改用精簡的在地化文件身分，完整條款仍只放在報告末端 |
+| `a740bfb` | Severity mix 明示 measured-zero 與 not-measured，不再共用空白格 |
+| `6e9e2cd` | 保留 running header 的案例／輪次識別；running footer 改用精簡的在地化文件身分，完整條款仍只放在報告末端 |
 
 ### 更早里程碑：Agentic Radar Step 2 收尾
 
@@ -56,10 +56,10 @@ image ID 寫成可發布 artifact digest，也不要用 branch／本機 push 繞
 | `d6d7666` | pinned 研究決定：workflow graph 收成 observations，不把 11 條通用警語當 findings |
 | `546104c` | Step 2b：experimental、不可派送 catalog entry 與 fixture-bound thin adapter |
 | `ed24d1d` | Step 2c：本機上游 issue／PR 草稿；沒有送出 GitHub |
-| `488698b` | 重新核對 shallow checkout、pin、license 與文件時態 |
-| `7a07d65` | Step 2b／2c 收斂稽核：pin、patch、fixtures、catalog、adapter 與草稿一致 |
+| `fb9cee0` | 重新核對 shallow checkout、pin、license 與文件時態 |
+| `713d272` | Step 2b／2c 收斂稽核：pin、patch、fixtures、catalog、adapter 與草稿一致 |
 
-**未 push。`7537d5d` 時 `main` 有 57 個未推送 commit。** Image publication 已獲同意，
+**未 push。`e2bb36d` 時 `main` 有 57 個未推送 commit。** Image publication 已獲同意，
 但 `main 未推送先不要 push` 尚未被明確解除；workflow 因此還不能在合格的 `main` provenance 下觸發。
 
 ### 交接時的測試數字（全綠）
@@ -120,18 +120,18 @@ cargo 1690 的分佈：lib 1090、cli 35、`adapter_fixtures` 105、`all_engine_
 
 | 項目 | 狀態 | 位置 |
 | --- | --- | --- |
-| Step 2 Agentic Radar | **已完成**（`7a07d65` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
-| Step 3 MCP Armor | `04367af` 完成本機 execution slice；`7537d5d` 完成 immutable publication workflow／verifier。只剩允許 push `main`、遠端 workflow 成功與 digest writeback；目前仍是 experimental、不可派送 | `docs/research/mcp-armor-evaluation.md`、`engines/images/mcp-armor/plan.json` |
-| Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `89091fa` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
-| 報告 header／footer 美化 | **已完成本輪排定的小幅可讀性修正**（`9fda6f4`）；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
-| 資產看板 Severity mix 空白格 | **已完成**（`bda3f3a`） | `html_asset_severity_strip` 現在把「已量測且為零」呈現為 `0 problems`／`0 個問題`，把「沒有量測」呈現為 `Not measured`／`未量測` |
+| Step 2 Agentic Radar | **已完成**（`713d272` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
+| Step 3 MCP Armor | `f246241` 完成本機 execution slice；`e2bb36d` 完成 immutable publication workflow／verifier。只剩允許 push `main`、遠端 workflow 成功與 digest writeback；目前仍是 experimental、不可派送 | `docs/research/mcp-armor-evaluation.md`、`engines/images/mcp-armor/plan.json` |
+| Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `c35cb91` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
+| 報告 header／footer 美化 | **已完成本輪排定的小幅可讀性修正**（`6e9e2cd`）；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
+| 資產看板 Severity mix 空白格 | **已完成**（`a740bfb`） | `html_asset_severity_strip` 現在把「已量測且為零」呈現為 `0 problems`／`0 個問題`，把「沒有量測」呈現為 `Not measured`／`未量測` |
 | `npm run validate:aidefend` 紅燈 | **HEAD 上就是紅的**，不是這輪改壞的 | 見 §4.4 |
 
 ---
 
 ## 3. 現在真正接上的範圍與下一個產品阻塞
 
-`04367af` 已把 MCP Armor 的 configuration-only slice 接到產品內部 execution boundary：
+`f246241` 已把 MCP Armor 的 configuration-only slice 接到產品內部 execution boundary：
 
 - snapshot 建立時只列出 bounded、可辨識的 MCP 設定；只有一份時自動綁定，多份時 UI 要求精確選擇；
 - backend 在建立執行 workspace 前重驗 snapshot manifest、relative path、SHA-256 與大小；
@@ -145,7 +145,7 @@ model-endpoint scope grant 與 credential path；Agentic Radar 仍缺 image、ty
 與 accepted upstream machine-output release；Augustus 只有已稽核的 14-rule pure-data preflight，
 沒有 catalog／adapter／launcher／provider path。
 
-Owner 已批准 MCP Armor image publication，`7537d5d` 也已把發佈與驗證路徑接好。現在唯一
+Owner 已批准 MCP Armor image publication，`e2bb36d` 也已把發佈與驗證路徑接好。現在唯一
 無法在本機完成的前置動作，是解除這一次 `main` push 限制，讓 workflow 取得契約要求的
 `refs/heads/main` provenance。遠端 workflow 成功後，必須下載並以
 `scripts/release/verify-publication-artifact.mjs` 驗證 evidence，再把 published tag／digest／
@@ -153,16 +153,16 @@ platform digests／workflow run 寫回 plan 與 catalog，最後才可把 `runna
 
 ### 已收斂的報告小軸
 
-**資產看板 Severity mix 的空白狀態誠實性已在 `bda3f3a` 完成。** 報告 fixture 已釘死
+**資產看板 Severity mix 的空白狀態誠實性已在 `a740bfb` 完成。** 報告 fixture 已釘死
 兩種資料狀態：真正完成安全檢查且零問題會明示 `0 problems`／`0 個問題`；只有 inventory
 或沒有可量測的安全結果則明示 `Not measured`／`未量測`，不再共用空白格。
 
-Ted 排隊中的小型報告可讀性修正也已在 `9fda6f4` 完成：running header 保留案例與輪次
+Ted 排隊中的小型報告可讀性修正也已在 `6e9e2cd` 完成：running header 保留案例與輪次
 識別，running footer 改用精簡、在地化的文件身分，不在每一頁重複正式條款。完整條款
 仍只放在報告末端。這不是 header／footer 重設計，也沒有改報告資訊架構。
 
 Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／release 仍未處理；
-`04367af` 沒有悄悄改動這些邊界。
+`f246241` 沒有悄悄改動這些邊界。
 
 ---
 
@@ -170,7 +170,7 @@ Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／
 
 ### 4.1 站立約束（Ted 的原話，一律遵守）
 
-- **`main 未推送先不要 push`。** `7537d5d` 時有 57 個未推送 commit；publication 授權不等於此限制已解除。
+- **`main 未推送先不要 push`。** `e2bb36d` 時有 57 個未推送 commit；publication 授權不等於此限制已解除。
 - **`不要對外掃描、不要要憑證、不要擅自推 image`。** 整條 garak 線沒有跑過任何真實掃描、沒有接觸任何外部端點；唯一的網路動作是 GitHub 唯讀存取（`git ls-remote` 查 tag、`curl` 上游已 checked-in 的 fixture、`--depth 1` clone 到 gitignore 的 `.upstreams/`）。
 - **`不要擅自遠端破壞性操作`** / `勿擅自對遠端做破壞性操作`。
 - **`不要開 SSO／正式環境`**。
@@ -369,9 +369,9 @@ PY
 | repo | license | 最後 commit | Star | 機器可讀輸出 | 判定 |
 | --- | --- | --- | --- | --- | --- |
 | [NVIDIA/garak](https://github.com/NVIDIA/garak) | Apache-2.0 | 2026-09-09 | 9218 | JSONL report + hitlog ✅ | **Step 1 已完成** |
-| [splx-ai/agentic-radar](https://github.com/splx-ai/agentic-radar) | Apache-2.0 | 2025-11-27 | 1051 | 上游 graph JSON + 本機 versioned envelope fixture | **Step 2 已完成（`7a07d65`）** |
-| [aira-security/mcp-armor](https://github.com/aira-security/mcp-armor) | Apache-2.0 | 2026-03-27 | 123 | JSON ✅（`--report-type {json,md}`） | **Step 3 已收斂（`5e01895`）** |
-| [praetorian-inc/augustus](https://github.com/praetorian-inc/augustus) | Apache-2.0 | 2026-09-08 | 288 | JSON / JSONL ✅ | **Step 4 純資料 ladder 已收斂（`89091fa`）** |
+| [splx-ai/agentic-radar](https://github.com/splx-ai/agentic-radar) | Apache-2.0 | 2025-11-27 | 1051 | 上游 graph JSON + 本機 versioned envelope fixture | **Step 2 已完成（`713d272`）** |
+| [aira-security/mcp-armor](https://github.com/aira-security/mcp-armor) | Apache-2.0 | 2026-03-27 | 123 | JSON ✅（`--report-type {json,md}`） | **Step 3 已收斂（`0707ec1`）** |
+| [praetorian-inc/augustus](https://github.com/praetorian-inc/augustus) | Apache-2.0 | 2026-09-08 | 288 | JSON / JSONL ✅ | **Step 4 純資料 ladder 已收斂（`c35cb91`）** |
 | [SPriTLab-iitj/TriShieldRAG](https://github.com/SPriTLab-iitj/TriShieldRAG) | **NOASSERTION** | 2026-08-31 | 2（7 commits） | 無 findings | **不納入**（§4.2） |
 | [0din-ai/ai-scanner](https://github.com/0din-ai/ai-scanner) | — | — | — | 是 web app 不是 scanner | **不當 engine 收**（§4.2） |
 

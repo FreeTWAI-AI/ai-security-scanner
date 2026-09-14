@@ -19,7 +19,7 @@ RUN mkdir -p /src/mcp-armor \
 
 COPY docs/research/patches/mcp-armor-1.0.2-config-only.patch /tmp/mcp-armor-config-only.patch
 WORKDIR /src/mcp-armor
-RUN echo 'f9ad5e304eed79d79b4cc429493ae4d50e1cd685700cb43ab106122344b8e062  /tmp/mcp-armor-config-only.patch' | sha256sum -c - \
+RUN echo 'ae7732b5f9c922fbf2bee54e0246cccde6e1e5af829db112eb0f948cbd424122  /tmp/mcp-armor-config-only.patch' | sha256sum -c - \
     && git apply --check /tmp/mcp-armor-config-only.patch \
     && git apply /tmp/mcp-armor-config-only.patch \
     && grep -F '__version__ = "1.0.2"' src/mcp_armor/__init__.py
@@ -70,7 +70,7 @@ LABEL org.opencontainers.image.title="ai-security-scanner MCP Armor engine" \
       org.opencontainers.image.version="1.0.2-config-only.1" \
       org.opencontainers.image.licenses="Apache-2.0" \
       io.ai-security-scanner.source-archive-sha256="6bf3da5f1332748eb0dc60fb1f82f1ee43bb721f70686f99f4f262d256da45a6" \
-      io.ai-security-scanner.patch-sha256="f9ad5e304eed79d79b4cc429493ae4d50e1cd685700cb43ab106122344b8e062" \
+      io.ai-security-scanner.patch-sha256="ae7732b5f9c922fbf2bee54e0246cccde6e1e5af829db112eb0f948cbd424122" \
       io.ai-security-scanner.requirements-sha256="86d9dfb49bdd485ebb7855fda467c2cd6ac93c2a91609c08fa9e476c6dc746f8"
 
 ENV HOME="/tmp/ai-security-scanner-home" \
