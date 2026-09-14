@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 const CATALOG_JSON: &str = include_str!("../../../mappings/control-mappings.json");
+const MAX_SOURCES: usize = 16;
 const MAX_CONTROLS: usize = 1_024;
 const MAX_ENTRIES: usize = 4_096;
 const MAX_REFERENCES_PER_ENTRY: usize = 8;
@@ -445,8 +446,10 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
         return Err("control mapping disclaimer must reject compliance claims".into());
     }
 
-    if parsed.sources.is_empty() || parsed.sources.len() > 16 {
-        return Err("control mapping sources must contain between 1 and 16 items".into());
+    if parsed.sources.is_empty() || parsed.sources.len() > MAX_SOURCES {
+        return Err(format!(
+            "control mapping sources must contain between 1 and {MAX_SOURCES} items"
+        ));
     }
     let mut sources = BTreeSet::new();
     for source in parsed.sources {
@@ -894,6 +897,38 @@ mod tests {
             serde_json::from_value::<AiApplicability>(value.clone())
                 .expect("every schema applicability value must deserialize in Rust");
         }
+
+        let properties = &schema["properties"];
+        for (label, schema_limit, rust_limit) in [
+            ("sources", &properties["sources"]["maxItems"], MAX_SOURCES),
+            (
+                "controls",
+                &properties["controls"]["maxItems"],
+                MAX_CONTROLS,
+            ),
+            ("entries", &properties["entries"]["maxItems"], MAX_ENTRIES),
+            (
+                "controls per entry",
+                &properties["entries"]["items"]["properties"]["controls"]["maxItems"],
+                MAX_REFERENCES_PER_ENTRY,
+            ),
+            (
+                "CWE-derived controls",
+                &properties["cwe_derived_controls"]["maxItems"],
+                MAX_CWE_DERIVED_CONTROLS,
+            ),
+            (
+                "CWE IDs per derived control",
+                &properties["cwe_derived_controls"]["items"]["properties"]["cwe_ids"]["maxItems"],
+                MAX_CWE_IDS_PER_DERIVED_CONTROL,
+            ),
+        ] {
+            assert_eq!(
+                schema_limit.as_u64(),
+                Some(rust_limit as u64),
+                "Rust and JSON Schema must enforce the same {label} limit"
+            );
+        }
     }
 
     /// Guards the failure that broke five entries at once: a `source_rule`
@@ -1313,13 +1348,6 @@ mod tests {
 
     #[test]
     fn catalog_rejects_more_cwe_derived_controls_than_the_schema_allows() {
-        let schema = mapping_schema_fixture();
-        assert_eq!(
-            schema["properties"]["cwe_derived_controls"]["maxItems"].as_u64(),
-            Some(MAX_CWE_DERIVED_CONTROLS as u64),
-            "Rust and JSON Schema must enforce the same CWE-derived control limit"
-        );
-
         let mut oversized = catalog_fixture();
         let derived = oversized["cwe_derived_controls"]
             .as_array()
