@@ -914,6 +914,28 @@ mod tests {
         assert!(validate_https_url(&format!("https://{}", "a".repeat(2_041))).is_err());
 
         let properties = &schema["properties"];
+        let entry_schema = &properties["entries"]["items"];
+        assert_eq!(
+            entry_schema["properties"]["source_rule"],
+            serde_json::json!({
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[^*?\\[\\]]+$",
+            }),
+            "mapping Schema must reject the wildcard selectors Rust rejects"
+        );
+        assert_eq!(
+            entry_schema["allOf"],
+            serde_json::json!([{
+                "if": {
+                    "properties": { "match_kind": { "const": "prefix" } },
+                    "required": ["match_kind"],
+                },
+                "then": { "properties": { "source_rule": { "minLength": 4 } } },
+            }]),
+            "mapping Schema must enforce Rust's minimum prefix length"
+        );
         for (label, schema_limit, rust_limit) in [
             ("sources", &properties["sources"]["maxItems"], MAX_SOURCES),
             (
@@ -944,6 +966,19 @@ mod tests {
                 "Rust and JSON Schema must enforce the same {label} limit"
             );
         }
+
+        let mut wildcard = catalog_fixture();
+        wildcard["entries"][0]["source_rule"] = Value::String("rule*".into());
+        let error =
+            parse_and_validate_json(&catalog_json_with_recalculated_digest(wildcard)).unwrap_err();
+        assert!(error.contains("uses a wildcard source rule"));
+
+        let mut short_prefix = catalog_fixture();
+        short_prefix["entries"][0]["match_kind"] = Value::String("prefix".into());
+        short_prefix["entries"][0]["source_rule"] = Value::String("abc".into());
+        let error = parse_and_validate_json(&catalog_json_with_recalculated_digest(short_prefix))
+            .unwrap_err();
+        assert!(error.contains("prefix mapping") && error.contains("is too broad"));
     }
 
     /// Guards the failure that broke five entries at once: a `source_rule`
