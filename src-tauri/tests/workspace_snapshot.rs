@@ -1,7 +1,6 @@
 use ai_security_scanner_lib::domain::AssetKind;
 use ai_security_scanner_lib::mcp_armor_input::{
-    MCP_CONFIGURATION_CANDIDATES_METADATA_KEY,
-    MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY,
+    MCP_CONFIGURATION_CANDIDATES_METADATA_KEY, MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY,
 };
 use ai_security_scanner_lib::workspace_snapshot::{
     LOCAL_INPUT_PROFILE_FILENAME, WorkspaceInputProfile, WorkspaceSnapshotExclusionPolicy,

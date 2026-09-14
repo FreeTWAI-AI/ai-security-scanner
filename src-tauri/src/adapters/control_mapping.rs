@@ -17,6 +17,7 @@ const MAX_CONTROLS: usize = 1_024;
 const MAX_ENTRIES: usize = 4_096;
 const MAX_REFERENCES_PER_ENTRY: usize = 8;
 const MAX_LOOKUP_RESULTS: usize = 32;
+const MAX_CWE_DERIVED_CONTROLS: usize = 1_024;
 /// An OWASP Top 10 category is defined by a few dozen CWEs at most; the widest
 /// published 2021 category names 40.
 const MAX_CWE_IDS_PER_DERIVED_CONTROL: usize = 64;
@@ -582,6 +583,11 @@ fn parse_and_validate_json(input: &str) -> Result<ValidatedCatalog, String> {
     }
 
     let mapping_version = parsed.mapping_version;
+    if parsed.cwe_derived_controls.len() > MAX_CWE_DERIVED_CONTROLS {
+        return Err(format!(
+            "CWE-derived mappings exceed the {MAX_CWE_DERIVED_CONTROLS}-control limit"
+        ));
+    }
     let mut derived_controls = BTreeSet::new();
     for derived in &parsed.cwe_derived_controls {
         validate_slug("cwe-derived control key", &derived.control, 80, true)?;
@@ -1279,5 +1285,31 @@ mod tests {
         let error =
             parse_and_validate_json(&catalog_json_with_recalculated_digest(duplicate)).unwrap_err();
         assert!(error.contains("duplicate framework coordinate"));
+    }
+
+    #[test]
+    fn catalog_rejects_more_cwe_derived_controls_than_the_schema_allows() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../mappings/control-mappings.schema.json"
+        ))
+        .expect("control mapping schema JSON");
+        assert_eq!(
+            schema["properties"]["cwe_derived_controls"]["maxItems"].as_u64(),
+            Some(MAX_CWE_DERIVED_CONTROLS as u64),
+            "Rust and JSON Schema must enforce the same CWE-derived control limit"
+        );
+
+        let mut oversized = catalog_fixture();
+        let derived = oversized["cwe_derived_controls"]
+            .as_array()
+            .and_then(|entries| entries.first())
+            .expect("embedded catalog has a CWE-derived mapping")
+            .clone();
+        oversized["cwe_derived_controls"] =
+            Value::Array(vec![derived; MAX_CWE_DERIVED_CONTROLS + 1]);
+
+        let error =
+            parse_and_validate_json(&catalog_json_with_recalculated_digest(oversized)).unwrap_err();
+        assert_eq!(error, "CWE-derived mappings exceed the 1024-control limit");
     }
 }

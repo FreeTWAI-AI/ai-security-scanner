@@ -76,6 +76,7 @@ const RUST_PATHS = [
   /^bootstrap\//,
   /^engines\/catalog\.json$/,
   /^mappings\/control-mappings\.json$/,
+  /^mappings\/control-mappings\.schema\.json$/,
   /^schemas\/master-framework-report\.schema\.json$/,
   /^runtime\/managed-egress-gateway\.json$/,
 ];
