@@ -2505,6 +2505,9 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
   if (!deepEqual(plan.license, engine.license)) errors.push(`${planRelative}: license disposition does not match catalog`);
   if (engine.compatibility?.runnable && plan.blockers?.length > 0) errors.push(`${planRelative}: runnable engine plan cannot retain blockers`);
   if (!engine.compatibility?.runnable && (!Array.isArray(plan.blockers) || plan.blockers.length === 0)) errors.push(`${planRelative}: non-runnable engine plan must state blockers`);
+  if (!deepEqual(plan.blockers, engine.compatibility?.blocked_by)) {
+    errors.push(`${planRelative}: plan blockers must exactly match catalog compatibility blockers`);
+  }
   if (plan.verified_upstream_artifact) validateImage(plan.verified_upstream_artifact, `${planRelative}.verified_upstream_artifact`);
   for (const [index, image] of (plan.build_recipe?.base_images ?? []).entries()) {
     validateImage(image, `${planRelative}.build_recipe.base_images[${index}]`, { allowDigestPinnedAlias: managedCloudIds.has(engine.id) });

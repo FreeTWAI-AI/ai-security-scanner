@@ -49,8 +49,8 @@
     "source_offer_path": null
   },
   "blockers": [
-    "No image exists. The pinned source and local machine-output patch have never been built or tested as a product image, or published.",
-    "No typed framework-selection path exists to freeze one of the five supported analyzers and verify that the reported framework matches the reviewed request.",
-    "The machine-output contract requires a local patch that is not part of an accepted upstream release."
+    "no packaged image: the pinned source and local machine-output patch have never been built or tested as a product image, or published",
+    "no typed framework-selection path exists to freeze one of the five supported analyzers and verify that the reported framework matches the reviewed request",
+    "the machine-output contract requires a local patch that is not part of an accepted upstream release"
   ]
 }

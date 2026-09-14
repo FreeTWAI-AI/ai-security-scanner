@@ -49,8 +49,8 @@
     "source_offer_path": null
   },
   "blockers": [
-    "No image exists. The pinned source has never been built, tested, or published for this product.",
-    "No scope-grant path exists for an AI model endpoint, so no run could be authorized against one.",
-    "No credential path exists for a model endpoint that requires a key."
+    "no packaged image: the pinned source has never been built, tested, or published for this product",
+    "no scope-grant path exists for an AI model endpoint, so no run could be authorized against one",
+    "no credential path exists for a model endpoint that requires a key"
   ]
 }

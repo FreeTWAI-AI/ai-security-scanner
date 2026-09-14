@@ -164,6 +164,6 @@
   },
   "publication": null,
   "blockers": [
-    "The reviewed publication workflow has not yet produced and verified the immutable multi-platform image digest, so the catalog must remain non-runnable."
+    "the reviewed publication workflow has not yet produced and verified the immutable multi-platform image digest"
   ]
 }
