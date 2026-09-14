@@ -7,9 +7,10 @@ const load = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
 test("MCP Armor publication candidate remains offline, non-root, and non-runnable", async () => {
-  const [catalogText, planText, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
+  const [catalogText, planText, statusText, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
     load("engines/catalog.json"),
     load("engines/images/mcp-armor/plan.json"),
+    load("docs/development-status.md"),
     load("engines/images/mcp-armor/Dockerfile"),
     load("engines/images/mcp-armor/requirements.lock"),
     load("docs/research/patches/mcp-armor-1.0.2-config-only.patch"),
@@ -21,6 +22,8 @@ test("MCP Armor publication candidate remains offline, non-root, and non-runnabl
   ]);
   const engine = JSON.parse(catalogText).find((entry) => entry.id === "mcp-armor");
   const plan = JSON.parse(planText);
+  const statusRow = statusText.split("\n").find((line) => line.startsWith("| MCP Armor |"));
+  assert.ok(statusRow, "public development status must include MCP Armor");
   assert.equal(engine.compatibility.runnable, false);
   assert.equal(engine.status, "experimental");
   assert.equal(engine.image, null);
@@ -47,6 +50,9 @@ test("MCP Armor publication candidate remains offline, non-root, and non-runnabl
   assert.match(plan.local_build_evidence.result, /one excessive-permission finding/u);
   assert.equal(plan.managed_runtime.network_mode, "disabled");
   assert.equal(plan.managed_runtime.non_root_user, "65532:65532");
+  assert.match(statusRow, /local image produced a complete two-check report/u);
+  assert.match(statusRow, /networking disabled/u);
+  assert.match(statusRow, /No verified published digest exists, so dispatch remains disabled/u);
   assert.match(dockerfile, /USER 65532:65532/u);
   assert.match(dockerfile, /--require-hashes/u);
   assert.match(dockerfile, /--only-binary=:all:/u);
