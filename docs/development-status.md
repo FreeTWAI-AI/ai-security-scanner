@@ -20,8 +20,8 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 
 | Integration | Implemented | Current fail-closed boundary |
 | --- | --- | --- |
-| Garak | A thin adapter preserves probe identifiers and failure counts without inventing severity. | A managed image, an exact model-endpoint scope grant, and a product-owned credential path where a selected endpoint requires one. |
-| Agentic Radar | Its workflow graph is normalized as observations rather than unsupported vulnerability findings; incomplete machine output fails closed. | A managed image, typed framework selection, and an accepted upstream machine-output contract. |
+| Garak | A thin adapter preserves probe identifiers and failure counts without inventing severity. | No managed image, exact model-endpoint scope grant, or product-owned credential path exists. |
+| Agentic Radar | Its workflow graph is normalized as observations rather than unsupported vulnerability findings; incomplete machine output fails closed. | No managed image or typed framework-selection path exists; the machine-output contract is absent from an accepted upstream release. |
 | MCP Armor | One exact MCP configuration file can be selected from an immutable repository snapshot and checked by a restricted, model-free configuration launcher. The local image produced a complete two-check report and an excessive-permission finding from a synthetic fixture with networking disabled. | No verified published digest exists, so dispatch remains disabled. |
 | Augustus | Research-only, pure-data 14-rule preflight contracts and rejection fixtures define the required endpoint, cost, request, deadline, sandbox, and output boundaries. | No production catalog entry, adapter, launcher, provider connection, credential path, or dispatch path exists yet. |
 

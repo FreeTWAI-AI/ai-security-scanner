@@ -339,6 +339,11 @@ test("public development status stays catalog-backed and excludes local handoff 
     (engine) => engine.status === "integrated" && engine.compatibility?.runnable === true,
   );
   const experimental = catalog.filter((engine) => engine.status === "experimental");
+  const publicBlockerTerms = {
+    "garak": [/No managed image/iu, /model-endpoint scope grant/iu, /credential path/iu],
+    "agentic-radar": [/No managed image/iu, /typed framework-selection path/iu, /accepted upstream release/iu],
+    "mcp-armor": [/No verified published digest/iu],
+  };
 
   assert.equal(integrated.length + experimental.length, catalog.length);
   assert.match(
@@ -354,10 +359,18 @@ test("public development status stays catalog-backed and excludes local handoff 
     assert.equal(engine.compatibility?.runnable, false, `${engine.id} must remain non-runnable`);
     assert.equal(engine.image, null, `${engine.id} must not claim a published image`);
     assert.ok(engine.compatibility?.blocked_by?.length > 0, `${engine.id} must retain blockers`);
-    assert.ok(
-      statusContent.toLowerCase().includes(engine.display_name.toLowerCase()),
-      `${engine.id} must appear in development status`,
+    const statusRowPrefix = `| ${engine.display_name} |`.toLowerCase();
+    const statusRow = statusContent
+      .split("\n")
+      .find((line) => line.toLowerCase().startsWith(statusRowPrefix));
+    assert.ok(statusRow, `${engine.id} must appear in development status`);
+    const blockerTerms = publicBlockerTerms[engine.id];
+    assert.equal(
+      blockerTerms?.length,
+      engine.compatibility.blocked_by.length,
+      `${engine.id} must account for every catalog blocker in public status`,
     );
+    for (const term of blockerTerms) assert.match(statusRow, term, `${engine.id} omits a blocker`);
   }
 
   assert.equal(catalog.some((engine) => engine.id === "augustus"), false);
