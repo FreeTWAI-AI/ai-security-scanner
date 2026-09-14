@@ -226,7 +226,9 @@
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^\\S(?:.*\\S)?$"
           }
         },
         "knowledge_input": {

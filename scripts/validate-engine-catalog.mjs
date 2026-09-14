@@ -2431,6 +2431,15 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
   if (engine.engine_version !== engine.provenance?.engine?.version) errors.push(`${label}: top-level and provenance engine versions differ`);
   if (engine.rule_version !== engine.provenance?.rules?.revision) errors.push(`${label}: top-level and provenance rule versions differ`);
   if (engine.adapter_version !== engine.provenance?.adapter?.version) errors.push(`${label}: top-level and provenance adapter versions differ`);
+  const compatibilityBlockers = Array.isArray(engine.compatibility?.blocked_by)
+    ? engine.compatibility.blocked_by
+    : [];
+  for (const [index, blocker] of compatibilityBlockers.entries()) {
+    if (typeof blocker !== "string" || blocker.length === 0 || blocker.length > 512 ||
+        blocker !== blocker.trim() || /[\u0000-\u001f\u007f]/u.test(blocker)) {
+      errors.push(`${label}.compatibility.blocked_by[${index}]: blocker must be 1 to 512 trimmed, printable characters`);
+    }
+  }
   if (engine.compatibility?.runnable && engine.status !== "integrated") errors.push(`${label}: runnable engines must be integrated`);
   if (engine.compatibility?.runnable && engine.compatibility.blocked_by?.length > 0) errors.push(`${label}: runnable engines cannot retain compatibility blockers`);
   if (!engine.compatibility?.runnable && engine.compatibility?.blocked_by?.length === 0) errors.push(`${label}: non-runnable engines must state at least one compatibility blocker`);
