@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "fixture-safe": {
+      "command": "python3",
+      "args": [
+        "--allow-terminal"
+      ],
+      "permissions": [
+        "terminal:exec"
+      ]
+    }
+  }
+}

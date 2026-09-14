@@ -1,0 +1,14 @@
+# MCP Armor 1.0.2 configuration-only runtime dependencies.
+# The source package is copied with --no-deps semantics; FastMCP, TheFuzz,
+# Transformers, Torch, and model weights are intentionally absent.
+markdown-it-py==4.0.0 \
+    --hash=sha256:87327c59b172c5011896038353a81343b6754500a08cd7a4973bb48c6d578147
+mdurl==0.1.2 \
+    --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+Pygments==2.19.2 \
+    --hash=sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b
+PyYAML==6.0.2 \
+    --hash=sha256:3ad2a3decf9aaba3d29c8f537ac4b243e36bef957511b4766cb0057d32b0be85 \
+    --hash=sha256:5d225db5a45f21e78dd9358e58a98702a0302f2659a3c6cd320564b75b86f47c
+rich==14.1.0 \
+    --hash=sha256:536f5f1785986d6dbdea3c75205c473f970777b4a0d6c6dd1b696aa05a3fa04f

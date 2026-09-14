@@ -2443,6 +2443,10 @@ export default function App() {
             onConnectSourceSnapshot={(input) => runAction("connect-source", () => scannerService.connectSourceSnapshot(input))}
             onChooseWorkspace={() => scannerService.chooseWorkspaceDirectory()}
             onAttachWorkspaceSnapshot={(input) => executeAction("attach-workspace", () => scannerService.attachWorkspaceSnapshot(input))}
+            onSelectMcpConfiguration={(assetId, relativePath) => executeAction(
+              "select-mcp-configuration",
+              () => scannerService.selectMcpConfiguration({ caseId: currentCaseId, assetId, relativePath }),
+            )}
             onStartDiscovery={() => runAction("discovery", () => scannerService.startDiscovery(currentCaseId))}
             onAuthorizationChanged={async () => {
               await loadSnapshot(currentCaseId, true);

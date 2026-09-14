@@ -19,15 +19,99 @@
     "tag": null,
     "digest": null
   },
-  "build_recipe": null,
+  "build_recipe": {
+    "source_revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
+    "source_archive": {
+      "url": "https://github.com/aira-security/mcp-armor/archive/6af4cee4665ab6242f02a88952f9127b6a04922a.tar.gz",
+      "sha256": "sha256:6bf3da5f1332748eb0dc60fb1f82f1ee43bb721f70686f99f4f262d256da45a6"
+    },
+    "source_patch": {
+      "path": "docs/research/patches/mcp-armor-1.0.2-config-only.patch",
+      "sha256": "sha256:f9ad5e304eed79d79b4cc429493ae4d50e1cd685700cb43ab106122344b8e062"
+    },
+    "dependency_lock": {
+      "path": "engines/images/mcp-armor/requirements.lock",
+      "sha256": "sha256:86d9dfb49bdd485ebb7855fda467c2cd6ac93c2a91609c08fa9e476c6dc746f8",
+      "records": 5,
+      "require_hashes": true,
+      "only_binary": true,
+      "excluded_packages": [
+        "fastmcp",
+        "thefuzz",
+        "transformers",
+        "torch"
+      ]
+    },
+    "source_date_epoch": 1774602347,
+    "target_platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "dockerfile_frontend": {
+      "repository": "docker/dockerfile",
+      "tag": "1.7",
+      "digest": "sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e"
+    },
+    "base_images": [
+      {
+        "repository": "golang",
+        "tag": "1.26.3-alpine",
+        "digest": "sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d",
+        "uses": [
+          "source_patch",
+          "launcher"
+        ]
+      },
+      {
+        "repository": "python",
+        "tag": "3.11.16-slim",
+        "digest": "sha256:9c900dea9e8fb7e16277c179b555cc72d29a352dbc33cff48ad5a0412fd5bfc7",
+        "uses": [
+          "build",
+          "runtime"
+        ]
+      }
+    ],
+    "build_context": {
+      "path": ".",
+      "dockerignore_path": ".dockerignore",
+      "dockerignore_sha256": "sha256:5c5cf89412a2b3ff5c5bffb5c67bf126ee1be5ae973ed1d31f11b3063d462557"
+    },
+    "static_steps": [
+      [
+        "go",
+        "test",
+        "./..."
+      ],
+      [
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "--only-binary=:all:",
+        "--require-hashes",
+        "--requirement=/tmp/requirements.lock"
+      ],
+      [
+        "python",
+        "-m",
+        "mcp_armor.cli",
+        "scan",
+        "--config-only"
+      ]
+    ]
+  },
   "dockerfile": {
-    "emitted": false,
-    "reason": "Nothing has been packaged or published. This plan records the reviewed source pin, retained configuration-only patch, fixtures, and thin adapter without claiming owner-authorized image work."
+    "emitted": true,
+    "path": "engines/images/mcp-armor/Dockerfile",
+    "sha256": "sha256:836bd4795d5320cd4a05606524d6230ebb88b6fd5b9e7c0e43d215b027676b40",
+    "reason": null
   },
   "wrapper": {
     "required": true,
     "strategy": "Accept one immutable repository snapshot and one typed relative MCP configuration path, invoke only the configuration-only mode with network disabled and model dependencies absent, and pass only its versioned JSON envelope to the adapter.",
-    "entrypoint": null
+    "entrypoint": "/usr/local/bin/ai-security-scanner-mcp-armor-entrypoint",
+    "launcher_sha256": "sha256:9701a4321c10c60a5a7ff25ccb162666215152ae7f15e6c38d175417eea97bf7"
   },
   "command": [
     "--engine",
@@ -48,9 +132,37 @@
     "rationale": "Apache-2.0 permits redistribution of the source-only configuration-check slice and local output patch with the upstream license and notices retained. No model files or model-backed dependencies are part of this integration.",
     "source_offer_path": null
   },
+  "managed_runtime": {
+    "non_root_user": "65532:65532",
+    "read_only_rootfs": true,
+    "entrypoint": [
+      "/usr/local/bin/ai-security-scanner-mcp-armor-entrypoint"
+    ],
+    "network_mode": "disabled",
+    "network_destinations": [],
+    "cache_path": "/tmp/ai-security-scanner-cache",
+    "updates": false,
+    "telemetry": false,
+    "environment": {
+      "HOME": "/tmp/ai-security-scanner-home",
+      "NO_COLOR": "1",
+      "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+      "PYTHONDONTWRITEBYTECODE": "1",
+      "PYTHONHASHSEED": "0",
+      "PYTHONNOUSERSITE": "1",
+      "PYTHONUNBUFFERED": "1",
+      "XDG_CACHE_HOME": "/tmp/ai-security-scanner-cache"
+    }
+  },
+  "local_build_evidence": {
+    "verified_at": "2026-09-14",
+    "platform": "linux/amd64",
+    "local_image_id": "sha256:f907e8c1520056c02bc4584ad1d8f12bb1de3558f9de736e7a76b247ffb68246",
+    "scope_fixture": "engines/images/mcp-armor/testdata/scope.json",
+    "input_fixture": "engines/images/mcp-armor/testdata/workspace/mcp.json",
+    "result": "one exact read-only synthetic configuration produced a complete two-check terminal JSON envelope and one excessive-permission finding under network=none; live and model dependency imports were absent"
+  },
   "blockers": [
-    "No image exists. The pinned source and local configuration-only patch have never been built or tested as a product image, or published.",
-    "No typed MCP configuration-selection path exists to bind exactly one file in the approved repository snapshot and prove that automatic discovery was disabled.",
-    "The configuration-only machine-output contract requires a local patch that is not part of an accepted upstream release."
+    "The locally verified image has not been published at an immutable registry tag and digest, so other product installations cannot pull it and the catalog must remain non-runnable."
   ]
 }

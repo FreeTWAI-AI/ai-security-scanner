@@ -54,6 +54,7 @@ import type {
   ManagedRuntimeSetupStatus,
   LocalNetworkCandidateInventory,
   ScanReadiness,
+  SelectMcpConfigurationInput,
 } from "../types";
 import { buildNativeExportCaseArguments } from "../exportRequest";
 import { findRequestedExportRun } from "../exportRunSelection";
@@ -95,6 +96,7 @@ export const COMMANDS = {
   cancelDiscovery: "cancel_discovery",
   connectSourceSnapshot: "connect_source_snapshot",
   attachWorkspaceSnapshot: "attach_workspace_snapshot",
+  selectMcpConfiguration: "select_mcp_configuration",
   approveScope: "approve_scope",
   updateFindingWorkflow: "update_finding_workflow",
   groupFindings: "group_findings",
@@ -720,6 +722,22 @@ export const scannerService = {
         "Open the desktop app to add this folder.",
         "請開啟桌面版加入這個資料夾。",
       ),
+    );
+  },
+
+  async selectMcpConfiguration(input: SelectMcpConfigurationInput): Promise<ServiceResult<ActionResponse>> {
+    return actionResult(
+      COMMANDS.selectMcpConfiguration,
+      { ...input },
+      serviceText(
+        "The selected MCP configuration is bound to the local scan.",
+        "已將選定的 MCP 設定綁定到本機掃描。",
+      ),
+      serviceText(
+        "Open the desktop app to select an MCP configuration.",
+        "請開啟桌面版選擇 MCP 設定。",
+      ),
+      true,
     );
   },
 

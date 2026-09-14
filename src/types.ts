@@ -209,6 +209,12 @@ export interface AttachWorkspaceSnapshotInput {
   inputProfile: LocalInputProfile;
 }
 
+export interface SelectMcpConfigurationInput {
+  caseId: string;
+  assetId: string;
+  relativePath: string;
+}
+
 export type ProviderSourceProfile =
   | "aws_organization_read_only_session"
   | "azure_tenant_read_only_access_token"
@@ -523,6 +529,14 @@ export interface Asset {
   /** True only for a local item named in the questionnaire but not attached yet. */
   questionnairePlaceholder?: boolean;
   localInputProfile?: LocalInputProfile;
+  /** Bounded exact candidates discovered inside an immutable repository snapshot. */
+  mcpConfigurationCandidates?: Array<{
+    relativePath: string;
+    sha256: string;
+    byteLength: number;
+  }>;
+  /** The one candidate bound to MCP Armor, if selection is unambiguous. */
+  selectedMcpConfiguration?: string;
   declaredWebService?: {
     protocol: "http" | "https";
     port: number;

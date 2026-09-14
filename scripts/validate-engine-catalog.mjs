@@ -1832,6 +1832,79 @@ function validateManagedSourceImage(plan, planRelative, engine) {
   }
 }
 
+function validateUnpublishedManagedBuild(plan, planRelative, engine) {
+  if (plan.publish_state !== "managed_artifact_not_published" || engine.compatibility?.runnable !== false) {
+    errors.push(`${planRelative}: unpublished managed build must remain explicitly non-runnable`);
+  }
+  if (plan.final_artifact?.tag !== null || plan.final_artifact?.digest !== null) {
+    errors.push(`${planRelative}: unpublished managed build cannot claim a tag or digest`);
+  }
+  const dockerfileRelative = `engines/images/${engine.id}/Dockerfile`;
+  const dockerfilePath = resolve(root, dockerfileRelative);
+  if (plan.dockerfile?.path !== dockerfileRelative || plan.dockerfile?.reason !== null || !existsSync(dockerfilePath)) {
+    errors.push(`${planRelative}: locally verified build must retain its emitted Dockerfile`);
+    return;
+  }
+  const dockerfileText = readFileSync(dockerfilePath, "utf8");
+  if (plan.dockerfile.sha256 !== sha256File(dockerfilePath)) {
+    errors.push(`${planRelative}: locally verified Dockerfile digest does not match`);
+  }
+  const recipe = plan.build_recipe;
+  const frontend = recipe?.dockerfile_frontend;
+  validateImage(frontend, `${planRelative}.build_recipe.dockerfile_frontend`);
+  if (dockerfileText.split(/\r?\n/)[0] !== `# syntax=${frontend?.repository}:${frontend?.tag}@${frontend?.digest}`) {
+    errors.push(`${planRelative}: locally verified Dockerfile frontend is not digest-pinned`);
+  }
+  const sourceArchive = recipe?.source_archive;
+  if (recipe?.source_revision !== engine.source_revision ||
+      !digestPattern.test(sourceArchive?.sha256 ?? "") ||
+      !dockerfileText.includes(`ADD --checksum=${sourceArchive?.sha256 ?? ""}`) ||
+      !dockerfileText.includes(sourceArchive?.url ?? "")) {
+    errors.push(`${planRelative}: locally verified build does not retain its pinned source archive`);
+  }
+  const patch = recipe?.source_patch;
+  if (!digestPattern.test(patch?.sha256 ?? "") || !existsSync(resolve(root, patch?.path ?? "")) ||
+      patch.sha256 !== sha256File(resolve(root, patch.path)) ||
+      !dockerfileText.includes(patch.path) || !dockerfileText.includes(patch.sha256.slice("sha256:".length))) {
+    errors.push(`${planRelative}: locally verified build does not retain its exact source patch`);
+  }
+  const dependencyLock = recipe?.dependency_lock;
+  if (!digestPattern.test(dependencyLock?.sha256 ?? "") ||
+      !existsSync(resolve(root, dependencyLock?.path ?? "")) ||
+      dependencyLock.sha256 !== sha256File(resolve(root, dependencyLock.path)) ||
+      dependencyLock.require_hashes !== true || dependencyLock.only_binary !== true ||
+      !dockerfileText.includes("--require-hashes") || !dockerfileText.includes("--only-binary=:all:") ||
+      !dockerfileText.includes(dependencyLock.sha256.slice("sha256:".length))) {
+    errors.push(`${planRelative}: locally verified build does not retain its hashed binary dependency lock`);
+  }
+  const declaredBases = new Set((recipe?.base_images ?? []).map((image) => `${image.repository}:${image.tag}@${image.digest}`));
+  const actualBases = [...dockerfileText.matchAll(/^\s*FROM(?:\s+--platform=[^\s]+)?\s+([^\s]+)(?:\s+AS\s+[^\s]+)?\s*$/gmi)].map((match) => match[1]);
+  for (const image of recipe?.base_images ?? []) validateImage(image, `${planRelative}.build_recipe.base_images`);
+  if (actualBases.length === 0 || actualBases.some((reference) => !declaredBases.has(reference)) ||
+      [...declaredBases].some((reference) => !actualBases.includes(reference))) {
+    errors.push(`${planRelative}: locally verified Dockerfile base images differ from its build recipe`);
+  }
+  const launcher = plan.wrapper;
+  const launcherPath = resolve(root, `engines/images/${engine.id}/launcher/main.go`);
+  if (!existsSync(launcherPath) || launcher?.entrypoint !== "/usr/local/bin/ai-security-scanner-mcp-armor-entrypoint" ||
+      launcher?.launcher_sha256 !== sha256File(launcherPath) ||
+      !dockerfileText.includes(`ENTRYPOINT ${JSON.stringify([launcher.entrypoint])}`)) {
+    errors.push(`${planRelative}: locally verified build does not retain its exact non-shell launcher`);
+  }
+  const runtime = plan.managed_runtime;
+  if (runtime?.network_mode !== "disabled" || engine.execution?.network?.mode !== "disabled" ||
+      runtime?.non_root_user !== "65532:65532" ||
+      !dockerfileText.split(/\r?\n/).some((line) => line.trim() === `USER ${runtime?.non_root_user}`)) {
+    errors.push(`${planRelative}: locally verified build must remain offline and non-root`);
+  }
+  const evidence = plan.local_build_evidence;
+  if (evidence?.platform !== "linux/amd64" || !digestPattern.test(evidence?.local_image_id ?? "") ||
+      !existsSync(resolve(root, evidence?.scope_fixture ?? "")) ||
+      !existsSync(resolve(root, evidence?.input_fixture ?? ""))) {
+    errors.push(`${planRelative}: locally verified build lacks bounded smoke evidence`);
+  }
+}
+
 function isPendingManagedExternalPublication(plan, engine) {
   const contract = managedExternalContracts.get(engine.id);
   const expectedRepository = `${managedImageRepositoryPrefix}${engine.id}`;
@@ -2399,7 +2472,11 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
   } else if (plan.plan_kind !== "upstream_image") {
     const lock = lockedRepositories.get(engine.repository_url);
     if (!lock || lock.revision !== engine.source_revision) errors.push(`${planRelative}: managed build source is not pinned by engines/upstreams.lock.json`);
-    if (plan.dockerfile?.emitted !== false || !plan.dockerfile?.reason) errors.push(`${planRelative}: absent managed Dockerfile requires an explicit reason`);
+    if (plan.dockerfile?.emitted === true && plan.publish_state === "managed_artifact_not_published") {
+      validateUnpublishedManagedBuild(plan, planRelative, engine);
+    } else if (plan.dockerfile?.emitted !== false || !plan.dockerfile?.reason) {
+      errors.push(`${planRelative}: absent managed Dockerfile requires an explicit reason`);
+    }
   }
 }
 

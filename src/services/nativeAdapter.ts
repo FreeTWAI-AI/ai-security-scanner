@@ -1128,6 +1128,24 @@ const localInputProfileFromAsset = (asset: NativeAsset): LocalInputProfile | und
     : undefined;
 };
 
+const mcpConfigurationsFromAsset = (asset: NativeAsset): NonNullable<Asset["mcpConfigurationCandidates"]> => {
+  const raw = asset.metadata?.mcp_configuration_candidates;
+  if (!Array.isArray(raw) || asset.metadata?.mcp_configuration_discovery_complete !== true) return [];
+  return raw.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const candidate = value as Record<string, unknown>;
+    return typeof candidate.relative_path === "string"
+      && typeof candidate.sha256 === "string"
+      && typeof candidate.byte_length === "number"
+      ? [{
+        relativePath: candidate.relative_path,
+        sha256: candidate.sha256,
+        byteLength: candidate.byte_length,
+      }]
+      : [];
+  });
+};
+
 const localQuestionnaireKinds = new Set(["repository", "iac_project", "container_image", "kubernetes_cluster"]);
 
 export const adaptDeclaredWebServiceMetadata = (
@@ -1980,6 +1998,10 @@ export const adaptNativeCase = (
       scanAttempted: Boolean(entry?.last_run_id) || scanAttemptedAssetIds.has(asset.id),
       questionnairePlaceholder: localQuestionnaireKinds.has(String(asset.metadata?.questionnaire_kind)) && !localInputProfile,
       localInputProfile,
+      mcpConfigurationCandidates: mcpConfigurationsFromAsset(asset),
+      selectedMcpConfiguration: typeof asset.metadata?.mcp_configuration_selected === "string"
+        ? asset.metadata.mcp_configuration_selected
+        : undefined,
       declaredWebService: adaptDeclaredWebServiceMetadata(asset.metadata),
       declaredNetworkService: adaptDeclaredNetworkServiceMetadata(asset.metadata),
       declaredHostScan: adaptDeclaredHostScanMetadata(asset.metadata),

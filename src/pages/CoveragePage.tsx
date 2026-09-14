@@ -83,6 +83,7 @@ export interface CoveragePageProps {
   onConnectSourceSnapshot: (input: ConnectSourceSnapshotInput) => Promise<void>;
   onChooseWorkspace: () => Promise<string | null>;
   onAttachWorkspaceSnapshot: (input: AttachWorkspaceSnapshotInput) => Promise<boolean>;
+  onSelectMcpConfiguration: (assetId: string, relativePath: string) => Promise<boolean>;
   onStartDiscovery: () => Promise<void>;
   onAuthorizationChanged: () => Promise<void>;
   onStartScan: (
@@ -326,6 +327,12 @@ const pageCopy = {
   snapshotFormatHelp: bilingual("The choice is limited by the source. The product never guesses with a general-purpose parser.", "格式會依來源限制；產品不會用通用解析器猜測。"),
   inputTechnicalSummary: bilingual("Technical input details", "輸入技術細節"),
   localEngineDetail: bilingual("Bound scanner engines: {engines}.", "綁定的掃描引擎：{engines}。"),
+  mcpConfigurationLabel: bilingual("MCP configuration to check", "要檢查的 MCP 設定"),
+  mcpConfigurationHelp: bilingual(
+    "MCP Armor reads only this file from the private snapshot. It does not start or contact any MCP server.",
+    "MCP Armor 只會讀取私密快照中的這一份檔案，不會啟動或連線任何 MCP 伺服器。",
+  ),
+  mcpConfigurationChoose: bilingual("Choose one configuration", "選擇一份設定"),
   sourceLabel: bilingual("Name shown in this scan", "這次掃描中顯示的名稱"),
   sourceLabelPlaceholder: bilingual("Example: Production AWS inventory", "例如：正式環境 AWS 盤點"),
   sourceLabelHelp: bilingual("Label requirement: recognizable, without credentials or secret values.", "標籤規格：容易辨識，且不含憑證或秘密值。"),
@@ -824,6 +831,7 @@ export function CoveragePage({
   onConnectSourceSnapshot,
   onChooseWorkspace,
   onAttachWorkspaceSnapshot,
+  onSelectMcpConfiguration,
   onStartDiscovery,
   onAuthorizationChanged,
   onStartScan,
@@ -895,6 +903,15 @@ export function CoveragePage({
 
   const pendingAssets = assets.filter((asset) => asset.authorizationState === "pending");
   const scopeEligibleAssets = useMemo(() => assets.filter(isScopeEligible), [assets]);
+  const mcpArmorRunnable = engineManifests.some((manifest) => (
+    manifest.id === "mcp-armor" && manifest.runnable === true && manifest.compatibilityValid
+  ));
+  const localEngineIdsForAsset = (asset: Asset): string[] => [
+    ...(asset.localInputProfile ? localInputEngineIds[asset.localInputProfile] : []),
+    ...(mcpArmorRunnable && asset.localInputProfile === "repository_working_tree" && asset.selectedMcpConfiguration
+      ? ["mcp-armor"]
+      : []),
+  ];
   const environmentLocalAssets = useMemo(
     () => scopeEligibleAssets.filter((asset) => Boolean(asset.localInputProfile)),
     [scopeEligibleAssets],
@@ -1054,6 +1071,15 @@ export function CoveragePage({
     && selectedScopeAssets.every((asset) => Boolean(asset.localInputProfile))
     && scopeModes.length === 1
     && scopeModes[0] === "local_artifact",
+  );
+  const mcpSelectionRequired = Boolean(
+    mcpArmorRunnable
+    && guidedLocalConsent
+    && selectedScopeAssets.some((asset) => (
+      asset.localInputProfile === "repository_working_tree"
+      && (asset.mcpConfigurationCandidates?.length ?? 0) > 1
+      && !asset.selectedMcpConfiguration
+    )),
   );
   const guidedCloudConsent = guidedCloudRoute
     && hasExactGuidedCloudConsent(selectedScopeAssets, providerConnection);
@@ -1329,7 +1355,7 @@ export function CoveragePage({
   const startScan = async () => {
     if (selectedAssets.length === 0 || scopeModes.length === 0 || (!conciseGuidedConsent && !ownershipConfirmed)) return;
     if (requiresAuthorizationReference && !scopeConfirmation.trim()) return;
-    if (!externalScopeReady) return;
+    if (!externalScopeReady || mcpSelectionRequired) return;
     const externalScope: ExternalScopeRequest | undefined = externalActivity && parsedPorts ? {
       target: externalTarget,
       ports: parsedPorts,
@@ -1360,7 +1386,7 @@ export function CoveragePage({
     } : undefined;
     const guidedLocalEngineIds = guidedLocalConsent
       ? [...new Set(selectedScopeAssets.flatMap((asset) => (
-        asset.localInputProfile ? localInputEngineIds[asset.localInputProfile] : []
+        localEngineIdsForAsset(asset)
       )))]
       : undefined;
     const started = await onStartScan(
@@ -1395,7 +1421,7 @@ export function CoveragePage({
         modes: ["local_artifact"],
         confirmation: text(pageCopy.guidedLocalConfirmation),
       });
-      for (const engineId of localInputEngineIds[profile]) addEngineRoute(engineId, asset.id);
+      for (const engineId of localEngineIdsForAsset(asset)) addEngineRoute(engineId, asset.id);
     }
 
     for (const { asset, target, origin, ports, profile } of selectedEnvironmentHostAssets) {
@@ -2539,12 +2565,32 @@ export function CoveragePage({
             )}
 
             {guidedLocalConsent && (
-              <p className="coverage-guided-boundary">
-                {text(pageCopy.guidedLocalBoundary, {
-                  copy: selectedScopeAssets.map((asset) => asset.name).join(", "),
-                  checks: scopeModes.map((mode) => text(scopeModeLabels[mode].label)).join(", "),
-                })}
-              </p>
+              <>
+                {mcpArmorRunnable && selectedScopeAssets.map((asset) => asset.mcpConfigurationCandidates && asset.mcpConfigurationCandidates.length > 1 ? (
+                  <label className="field" key={`${asset.id}-mcp-configuration`}>
+                    <span>{text(pageCopy.mcpConfigurationLabel)}</span>
+                    <select
+                      disabled={busy}
+                      value={asset.selectedMcpConfiguration ?? ""}
+                      onChange={(event) => {
+                        if (event.target.value) void onSelectMcpConfiguration(asset.id, event.target.value);
+                      }}
+                    >
+                      <option value="">{text(pageCopy.mcpConfigurationChoose)}</option>
+                      {asset.mcpConfigurationCandidates.map((candidate) => (
+                        <option key={candidate.relativePath} value={candidate.relativePath}>{candidate.relativePath}</option>
+                      ))}
+                    </select>
+                    <small>{text(pageCopy.mcpConfigurationHelp)}</small>
+                  </label>
+                ) : null)}
+                <p className="coverage-guided-boundary">
+                  {text(pageCopy.guidedLocalBoundary, {
+                    copy: selectedScopeAssets.map((asset) => asset.name).join(", "),
+                    checks: scopeModes.map((mode) => text(scopeModeLabels[mode].label)).join(", "),
+                  })}
+                </p>
+              </>
             )}
 
             {!conciseGuidedConsent && (
@@ -2577,7 +2623,7 @@ export function CoveragePage({
 
             <div className="form-actions">
               {!conciseGuidedConsent && <p><Icon name="lock" size={16} /> {text(pageCopy.grantBoundaryHelp)}</p>}
-              <button className="button button--primary" type="submit" disabled={busy || availableScopeModes.length === 0 || scopeModes.length === 0 || (!conciseGuidedConsent && !ownershipConfirmed) || (requiresAuthorizationReference && !scopeConfirmation.trim()) || !externalScopeReady}>
+              <button className="button button--primary" type="submit" disabled={busy || availableScopeModes.length === 0 || scopeModes.length === 0 || (!conciseGuidedConsent && !ownershipConfirmed) || (requiresAuthorizationReference && !scopeConfirmation.trim()) || !externalScopeReady || mcpSelectionRequired}>
                 <Icon name="lock" size={16} />{runtimeSetupNotice
                   ? text(pageCopy.preparingScanTools)
                   : busy
@@ -2686,6 +2732,7 @@ export function CoveragePage({
                       <div><dt>{text(pageCopy.owner)}</dt><dd>{asset.owner ?? text(pageCopy.noOwner)}</dd></div>
                       {asset.region && <div><dt>{text(pageCopy.region)}</dt><dd>{asset.region}</dd></div>}
                       {asset.identifiers && asset.identifiers.length > 0 && <div><dt>{text(pageCopy.identifiers)}</dt><dd>{asset.identifiers.map((identifier) => `${identifier.namespace}:${identifier.value}`).join(", ")}</dd></div>}
+                      {asset.selectedMcpConfiguration && <div><dt>{text(pageCopy.mcpConfigurationLabel)}</dt><dd><code>{asset.selectedMcpConfiguration}</code></dd></div>}
                     </dl>
                   </details>
                 </article>

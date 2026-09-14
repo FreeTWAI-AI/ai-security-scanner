@@ -45,6 +45,7 @@ use crate::managed_network::{
     resolve_provider_service_plan, validate_provider_service_request_static,
 };
 use crate::managed_runtime::ManagedRuntimeSetupStatus;
+use crate::mcp_armor_input::verify_mcp_configuration_selection;
 use crate::naabu_work_plan::{
     NAABU_ENGINE_ID, NaabuAttemptSelection, NaabuLauncherPlanDocument, NaabuWorkPlanIdentity,
     NaabuWorkPlanV1, build_naabu_work_plan, select_naabu_attempt,
@@ -2391,6 +2392,75 @@ pub fn attach_workspace_snapshot(
     let case = service.attach_workspace_snapshot(&case_id, &label, snapshot)?;
     emit(&app, COVERAGE_CHANGED_EVENT, &case)?;
     Ok(case)
+}
+
+#[tauri::command]
+pub fn select_mcp_configuration(
+    case_id: Id,
+    asset_id: Id,
+    relative_path: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<AssessmentCase> {
+    let case = state.case_service().show_case(&case_id)?;
+    if case.is_demo || case.status == CaseStatus::Archived {
+        return Err(AppError::NotAuthorized(
+            "demo or archived cases cannot change MCP configuration selection".into(),
+        ));
+    }
+    let asset = case
+        .assets
+        .iter()
+        .find(|asset| asset.id == asset_id)
+        .ok_or_else(|| AppError::InvalidRequest(format!("asset not found: {asset_id}")))?;
+    let references = asset
+        .discovered_from
+        .iter()
+        .filter_map(|source_id| {
+            case.data_sources.iter().find(|source| {
+                source.id == *source_id
+                    && source.read_only
+                    && source.status == SourceConnectionStatus::Connected
+            })
+        })
+        .filter_map(|source| {
+            source
+                .metadata
+                .get(WORKSPACE_SNAPSHOT_REFERENCE_METADATA_KEY)
+        })
+        .map(|value| {
+            serde_json::from_value::<WorkspaceSnapshotReference>(value.clone()).map_err(|_| {
+                AppError::InvalidRequest(
+                    "workspace source has an invalid backend snapshot reference".into(),
+                )
+            })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+    let [reference] = references.as_slice() else {
+        return Err(AppError::NotAuthorized(
+            "MCP configuration selection requires exactly one immutable repository snapshot".into(),
+        ));
+    };
+    if asset
+        .metadata
+        .get("workspace_snapshot_sha256")
+        .and_then(serde_json::Value::as_str)
+        != Some(reference.sha256.as_str())
+    {
+        return Err(AppError::NotAuthorized(
+            "workspace asset digest does not match its backend snapshot reference".into(),
+        ));
+    }
+    let resolved = inspect_workspace_snapshot(state.artifact_root(), &case_id, reference)?;
+    let updated = state.case_service().select_mcp_configuration(
+        &case_id,
+        &asset_id,
+        &reference.sha256,
+        &resolved.manifest,
+        &relative_path,
+    )?;
+    emit(&app, COVERAGE_CHANGED_EVENT, &updated)?;
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -6691,7 +6761,17 @@ fn resolve_execution_workspace(
     let Some(reference) = execution_workspace_reference(state, execution)? else {
         return Ok(None);
     };
-    resolve_workspace_snapshot(state.artifact_root(), &execution.case_id, &reference).map(Some)
+    let resolved =
+        resolve_workspace_snapshot(state.artifact_root(), &execution.case_id, &reference)?;
+    if execution.manifest.id == crate::mcp_armor_input::MCP_ARMOR_ENGINE_ID {
+        let [asset] = execution.assets.as_slice() else {
+            return Err(AppError::InvalidRequest(
+                "MCP Armor requires exactly one immutable repository asset".into(),
+            ));
+        };
+        verify_mcp_configuration_selection(asset, &resolved.manifest)?;
+    }
+    Ok(Some(resolved))
 }
 
 fn execution_workspace_reference(

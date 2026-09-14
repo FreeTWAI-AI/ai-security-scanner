@@ -72,6 +72,9 @@ use crate::external_scope::{
     CanonicalTarget, ExternalActivity, ExternalScopeGrant, ExternalScopeRequest,
     explicit_target_requires_sensitive_network_allowance,
 };
+use crate::mcp_armor_input::{
+    MCP_ARMOR_ENGINE_ID, select_mcp_configuration, selected_mcp_configuration,
+};
 use crate::naabu_work_plan::{
     FrozenNaabuGrant, NAABU_ENGINE_ID, NaabuAttemptSelection, NaabuWorkPlanV1, select_naabu_attempt,
 };
@@ -81,7 +84,7 @@ use crate::source_authorization::PROVIDER_RESOURCE_SCOPE_METADATA_KEY;
 use crate::storage::Storage;
 use crate::workspace_snapshot::{
     WORKSPACE_SNAPSHOT_REFERENCE_METADATA_KEY, WORKSPACE_SNAPSHOT_REFERENCE_SCHEMA,
-    WorkspaceSnapshot, WorkspaceSnapshotReference,
+    WorkspaceSnapshot, WorkspaceSnapshotManifest, WorkspaceSnapshotReference,
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -1607,6 +1610,42 @@ impl<'a> CaseService<'a> {
         refresh_coverage_ledger(&mut case, self.engines.manifests(), Utc::now());
         self.storage
             .save_case(&mut case, "source.workspace_snapshot_attached")?;
+        Ok(case)
+    }
+
+    /// Selects one exact MCP configuration from a backend-verified immutable
+    /// repository snapshot. This changes scanner input selection, not the
+    /// existing local-artifact authorization boundary.
+    pub fn select_mcp_configuration(
+        &self,
+        case_id: &str,
+        asset_id: &str,
+        snapshot_sha256: &str,
+        manifest: &WorkspaceSnapshotManifest,
+        relative_path: &str,
+    ) -> AppResult<AssessmentCase> {
+        let mut case = self.mutable_case(case_id, "select an MCP configuration")?;
+        ensure_no_active_scan(&case, "change an MCP configuration selection")?;
+        let asset = case
+            .assets
+            .iter_mut()
+            .find(|asset| asset.id == asset_id)
+            .ok_or_else(|| AppError::InvalidRequest(format!("asset not found: {asset_id}")))?;
+        if asset
+            .metadata
+            .get("workspace_snapshot_sha256")
+            .and_then(Value::as_str)
+            != Some(snapshot_sha256)
+        {
+            return Err(AppError::NotAuthorized(
+                "MCP configuration selection does not match the asset's immutable snapshot".into(),
+            ));
+        }
+        select_mcp_configuration(asset, manifest, relative_path)?;
+        case.touch();
+        refresh_coverage_ledger(&mut case, self.engines.manifests(), Utc::now());
+        self.storage
+            .save_case(&mut case, "source.mcp_configuration_selected")?;
         Ok(case)
     }
 
@@ -9048,11 +9087,15 @@ fn local_input_metadata_matches(
     if references.next().is_some() {
         return false;
     }
-    reference.schema_version == WORKSPACE_SNAPSHOT_REFERENCE_SCHEMA
+    let snapshot_matches = reference.schema_version == WORKSPACE_SNAPSHOT_REFERENCE_SCHEMA
         && reference.working_tree_only
         && reference.input_profile == contract.input_profile
         && reference.input_profile.asset_kind() == asset.kind
-        && expected_sha == Some(reference.sha256.as_str())
+        && expected_sha == Some(reference.sha256.as_str());
+    if !snapshot_matches {
+        return false;
+    }
+    manifest.id != MCP_ARMOR_ENGINE_ID || selected_mcp_configuration(asset).ok().flatten().is_some()
 }
 
 /// Provider discovery attribution is broader than scanner authorization. A

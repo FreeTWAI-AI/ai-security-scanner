@@ -3221,7 +3221,7 @@
     ],
     "status": "experimental",
     "notices": [
-      "This release is not dispatchable. It carries no packaged image and declares itself non-runnable, so the registry refuses to plan or run it; the record exists so the thin adapter can validate pinned configuration-only machine output.",
+      "This release is not dispatchable outside the verified local build. Its pinned recipe, restricted launcher, and typed single-file selection have passed local container smoke tests, but no immutable image has been published for other installations to pull.",
       "The selected slice runs only MCP Armor's existing hardcoded-secret and excessive-tool-permission checks against one exact configuration snapshot. It does not discover, start, or contact MCP servers and does not claim live tool, resource, prompt-injection, or rug-pull coverage.",
       "A structured warning, failed check, unevaluated input, ledger mismatch, or incomplete machine-output envelope preserves valid findings from completed checks but marks coverage incomplete. A clean result is accepted only after both selected checks complete for the one approved snapshot."
     ],
@@ -3268,9 +3268,7 @@
       "runnable": false,
       "artifact_state": "managed_build_plan",
       "blocked_by": [
-        "no packaged image: the pinned source and local configuration-only patch have never been built or tested as a product image, or published",
-        "no typed MCP configuration-selection path exists to bind exactly one file in the approved repository snapshot and prove that automatic discovery was disabled",
-        "the configuration-only machine-output contract requires a local patch that is not part of an accepted upstream release"
+        "the locally verified image is not published at an immutable registry tag and digest, so other installations cannot pull it"
       ],
       "knowledge_input": {
         "kind": "runtime_bound",
@@ -3282,7 +3280,7 @@
       "wrapper": {
         "required": true,
         "strategy": "Accept one immutable repository snapshot and one typed relative MCP configuration path, invoke only the configuration-only mode with network disabled and model dependencies absent, and pass only its versioned JSON envelope to the adapter.",
-        "entrypoint": null
+        "entrypoint": "/usr/local/bin/ai-security-scanner-mcp-armor-entrypoint"
       },
       "packaging_plan": "engines/images/mcp-armor/plan.json"
     },

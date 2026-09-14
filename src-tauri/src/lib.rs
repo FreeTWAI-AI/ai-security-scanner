@@ -31,6 +31,7 @@ pub mod local_tcp_probe;
 pub mod localhost_quick_scan;
 pub mod managed_network;
 pub mod managed_runtime;
+pub mod mcp_armor_input;
 pub mod naabu_work_plan;
 pub mod orchestrator;
 pub mod prioritization;
@@ -247,6 +248,7 @@ pub fn run() {
             commands::cleanup_provider_bootstrap,
             commands::list_provider_bootstrap_cleanup,
             commands::attach_workspace_snapshot,
+            commands::select_mcp_configuration,
             commands::seed_demo_case,
             commands::list_engine_manifests,
             commands::list_engine_admission_issues,

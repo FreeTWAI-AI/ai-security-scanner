@@ -400,7 +400,8 @@ pub fn create_workspace_snapshot_with_profile(
         total_bytes: manifest.total_bytes,
         working_tree_only: true,
     };
-    let asset = snapshot_asset(source_id, &snapshot_id, &snapshot_sha256, input_profile);
+    let mut asset = snapshot_asset(source_id, &snapshot_id, &snapshot_sha256, input_profile);
+    crate::mcp_armor_input::annotate_repository_asset(&mut asset, &manifest)?;
     cleanup.disarm();
 
     Ok(WorkspaceSnapshot {

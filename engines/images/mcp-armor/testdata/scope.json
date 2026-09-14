@@ -1,0 +1,39 @@
+{
+  "schema_version": "1",
+  "engine_id": "mcp-armor",
+  "generated_at": "2026-09-14T00:00:00Z",
+  "assets": [
+    {
+      "id": "asset-mcp-armor-smoke",
+      "name": "MCP Armor smoke fixture",
+      "kind": "repository",
+      "provider": null,
+      "region": null,
+      "identifiers": [
+        {
+          "namespace": "ai-security-scanner:workspace-snapshot-sha256",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "namespace": "ai-security-scanner:mcp-configuration-relative-path",
+          "value": "mcp.json"
+        },
+        {
+          "namespace": "ai-security-scanner:mcp-configuration-sha256",
+          "value": "f9be1d30cffded1e3c0bef4e60d413b371addba73ee2a168c9a81535c21daa73"
+        }
+      ],
+      "grants": [
+        {
+          "id": "grant-mcp-armor-smoke",
+          "permission": "local_artifact_read",
+          "confirmed_by": "fixture owner",
+          "confirmed_at": "2026-09-14T00:00:00Z",
+          "expires_at": null,
+          "authorization_reference": null,
+          "external_scope": null
+        }
+      ]
+    }
+  ]
+}

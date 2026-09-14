@@ -1,4 +1,8 @@
 use ai_security_scanner_lib::domain::AssetKind;
+use ai_security_scanner_lib::mcp_armor_input::{
+    MCP_CONFIGURATION_CANDIDATES_METADATA_KEY,
+    MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY,
+};
 use ai_security_scanner_lib::workspace_snapshot::{
     LOCAL_INPUT_PROFILE_FILENAME, WorkspaceInputProfile, WorkspaceSnapshotExclusionPolicy,
     WorkspaceSnapshotExclusionReason, WorkspaceSnapshotLimits, WorkspaceSnapshotReference,
@@ -313,7 +317,20 @@ fn snapshot_is_deterministic_private_source_grounded_and_working_tree_only() {
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
-        ["workspace_snapshot_id", "workspace_snapshot_sha256"]
+        [
+            MCP_CONFIGURATION_CANDIDATES_METADATA_KEY,
+            MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY,
+            "workspace_snapshot_id",
+            "workspace_snapshot_sha256"
+        ]
+    );
+    assert_eq!(
+        first.asset.metadata[MCP_CONFIGURATION_CANDIDATES_METADATA_KEY],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        first.asset.metadata[MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY],
+        serde_json::json!(true)
     );
 
     let same_content_different_repository = create_workspace_snapshot(
