@@ -71,6 +71,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["beginner_report.rs", "ReportScanStage", "BeginnerReportStage"],
   ["beginner_report.rs", "DataAvailability", "BeginnerReportDataAvailability"],
   ["domain.rs", "FindingFamily", "FindingFamily"],
+  ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
 ];
 
 for (const [file, rustName, typescriptName] of PAIRS) {
