@@ -242,6 +242,11 @@ test("Codex, Claude, contributors, and the operator skill use the same prioritie
 test("beginner documentation leads with the three scan paths and one report", async () => {
   const english = await load("README.md");
   const chinese = await load("README.zh-TW.md");
+  const website = await load("docs/index.html");
+  const catalog = JSON.parse(await load("engines/catalog.json"));
+  const runnableCount = catalog.filter(
+    (engine) => engine.status === "integrated" && engine.compatibility?.runnable === true,
+  ).length;
 
   for (const content of [english, chinese]) {
     assert.match(content, /website|網站/iu);
@@ -256,6 +261,14 @@ test("beginner documentation leads with the three scan paths and one report", as
   }
   assert.match(english, /One report for every selected asset/u);
   assert.match(chinese, /所有資產集中在一份報告/u);
+  assert.match(english, new RegExp(`runnable engine set integrates ${runnableCount} upstream projects`, "iu"));
+  assert.match(chinese, new RegExp(`可執行的引擎集合整合了 ${runnableCount} 個上游專案`, "u"));
+  assert.match(website, new RegExp(`${runnableCount} runnable upstream projects`, "iu"));
+  assert.match(website, new RegExp(`${runnableCount} 個可執行的上游專案`, "u"));
+  for (const content of [english, chinese, website]) {
+    assert.match(content, /experimental, non-dispatchable|實驗性、不可派送/u);
+    assert.match(content, /not (?:current |counted as )?scan capabilities|不(?:計為|是目前的)掃描能力/u);
+  }
 });
 
 test("scope documentation keeps exact website and connectivity boundaries in technical detail", async () => {
