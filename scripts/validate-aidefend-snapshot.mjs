@@ -98,6 +98,7 @@ const EXPECTED_MAPPING_PROJECTION = Object.freeze([
     controls: ["AID-H-003.005"],
   },
   { engine_id: "kubescape", match_kind: "exact", source_rule: "C-0002", controls: ["AID-I-001.001"] },
+  { engine_id: "kubescape", match_kind: "exact", source_rule: "C-0017", controls: ["AID-I-001.001"] },
   { engine_id: "semgrep", match_kind: "exact", source_rule: "ai-security-scanner.generic.private-key", controls: ["AID-H-031.002"] },
   { engine_id: "semgrep", match_kind: "exact", source_rule: "ai-security-scanner.javascript.child-process-exec", controls: ["AID-H-025.001", "AID-H-031.002"] },
   { engine_id: "semgrep", match_kind: "exact", source_rule: "ai-security-scanner.python.dynamic-code-execution", controls: ["AID-H-025.001", "AID-H-031.002"] },
@@ -115,16 +116,42 @@ const EXPECTED_CONTROL_APPLICABILITY = Object.freeze([
   { id: "AID-I-001.001", name: "Container-Based Isolation", applicability: "ai_system" },
 ]);
 
+const AI_GATED_FRAMEWORKS = Object.freeze([
+  "AIDEFEND",
+  "OWASP Top 10 for LLM Applications",
+]);
+
 const EXPECTED_APPLICABILITY_SCHEMA = Object.freeze({
   property: { enum: ["ai_system", "ai_generated_artifact"] },
   conditional: [{
     if: {
-      properties: { framework: { const: "AIDEFEND" } },
+      properties: { framework: { enum: AI_GATED_FRAMEWORKS } },
       required: ["framework"],
     },
-    then: { required: ["aidefend_applicability"] },
-    else: { not: { required: ["aidefend_applicability"] } },
+    then: { required: ["applicability"] },
+    else: { not: { required: ["applicability"] } },
   }],
+});
+
+const EXPECTED_CWE_DERIVED_SCHEMA = Object.freeze({
+  type: "array",
+  maxItems: 1024,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: ["control", "cwe_ids", "rationale"],
+    properties: {
+      control: { type: "string", pattern: "^[a-z0-9][a-z0-9.-]{0,79}$" },
+      cwe_ids: {
+        type: "array",
+        minItems: 1,
+        maxItems: 64,
+        uniqueItems: true,
+        items: { type: "string", pattern: "^CWE-[0-9]+$" },
+      },
+      rationale: { type: "string", minLength: 20, maxLength: 512 },
+    },
+  },
 });
 
 const SNAPSHOT_KEYS = [
@@ -394,14 +421,19 @@ async function validateControlMappings() {
   const controlSchema = schema.properties?.controls?.items;
   assert(controlSchema?.additionalProperties === false, "control mapping schema must reject unknown control fields");
   assertEqual(
-    controlSchema?.properties?.aidefend_applicability,
+    controlSchema?.properties?.applicability,
     EXPECTED_APPLICABILITY_SCHEMA.property,
-    "control mapping schema AIDEFEND applicability property",
+    "control mapping schema AI applicability property",
   );
   assertEqual(
     controlSchema?.allOf,
     EXPECTED_APPLICABILITY_SCHEMA.conditional,
-    "control mapping schema AIDEFEND applicability condition",
+    "control mapping schema AI applicability condition",
+  );
+  assertEqual(
+    schema.properties?.cwe_derived_controls,
+    EXPECTED_CWE_DERIVED_SCHEMA,
+    "control mapping schema CWE-derived controls",
   );
 
   const source = (mapping.sources ?? []).filter((item) => item.framework === "AIDEFEND");
@@ -418,16 +450,16 @@ async function validateControlMappings() {
     definitions.map((control) => ({
       id: control.control_id,
       name: control.title,
-      applicability: control.aidefend_applicability,
+      applicability: control.applicability,
     })),
     EXPECTED_CONTROL_APPLICABILITY,
     "AIDEFEND mapping definitions and applicability",
   );
   assert(
-    (mapping.controls ?? []).every((control) => control.framework === "AIDEFEND"
-      ? Object.hasOwn(control, "aidefend_applicability")
-      : !Object.hasOwn(control, "aidefend_applicability")),
-    "only AIDEFEND controls may declare AIDEFEND applicability, and every AIDEFEND control must declare it",
+    (mapping.controls ?? []).every((control) => AI_GATED_FRAMEWORKS.includes(control.framework)
+      ? Object.hasOwn(control, "applicability")
+      : !Object.hasOwn(control, "applicability")),
+    "only AI-gated controls may declare applicability, and every AI-gated control must declare it",
   );
   const idByKey = new Map(definitions.map((control) => [control.key, control.control_id]));
   assert(idByKey.size === EXPECTED_RECORDS.length, "AIDEFEND mapping keys must be unique");
@@ -443,8 +475,8 @@ async function validateControlMappings() {
     .sort((left, right) => `${left.engine_id}\0${left.source_rule}`.localeCompare(`${right.engine_id}\0${right.source_rule}`));
   assertEqual(projection, EXPECTED_MAPPING_PROJECTION, "reviewed AIDEFEND rule projection");
   assert(
-    (mapping.entries ?? []).every((entry) => !Object.hasOwn(entry, "aidefend_applicability")),
-    "AIDEFEND applicability must be declared per control, not per mixed mapping entry",
+    (mapping.entries ?? []).every((entry) => !Object.hasOwn(entry, "applicability")),
+    "AI applicability must be declared per control, not per mixed mapping entry",
   );
 }
 

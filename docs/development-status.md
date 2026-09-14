@@ -35,7 +35,7 @@ The latest recorded local baseline for these lanes completed successfully:
 - Rust core and CLI: 1,690 tests.
 - Frontend unit tests: 601 tests.
 - Component rendering: 262 tests across 18 files.
-- CI document and contract tests: 44 tests.
+- CI document and contract tests: 45 tests.
 - Engine catalog validation: 8 tests.
 - TypeScript type checking, Rust formatting, and Clippy: passed.
 
@@ -47,8 +47,6 @@ and its offline synthetic smoke test again produced one finding, two completed c
 
 1. Complete MCP Armor publication evidence and digest writeback before changing its runnable status.
 2. Keep the other experimental AI integrations fail closed until their catalog blockers are resolved.
-3. Resolve the existing AIDEFEND mapping schema/catalog field mismatch as a separate contract change;
-   do not loosen validation to hide it.
 
 Publication, packaging, signing, versioning, and compliance posture remain product-owner decisions.
 Real endpoint scans require explicit scope and must never infer authorization or accept credentials

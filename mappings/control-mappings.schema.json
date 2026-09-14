@@ -68,18 +68,22 @@
           "framework_version": { "type": "string", "minLength": 1, "maxLength": 40 },
           "control_id": { "type": "string", "minLength": 1, "maxLength": 80 },
           "title": { "type": "string", "minLength": 1, "maxLength": 160 },
-          "aidefend_applicability": {
+          "applicability": {
             "enum": ["ai_system", "ai_generated_artifact"]
           }
         },
         "allOf": [
           {
             "if": {
-              "properties": { "framework": { "const": "AIDEFEND" } },
+              "properties": {
+                "framework": {
+                  "enum": ["AIDEFEND", "OWASP Top 10 for LLM Applications"]
+                }
+              },
               "required": ["framework"]
             },
-            "then": { "required": ["aidefend_applicability"] },
-            "else": { "not": { "required": ["aidefend_applicability"] } }
+            "then": { "required": ["applicability"] },
+            "else": { "not": { "required": ["applicability"] } }
           }
         ]
       }
@@ -101,6 +105,26 @@
             "maxItems": 8,
             "uniqueItems": true,
             "items": { "type": "string" }
+          },
+          "rationale": { "type": "string", "minLength": 20, "maxLength": 512 }
+        }
+      }
+    },
+    "cwe_derived_controls": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["control", "cwe_ids", "rationale"],
+        "properties": {
+          "control": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,79}$" },
+          "cwe_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^CWE-[0-9]+$" }
           },
           "rationale": { "type": "string", "minLength": 20, "maxLength": 512 }
         }
