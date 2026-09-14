@@ -35,6 +35,12 @@ const ENGINE_SPECS = Object.freeze({
   grype: { tag: "0.117.0-3", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["grype.json"] },
   kubescape: { tag: "4.0.12-3", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["kubescape.json"] },
   "kube-bench": { tag: "0.16.0-3", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["kube-bench.json"] },
+  "mcp-armor": {
+    tag: "1.0.2-config-only.1",
+    group: "local",
+    workflow: ".github/workflows/engine-image-mcp-armor.yml",
+    smokeFiles: ["mcp-armor.json"],
+  },
   scubagear: { tag: "1.8.0-6", group: "m365", workflow: ".github/workflows/engine-images-m365.yml" },
   maester: { tag: "2.0.0-6", group: "m365", workflow: ".github/workflows/engine-images-m365.yml" },
   "egress-gateway": { tag: "0.1.10-1", group: "gateway", workflow: ".github/workflows/managed-egress-gateway-image.yml" },

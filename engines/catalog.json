@@ -3187,7 +3187,7 @@
     "repository_url": "https://github.com/aira-security/mcp-armor",
     "homepage_url": "https://github.com/aira-security/mcp-armor",
     "license_spdx": "Apache-2.0",
-    "distribution_mode": "build_from_pinned_source",
+    "distribution_mode": "pull_pinned_image",
     "image": null,
     "source_revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
     "engine_version": "1.0.2",
@@ -3221,7 +3221,7 @@
     ],
     "status": "experimental",
     "notices": [
-      "This release is not dispatchable outside the verified local build. Its pinned recipe, restricted launcher, and typed single-file selection have passed local container smoke tests, but no immutable image has been published for other installations to pull.",
+      "This release remains non-dispatchable while its reviewed publication workflow builds and verifies the immutable multi-platform image. Its pinned recipe, restricted launcher, and typed single-file selection have already passed local container smoke tests.",
       "The selected slice runs only MCP Armor's existing hardcoded-secret and excessive-tool-permission checks against one exact configuration snapshot. It does not discover, start, or contact MCP servers and does not claim live tool, resource, prompt-injection, or rug-pull coverage.",
       "A structured warning, failed check, unevaluated input, ledger mismatch, or incomplete machine-output envelope preserves valid findings from completed checks but marks coverage incomplete. A clean result is accepted only after both selected checks complete for the one approved snapshot."
     ],
@@ -3268,7 +3268,7 @@
       "runnable": false,
       "artifact_state": "managed_build_plan",
       "blocked_by": [
-        "the locally verified image is not published at an immutable registry tag and digest, so other installations cannot pull it"
+        "the reviewed publication workflow has not yet produced and verified the immutable multi-platform image digest"
       ],
       "knowledge_input": {
         "kind": "runtime_bound",

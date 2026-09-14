@@ -162,6 +162,45 @@ const managedLocalK8sContracts = new Map([
       'io.ai-security-scanner.patch-sha256="9e7e7443fe5b5ee52dfb5ebb458d73fa868c441729e98d98a0453e7dd8cc24a7"',
     ],
   }],
+  ["mcp-armor", {
+    tag: "1.0.2-config-only.1",
+    planKind: "managed_build",
+    license: { disposition: "allow", sourceOfferPath: null },
+    entrypoint: "/usr/local/bin/ai-security-scanner-mcp-armor-entrypoint",
+    launcherPath: "engines/images/mcp-armor/launcher/main.go",
+    launcherDockerfileCopy: "COPY engines/images/mcp-armor/launcher/go.mod engines/images/mcp-armor/launcher/main.go engines/images/mcp-armor/launcher/main_test.go ./",
+    command: ["--engine", "mcp-armor", "--workspace", "/workspace", "--output", "/output"],
+    outputFormats: ["json"],
+    ruleVersion: "6af4cee4665ab6242f02a88952f9127b6a04922a",
+    sourceArchiveSha256: "sha256:6bf3da5f1332748eb0dc60fb1f82f1ee43bb721f70686f99f4f262d256da45a6",
+    sourceDateEpoch: 1774602347,
+    sourcePatch: {
+      path: "docs/research/patches/mcp-armor-1.0.2-config-only.patch",
+      sha256: "sha256:f9ad5e304eed79d79b4cc429493ae4d50e1cd685700cb43ab106122344b8e062",
+    },
+    immutableLauncherInputs: [
+      'workspaceMountPath             = "/workspace"',
+      'scopeDocumentPath              = "/run/ai-security-scanner/scope.json"',
+      'reportPath                     = "/output/mcp-armor.json"',
+      '"--config-only"',
+      "requireReadOnlyWorkspace(*workspace)",
+      "verifySelectedConfiguration(*workspace, selected)",
+      "validateTerminalEvidence(reportPath)",
+    ],
+    immutableDockerfileInputs: [
+      "ADD --checksum=sha256:6bf3da5f1332748eb0dc60fb1f82f1ee43bb721f70686f99f4f262d256da45a6",
+      "https://github.com/aira-security/mcp-armor/archive/6af4cee4665ab6242f02a88952f9127b6a04922a.tar.gz",
+      "COPY docs/research/patches/mcp-armor-1.0.2-config-only.patch /tmp/mcp-armor-config-only.patch",
+      "f9ad5e304eed79d79b4cc429493ae4d50e1cd685700cb43ab106122344b8e062  /tmp/mcp-armor-config-only.patch",
+      "git apply --check /tmp/mcp-armor-config-only.patch",
+      "86d9dfb49bdd485ebb7855fda467c2cd6ac93c2a91609c08fa9e476c6dc746f8  /tmp/requirements.lock",
+      "--only-binary=:all:",
+      "--require-hashes",
+      "SOURCE_DATE_EPOCH=1774602347",
+      'io.ai-security-scanner.patch-sha256="f9ad5e304eed79d79b4cc429493ae4d50e1cd685700cb43ab106122344b8e062"',
+      'io.ai-security-scanner.requirements-sha256="86d9dfb49bdd485ebb7855fda467c2cd6ac93c2a91609c08fa9e476c6dc746f8"',
+    ],
+  }],
   ["trufflehog", {
     tag: "3.97.0-3",
     planKind: "managed_build",
@@ -261,6 +300,7 @@ const managedEvidenceWorkflows = [
   ".github/workflows/engine-image-greenbone.yml",
   ".github/workflows/engine-image-checkov.yml",
   ".github/workflows/engine-image-syft.yml",
+  ".github/workflows/engine-image-mcp-armor.yml",
 ];
 const localK8sWorkflowRelative = ".github/workflows/engine-images-local-k8s.yml";
 const managedEgressGatewayWorkflowRelative = ".github/workflows/managed-egress-gateway-image.yml";
@@ -269,6 +309,7 @@ const newlyPublishedEvidenceWorkflows = [
   ".github/workflows/engine-images-m365.yml",
   localK8sWorkflowRelative,
   managedEgressGatewayWorkflowRelative,
+  ".github/workflows/engine-image-mcp-armor.yml",
 ];
 const upstreamImageOnlyIds = new Set(["kics"]);
 const shellNames = new Set([
@@ -396,7 +437,8 @@ function validateManagedImageEvidence(catalogEntries) {
       ? parseJson(resolve(root, planPath))
       : null;
     const repository = engine?.image?.repository ??
-      (isPendingM365Publication(plan, engine) || isPendingManagedExternalPublication(plan, engine)
+      (isPendingM365Publication(plan, engine) || isPendingManagedExternalPublication(plan, engine) ||
+       isPendingMcpArmorPublication(plan, engine)
         ? plan.final_artifact.repository
         : undefined);
     if (typeof repository !== "string" || !repository.startsWith(managedImageRepositoryPrefix)) continue;
@@ -1832,12 +1874,17 @@ function validateManagedSourceImage(plan, planRelative, engine) {
   }
 }
 
-function validateUnpublishedManagedBuild(plan, planRelative, engine) {
-  if (plan.publish_state !== "managed_artifact_not_published" || engine.compatibility?.runnable !== false) {
+function validateUnpublishedManagedBuild(
+  plan,
+  planRelative,
+  engine,
+  { publishState = "managed_artifact_not_published", artifactTag = null } = {},
+) {
+  if (plan.publish_state !== publishState || engine.compatibility?.runnable !== false) {
     errors.push(`${planRelative}: unpublished managed build must remain explicitly non-runnable`);
   }
-  if (plan.final_artifact?.tag !== null || plan.final_artifact?.digest !== null) {
-    errors.push(`${planRelative}: unpublished managed build cannot claim a tag or digest`);
+  if (plan.final_artifact?.tag !== artifactTag || plan.final_artifact?.digest !== null) {
+    errors.push(`${planRelative}: unpublished managed build must retain only its reviewed candidate tag and a null digest`);
   }
   const dockerfileRelative = `engines/images/${engine.id}/Dockerfile`;
   const dockerfilePath = resolve(root, dockerfileRelative);
@@ -1902,6 +1949,43 @@ function validateUnpublishedManagedBuild(plan, planRelative, engine) {
       !existsSync(resolve(root, evidence?.scope_fixture ?? "")) ||
       !existsSync(resolve(root, evidence?.input_fixture ?? ""))) {
     errors.push(`${planRelative}: locally verified build lacks bounded smoke evidence`);
+  }
+}
+
+function isPendingMcpArmorPublication(plan, engine) {
+  const contract = managedLocalK8sContracts.get("mcp-armor");
+  const expectedRepository = `${managedImageRepositoryPrefix}mcp-armor`;
+  return engine?.id === "mcp-armor" && plan?.publish_state === "publication_in_progress" &&
+    plan.publication === null && engine.distribution_mode === "pull_pinned_image" && engine.image === null &&
+    engine.default_enabled === false && engine.status === "experimental" &&
+    engine.compatibility?.runnable === false && engine.compatibility?.artifact_state === "managed_build_plan" &&
+    Array.isArray(engine.compatibility?.blocked_by) && engine.compatibility.blocked_by.length === 1 &&
+    Array.isArray(plan.blockers) && plan.blockers.length === 1 &&
+    plan.final_artifact?.repository === expectedRepository && plan.final_artifact?.tag === contract?.tag &&
+    plan.final_artifact?.digest === null && engine.provenance?.engine?.artifact_source_revision === null &&
+    engine.provenance?.engine?.source_association === "source_build_required";
+}
+
+function validateMcpArmorImage(plan, planRelative, engine) {
+  const contract = managedLocalK8sContracts.get("mcp-armor");
+  if (plan.publish_state === "published_managed_artifact") {
+    validatePublishedLocalK8sImage(plan, planRelative, engine, contract);
+    return;
+  }
+  if (!isPendingMcpArmorPublication(plan, engine)) {
+    errors.push(`${planRelative}: MCP Armor must be either an admitted immutable image or one isolated publication-in-progress candidate`);
+    return;
+  }
+  validateUnpublishedManagedBuild(plan, planRelative, engine, {
+    publishState: "publication_in_progress",
+    artifactTag: contract.tag,
+  });
+  const workflowPath = resolve(root, ".github/workflows/engine-image-mcp-armor.yml");
+  const workflowText = existsSync(workflowPath) ? readFileSync(workflowPath, "utf8") : "";
+  if (!workflowText.includes(`IMAGE_TAG: ${contract.tag}`) ||
+      !workflowText.includes("engines/images/mcp-armor/Dockerfile") ||
+      !workflowText.includes("docs/research/patches/mcp-armor-1.0.2-config-only.patch")) {
+    errors.push(`${planRelative}: MCP Armor publication workflow does not bind the reviewed tag, Dockerfile, and machine-output patch`);
   }
 }
 
@@ -2395,7 +2479,9 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
   if (engine.distribution_mode === "pull_pinned_image" || engine.distribution_mode === "bundled_image") {
     if (engine.image !== null) {
       validateImage(engine.image, `${label}.image`);
-    } else if (!isPendingM365Publication(plan, engine) && !isPendingManagedExternalPublication(plan, engine)) {
+    } else if (!isPendingM365Publication(plan, engine) &&
+        !isPendingManagedExternalPublication(plan, engine) &&
+        !isPendingMcpArmorPublication(plan, engine)) {
       errors.push(`${label}.image: only an exactly isolated reviewed publication-in-progress operation may omit its immutable image`);
     }
   } else if (engine.image !== null) {
@@ -2440,7 +2526,7 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
     validateImage(plan.final_artifact, `${planRelative}.final_artifact`);
     if (!deepEqual(plan.final_artifact, { repository: engine.image.repository, tag: engine.image.tag, digest: engine.image.digest })) errors.push(`${planRelative}: final artifact does not match catalog image`);
   } else if (managedCloudIds.has(engine.id) || isPendingM365Publication(plan, engine) ||
-      isPendingManagedExternalPublication(plan, engine)) {
+      isPendingManagedExternalPublication(plan, engine) || isPendingMcpArmorPublication(plan, engine)) {
     const pending = plan.final_artifact;
     if (!pending || typeof pending.repository !== "string" || typeof pending.tag !== "string" || pending.digest !== null || plan.publish_state !== "publication_in_progress") {
       errors.push(`${planRelative}: managed image publication in progress must retain its exact repository/tag and null digest`);
@@ -2452,7 +2538,9 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
   }
   const localK8sContract = managedLocalK8sContracts.get(engine.id);
   const expectedManagedRepository = `${managedImageRepositoryPrefix}${engine.id}`;
-  if (localK8sContract && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
+  if (engine.id === "mcp-armor") {
+    validateMcpArmorImage(plan, planRelative, engine);
+  } else if (localK8sContract && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
     validatePublishedLocalK8sImage(plan, planRelative, engine, localK8sContract);
   } else if (engine.id === "greenbone" && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
     validatePublishedGreenboneImage(plan, planRelative, engine);

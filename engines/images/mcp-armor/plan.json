@@ -6,7 +6,7 @@
   "support_until": "2026-12-12",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "managed_artifact_not_published",
+  "publish_state": "publication_in_progress",
   "source": {
     "repository": "https://github.com/aira-security/mcp-armor",
     "revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
@@ -16,7 +16,7 @@
   "verified_upstream_artifact": null,
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
-    "tag": null,
+    "tag": "1.0.2-config-only.1",
     "digest": null
   },
   "build_recipe": {
@@ -162,7 +162,8 @@
     "input_fixture": "engines/images/mcp-armor/testdata/workspace/mcp.json",
     "result": "one exact read-only synthetic configuration produced a complete two-check terminal JSON envelope and one excessive-permission finding under network=none; live and model dependency imports were absent"
   },
+  "publication": null,
   "blockers": [
-    "The locally verified image has not been published at an immutable registry tag and digest, so other product installations cannot pull it and the catalog must remain non-runnable."
+    "The reviewed publication workflow has not yet produced and verified the immutable multi-platform image digest, so the catalog must remain non-runnable."
   ]
 }

@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 const load = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
-test("MCP Armor local image remains offline, non-root, and unpublished", async () => {
-  const [catalogText, planText, dockerfile, requirements, patch, launcher, scopeText, input] = await Promise.all([
+test("MCP Armor publication candidate remains offline, non-root, and non-runnable", async () => {
+  const [catalogText, planText, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
     load("engines/catalog.json"),
     load("engines/images/mcp-armor/plan.json"),
     load("engines/images/mcp-armor/Dockerfile"),
@@ -16,20 +16,23 @@ test("MCP Armor local image remains offline, non-root, and unpublished", async (
     load("engines/images/mcp-armor/launcher/main.go"),
     load("engines/images/mcp-armor/testdata/scope.json"),
     load("engines/images/mcp-armor/testdata/workspace/mcp.json"),
+    load(".github/workflows/engine-image-mcp-armor.yml"),
+    load("scripts/release/verify-publication-artifact.mjs"),
   ]);
   const engine = JSON.parse(catalogText).find((entry) => entry.id === "mcp-armor");
   const plan = JSON.parse(planText);
   assert.equal(engine.compatibility.runnable, false);
   assert.equal(engine.status, "experimental");
   assert.equal(engine.image, null);
-  assert.equal(plan.publish_state, "managed_artifact_not_published");
+  assert.equal(plan.publish_state, "publication_in_progress");
+  assert.equal(plan.publication, null);
   assert.deepEqual(plan.final_artifact, {
     repository: "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
-    tag: null,
+    tag: "1.0.2-config-only.1",
     digest: null,
   });
   assert.equal(plan.blockers.length, 1);
-  assert.match(plan.blockers[0], /not been published/u);
+  assert.match(plan.blockers[0], /workflow has not yet produced/u);
   assert.equal(plan.dockerfile.sha256, sha256(dockerfile));
   assert.equal(plan.build_recipe.dependency_lock.sha256, sha256(requirements));
   assert.equal(plan.build_recipe.source_patch.sha256, sha256(patch));
@@ -50,6 +53,17 @@ test("MCP Armor local image remains offline, non-root, and unpublished", async (
   for (const absent of ["fastmcp==", "thefuzz==", "transformers==", "torch=="]) {
     assert.equal(requirements.toLowerCase().includes(absent), false, absent);
   }
+  const guardIndex = workflow.indexOf("uses: ./.github/actions/engine-image-evidence/publication-guard");
+  const buildIndex = workflow.indexOf("uses: docker/build-push-action@");
+  const evidenceIndex = workflow.indexOf("uses: ./.github/actions/engine-image-evidence\n");
+  const promotionIndex = workflow.indexOf("uses: ./.github/actions/engine-image-evidence/promote");
+  assert.ok(guardIndex >= 0 && guardIndex < buildIndex && buildIndex < evidenceIndex && evidenceIndex < promotionIndex);
+  assert.match(workflow, /^  IMAGE_TAG: 1\.0\.2-config-only\.1$/mu);
+  assert.match(workflow, /platforms: linux\/amd64,linux\/arm64/u);
+  assert.match(workflow, /--read-only --network none --cap-drop ALL/u);
+  assert.match(workflow, /mcp-armor-managed-smoke/u);
+  assert.match(workflow, /docs\/research\/patches\/mcp-armor-1\.0\.2-config-only\.patch/u);
+  assert.match(verifier, /"mcp-armor": \{[\s\S]*?engine-image-mcp-armor\.yml[\s\S]*?mcp-armor\.json/u);
 });
 
 test("MCP Armor production path binds one exact snapshot file before invocation", async () => {
