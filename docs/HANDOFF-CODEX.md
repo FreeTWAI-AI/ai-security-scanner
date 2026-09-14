@@ -2,7 +2,7 @@
 
 交接日期：2026-09-14（America/New_York）
 交接基準 commit：`9032d96`（`main`，**未 push**）
-最新續接紀錄：`04367af`（MCP Armor 本機 configuration-only 執行路徑，`main`，**未 push**）
+最新續接紀錄：`7537d5d`（MCP Armor immutable image publication workflow，`main`，**未 push**）
 交接者：Claude Code session `284f7d7a-b6c3-4a29-b652-c31fa7be49dd`，工作區間 2026-09-09 01:07 → 2026-09-13 01:16（America/New_York），該區間共 183 個 commit
 
 > 這份文件是**開發交接**，不是產品規格、發布核准、合規聲明或安全保證。
@@ -25,8 +25,11 @@ See [`PRODUCT-DOCTRINE.md`](PRODUCT-DOCTRINE.md). Short form: optimize **time-to
 接上不可變 repository snapshot 內的 bounded MCP 設定探索、單檔 typed selection、dispatch 前
 digest 驗證、固定 `configuration_only` launcher、pinned local image build 與 `network=none`
 合成端到端 smoke。它確實產生並驗證一筆 excessive-permission finding；不是 setup-only 測試。
-但 catalog 仍是 `experimental`、`runnable: false`，因為 image 尚未發佈到其他安裝可拉取的
-immutable registry digest。不要把本機 image ID 寫成可發布 artifact digest。
+Ted 已在 2026-09-14 明確同意繼續 image publication；`7537d5d` 因此補上 immutable
+multi-platform workflow、signed evidence 與下載後 verifier，catalog 進入 `publication_in_progress`。
+它仍是 `experimental`、`runnable: false`，因為 workflow 尚未在遠端產生 digest。不要把本機
+image ID 寫成可發布 artifact digest，也不要用 branch／本機 push 繞過只接受 `refs/heads/main`
+的 provenance 契約。
 
 **報告的兩項小型誠實性／可讀性工作也已收斂：** Severity mix 在 `bda3f3a` 區分
 「已量測且為零」與「未量測」；running header／footer 在 `9fda6f4` 完成一項小幅可讀性
@@ -37,6 +40,7 @@ immutable registry digest。不要把本機 image ID 寫成可發布 artifact di
 | commit | 內容 |
 | --- | --- |
 | `04367af` | typed 單檔選擇、pre-contact snapshot 驗證、restricted launcher、pinned local image 與 finding-producing offline smoke；catalog 維持不可派送 |
+| `7537d5d` | 固定 `1.0.2-config-only.1` publication candidate；新增 amd64＋arm64 build、離線 finding smoke、SBOM／provenance／promotion、artifact verifier；尚未 push 或觸發 |
 
 ### 前一里程碑：報告誠實性與可讀性收尾
 
@@ -55,7 +59,8 @@ immutable registry digest。不要把本機 image ID 寫成可發布 artifact di
 | `488698b` | 重新核對 shallow checkout、pin、license 與文件時態 |
 | `7a07d65` | Step 2b／2c 收斂稽核：pin、patch、fixtures、catalog、adapter 與草稿一致 |
 
-**未 push。`04367af` 時 `main` 有 55 個未推送 commit。** Ted 的指示是 `main 未推送先不要 push`；要 push 需要他明確點頭。
+**未 push。`7537d5d` 時 `main` 有 57 個未推送 commit。** Image publication 已獲同意，
+但 `main 未推送先不要 push` 尚未被明確解除；workflow 因此還不能在合格的 `main` provenance 下觸發。
 
 ### 交接時的測試數字（全綠）
 
@@ -116,7 +121,7 @@ cargo 1690 的分佈：lib 1090、cli 35、`adapter_fixtures` 105、`all_engine_
 | 項目 | 狀態 | 位置 |
 | --- | --- | --- |
 | Step 2 Agentic Radar | **已完成**（`7a07d65` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
-| Step 3 MCP Armor | `04367af` 已完成 typed 單檔選擇、restricted launcher、pinned local image build 與離線 finding smoke；只剩 immutable image publication blocker，仍是 experimental、不可派送 | `docs/research/mcp-armor-evaluation.md`、`engines/images/mcp-armor/plan.json` |
+| Step 3 MCP Armor | `04367af` 完成本機 execution slice；`7537d5d` 完成 immutable publication workflow／verifier。只剩允許 push `main`、遠端 workflow 成功與 digest writeback；目前仍是 experimental、不可派送 | `docs/research/mcp-armor-evaluation.md`、`engines/images/mcp-armor/plan.json` |
 | Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `89091fa` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
 | 報告 header／footer 美化 | **已完成本輪排定的小幅可讀性修正**（`9fda6f4`）；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
 | 資產看板 Severity mix 空白格 | **已完成**（`bda3f3a`） | `html_asset_severity_strip` 現在把「已量測且為零」呈現為 `0 problems`／`0 個問題`，把「沒有量測」呈現為 `Not measured`／`未量測` |
@@ -140,9 +145,11 @@ model-endpoint scope grant 與 credential path；Agentic Radar 仍缺 image、ty
 與 accepted upstream machine-output release；Augustus 只有已稽核的 14-rule pure-data preflight，
 沒有 catalog／adapter／launcher／provider path。
 
-下一個能把「本機可重現」變成「產品安裝可派送」的動作，是由 owner 明確批准並執行 MCP Armor
-immutable image publication，再把 published tag/digest 寫回 plan／catalog 並跑 release admission。
-在此之前不可把 local image ID 冒充 registry digest，也不可把 `runnable` 改成 true。
+Owner 已批准 MCP Armor image publication，`7537d5d` 也已把發佈與驗證路徑接好。現在唯一
+無法在本機完成的前置動作，是解除這一次 `main` push 限制，讓 workflow 取得契約要求的
+`refs/heads/main` provenance。遠端 workflow 成功後，必須下載並以
+`scripts/release/verify-publication-artifact.mjs` 驗證 evidence，再把 published tag／digest／
+platform digests／workflow run 寫回 plan 與 catalog，最後才可把 `runnable` 改成 true。
 
 ### 已收斂的報告小軸
 
@@ -163,11 +170,11 @@ Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／
 
 ### 4.1 站立約束（Ted 的原話，一律遵守）
 
-- **`main 未推送先不要 push`。** `04367af` 時有 55 個未推送 commit。
+- **`main 未推送先不要 push`。** `7537d5d` 時有 57 個未推送 commit；publication 授權不等於此限制已解除。
 - **`不要對外掃描、不要要憑證、不要擅自推 image`。** 整條 garak 線沒有跑過任何真實掃描、沒有接觸任何外部端點；唯一的網路動作是 GitHub 唯讀存取（`git ls-remote` 查 tag、`curl` 上游已 checked-in 的 fixture、`--depth 1` clone 到 gitignore 的 `.upstreams/`）。
 - **`不要擅自遠端破壞性操作`** / `勿擅自對遠端做破壞性操作`。
 - **`不要開 SSO／正式環境`**。
-- **兩件事需要 Ted 明確點頭才可以動**：把 engine image 推到 `ghcr.io`（對外發佈），以及任何對真實 LLM endpoint 的實際掃描。
+- **MCP Armor image publication 已在 2026-09-14 獲 Ted 明確同意**；但 push `main` 仍需另外解除既有禁止。任何對真實 LLM endpoint 的實際掃描仍需明確點頭。
 - **完成一小步就停**，跑完 gates、回報測試數字，用繁體中文簡述。
 - **不要開大重構、不要開新大軸。**
 - **不要為綠燈放寬契約。**
