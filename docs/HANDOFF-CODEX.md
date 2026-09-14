@@ -2,6 +2,7 @@
 
 交接日期：2026-09-13（America/New_York）
 交接基準 commit：`9032d96`（`main`，**未 push**）
+最新續接紀錄：`7a07d65`（Agentic Radar Step 2 收斂稽核，`main`，**未 push**）
 交接者：Claude Code session `284f7d7a-b6c3-4a29-b652-c31fa7be49dd`，工作區間 2026-09-09 01:07 → 2026-09-13 01:16（America/New_York），該區間共 183 個 commit
 
 > 這份文件是**開發交接**，不是產品規格、發布核准、合規聲明或安全保證。
@@ -20,20 +21,21 @@ See [`PRODUCT-DOCTRINE.md`](PRODUCT-DOCTRINE.md). Short form: optimize **time-to
 
 ### 當前軸
 
-**把 AI 專用掃描能力接進產品。** 起點是一個實測出來的缺口：`AssessmentIntent::AiApplication`（`src-tauri/src/domain.rs:259`）已經是第一級的 beginner journey，但它**不挑選任何 AI 專用引擎**——它只翻開 `ai_system_applicable`，讓 AI 框架座標套在 21 個傳統引擎的結果上。使用者選了「AI 應用」，實際跑的是 Semgrep 掃 Python、Trivy 掃相依、Gitleaks 掃密鑰。誠實，但那不是在測模型。
+**AI 引擎研究／experimental integration 軸已在不可派送邊界收斂。** garak、Agentic Radar、MCP Armor 與 Augustus 的既定研究或純資料證據均已保留；這不代表它們已建立可派送能力。不要自行處理 image、typed framework-selection、上游 PR／release、launcher、網路、provider 或憑證 blocker。
 
-當前軸就是補這個洞：garak（模型端點）→ agentic-radar（代理框架）→ mcp-armor（MCP）→ Augustus（模型端點，hosted provider）。
+下一條可開軸線只在 §3 命名，尚未開始。
 
-### 剛完成：garak Step 1 + Step 1d（整個 Step 1 收尾）
+### 剛完成：Agentic Radar Step 2 收尾
 
 | commit | 內容 |
 | --- | --- |
-| `31362f4` | engines: read garak's probe failure rates without inventing a severity |
-| `ebbef00` | garak: say what the probe was after and one prompt it sent |
-| `e79eaea` | garak: stop reporting counts that cannot be true as a finished scan |
-| `9032d96` | garak: point a probe at the OWASP category the probe is testing |
+| `d6d7666` | pinned 研究決定：workflow graph 收成 observations，不把 11 條通用警語當 findings |
+| `546104c` | Step 2b：experimental、不可派送 catalog entry 與 fixture-bound thin adapter |
+| `ed24d1d` | Step 2c：本機上游 issue／PR 草稿；沒有送出 GitHub |
+| `488698b` | 重新核對 shallow checkout、pin、license 與文件時態 |
+| `7a07d65` | Step 2b／2c 收斂稽核：pin、patch、fixtures、catalog、adapter 與草稿一致 |
 
-**未 push。`main` 目前有 13 個未推送 commit**（`origin/main` 停在 `068561e`）。Ted 的指示是 `main 未推送先不要 push`；要 push 需要他明確點頭。
+**未 push。`7a07d65` 時 `main` 有 50 個未推送 commit。** Ted 的指示是 `main 未推送先不要 push`；要 push 需要他明確點頭。
 
 ### 交接時的測試數字（全綠）
 
@@ -58,26 +60,26 @@ cargo 1622 的分佈：lib 1032、cli 35、`adapter_fixtures` 95、`all_engine_r
 
 ### 2.1 garak：已落地的部分（Step 1 完成）
 
-引擎目錄現在有 **22** 筆：21 個 `integrated` + `runnable: true`，加上 garak 一筆 `experimental` + `runnable: false`。
+引擎目錄現在有 **24** 筆：21 個 `integrated` + `runnable: true`，加上 garak、Agentic Radar、MCP Armor 三筆 `experimental` + `runnable: false`。
 
 **garak 是刻意不可派送的**，而且是型別強制、不是紀律強制：`ScanRun`/`EngineManifest::release_blocker()`（`src-tauri/src/domain.rs:625` 附近）在 `!runnable`、`status != Integrated`、或 runnable 卻仍宣告 blocker 時回傳 `Some`，dispatch 直接被拒。
 
 | 檔案 | 內容 |
 | --- | --- |
-| `engines/catalog.json` | garak 一筆（第 22 筆，append 在最後）。`category: ai_model_endpoint`、`distribution_mode: build_from_pinned_source`、`image: null`、`engine_version: 0.17.0`、`source_revision: 93aa9cdec309ec4170559676f1826ea2a679920c`、`adapter_version: 0.1.3`（**必須等於 `adapters/mod.rs` 的 `ADAPTER_VERSION` 常數**）、`license_spdx: Apache-2.0`、`status: experimental`、`default_enabled: false`、`required_permissions: ["active_external_testing"]`、`supported_asset_kinds: ["ai_model_endpoint"]` |
+| `engines/catalog.json` | garak 一筆。`category: ai_model_endpoint`、`distribution_mode: build_from_pinned_source`、`image: null`、`engine_version: 0.17.0`、`source_revision: 93aa9cdec309ec4170559676f1826ea2a679920c`、`adapter_version: 0.1.4`（**必須等於 `adapters/mod.rs` 的 `ADAPTER_VERSION` 常數**）、`license_spdx: Apache-2.0`、`status: experimental`、`default_enabled: false`、`required_permissions: ["active_external_testing"]`、`supported_asset_kinds: ["ai_model_endpoint"]` |
 | `engines/images/garak/plan.json` | 一份「**沒有打包**」的紀錄：`publish_state: managed_artifact_not_published`、`final_artifact.tag/digest = null`、`dockerfile.emitted: false`、三條 `blockers` |
-| `engines/upstreams.lock.json` | 61 筆；garak 手工插在 `DefectDojo/django-DefectDojo` 與 `OpenSCAP/openscap` 之間 |
+| `engines/upstreams.lock.json` | 63 筆；garak 手工插在 `DefectDojo/django-DefectDojo` 與 `OpenSCAP/openscap` 之間 |
 | `engines/compatibility.schema.json` | `supported_asset_kinds.items.enum` 與 `category.enum` 各加 `ai_model_endpoint` |
 | `src-tauri/src/domain.rs` | `AssetKind::AiModelEndpoint`、`EngineCategory::AiModelEndpoint`、`FindingFamily::ModelBehavior`、`SeverityBasisCode::AdversarialProbeFailureRate` |
-| `src-tauri/src/registry.rs` | `KNOWN_ENGINE_IDS: [&str; 22]`，`"garak"` 在最後 |
-| `src-tauri/src/adapters/mod.rs` | `Profile::Garak` + `extract_garak()` 與五個輔助函式；`ADAPTER_VERSION = "0.1.3"`（第 28 行） |
+| `src-tauri/src/registry.rs` | `KNOWN_ENGINE_IDS: [&str; 24]`，包含 `"garak"`、`"agentic-radar"`、`"mcp-armor"` |
+| `src-tauri/src/adapters/mod.rs` | `Profile::Garak` + `extract_garak()` 與五個輔助函式；`ADAPTER_VERSION = "0.1.4"`（第 28 行） |
 | `src-tauri/src/finding_narrative.rs` | `ModelBehavior` 的四句話、`AdversarialProbeFailureRate` 的中英 basis、`ALL_SEVERITY_BASIS_CODES: [_; 10]`、`"AI security engineer" => "AI 安全工程師"` |
 | `src/types.ts` / `src/findingNarrative.ts` | 上面兩者的 TypeScript 孿生（parity 測試綁定） |
 | `src/engineWarningPresentation.ts` | 四條 garak 警告的繁中呈現 |
 | `mappings/control-mappings.json` | garak 11 筆 entry、3 個新控制項；`mapping_version: 2026-09-13.1`、`reviewed_at: 2026-09-13`、`canonical_sha256: 12dd26a5fc4a627c85ca30f1c78184dfd51ed5e5f925eea961b97447b3628906` |
 | `mappings/README.md` | 新增第四個 reviewed prefix family（garak probe namespace）的說明與理由 |
 | `src-tauri/tests/fixtures/adapters/garak.jsonl` | 14 列，key 集合照抄上游 `tests/_assets/report/report_test.report.jsonl` @ `93aa9cd` |
-| `src-tauri/tests/adapter_fixtures.rs` | 95 tests，含三個 garak 專屬測試 |
+| `src-tauri/tests/adapter_fixtures.rs` | 105 tests，含三個 garak 專屬測試 |
 
 ### 2.2 garak：**還沒做**的部分（catalog 自己列出的三條 blocker）
 
@@ -93,56 +95,26 @@ cargo 1622 的分佈：lib 1032、cli 35、`adapter_fixtures` 95、`all_engine_r
 
 | 項目 | 狀態 | 位置 |
 | --- | --- | --- |
-| Step 2 agentic-radar | 未開始，是下一步 | 見 §3 |
-| Step 3 mcp-armor | 未開始 | — |
-| Step 4 Augustus | 未開始（需要 API key，Ted 認為那是新手門檻，所以排最後） |— |
+| Step 2 Agentic Radar | **已完成**（`7a07d65` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
+| Step 3 MCP Armor | 已在 `5e01895` 收斂；experimental、不可派送 | `docs/research/mcp-armor-evaluation.md` |
+| Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `89091fa` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
 | 報告 header／footer 美化 | Ted 排隊中的需求（原話：「header footer 還可以做得更漂亮一點」） | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
-| 資產看板 Severity mix 空白格 | 已定位、未修 | `html_asset_severity_strip`（`case_service.rs:15149`）在 `counts.is_empty()` 時回 `String::new()`，於是「確實是 0」和「根本沒量到」印出同一個空白 |
+| 資產看板 Severity mix 空白格 | **下一條可開軸線；尚未開始** | `html_asset_severity_strip`（`case_service.rs:15172`）在 `counts.is_empty()` 時回 `String::new()`，於是「確實是 0」和「根本沒量到」印出同一個空白 |
 | `npm run validate:aidefend` 紅燈 | **HEAD 上就是紅的**，不是這輪改壞的 | 見 §4.4 |
 
 ---
 
-## 3. 下一步：最小可驗證步驟（打開就能做）
+## 3. 下一條可開軸線（尚未開始）
 
-**Step 2a — 為 agentic-radar 寫一份 pinned 研究決定文件。不改 production code。**
+**資產看板 Severity mix 的空白狀態誠實性。** `html_asset_severity_strip` 在
+`counts.is_empty()` 時回傳空字串，讓「已量測且問題數為 0」與「沒有足夠資料可量測」都
+呈現空白。這會直接影響新手理解結果，且獨立於 Agentic Radar 的三項 blocker。
 
-為什麼是這一步、而不是直接寫 adapter：agentic-radar **沒有 JSON 輸出**（`agentic_radar/report/` 是 Jinja→HTML）。沒有輸出格式就沒有 fixture，沒有 fixture 就不能寫 adapter。而且 catalog 與 adapter 是**原子耦合**的（測試斷言 `adapter_ids == catalog_ids`），garak 那輪已經證實 Step 1a／1b 分不開，所以在格式定案前不能先放 catalog entry。
+下一個任務若由 Ted 開始，最小範圍是先釘死這兩種資料狀態的呈現契約與報告 fixture，
+再修正該 helper；不要順手做 header／footer 重設計。**本次交接更新沒有開始這條軸線。**
 
-### 具體動作
-
-1. Shallow clone 到 gitignore 的 `.upstreams/`（**唯讀，不要跑它**）：
-
-   ```sh
-   git clone --depth 1 https://github.com/splx-ai/agentic-radar \
-     /home/ted-h/projects/ai-security-scanner/.upstreams/splx-ai/agentic-radar
-   git -C .upstreams/splx-ai/agentic-radar rev-parse HEAD    # 記下 commit，這是 pin
-   ```
-
-   目前 `.upstreams/` 有 43 個 org 目錄、`engines/upstreams.lock.json` 有 61 筆，**都還沒有 splx-ai**。
-
-2. 讀這三處，記下實際形狀：
-   - `agentic_radar/report/` — 產生 HTML 前那個記憶體內的結果物件長什麼樣（patch 要從這裡 dump JSON）
-   - `agentic_radar/mapper/vulnerabilities.json` — 上一輪實測是 **11 條**查表規則，**沒有 rule ID、沒有 severity**，形如 `{"type":"tool","match":"category","value":"llm","vulnerabilities":[{"name":"Prompt Injection","security_framework_mapping":{...}}]}`
-   - 解析器本體（LangGraph／CrewAI／n8n／AutoGen／OpenAI Agents → agent／tool／MCP server 的圖）
-
-3. 寫 `docs/research/agentic-radar-evaluation.md`，**比照 [`docs/research/vibescan-evaluation.md`](research/vibescan-evaluation.md) 的格式**（那是本專案 pinned 研究決定的既有範本：normative status 一段 + 釘死的 commit 連結 + 逐條可點的上游行號證據）。內容要涵蓋：
-   - pin 的 commit 與 license（上一輪實測 Apache-2.0）
-   - **已定案的決定：收 workflow graph 當 `observations`，不收那 11 條通用警語當 finding。** 理由寫在 §4.2
-   - patch 的範圍：只加一個 output emitter，走同一份記憶體內的結果 dump JSON，**不動任何偵測邏輯**（這樣才落在「adapters may normalize output」之內）
-   - 打算送上游的 issue／PR 形狀
-
-4. 驗證這一步：
-
-   ```sh
-   node --test tests/ci/*.test.mjs          # 35 pass，其中一項檢查 Markdown 本地連結沒斷
-   ```
-
-   若把新檔加進 `tests/ci/product-document-contract.test.mjs` 的 `CURRENT_PRODUCT_DOCUMENTS`（`vibescan-evaluation.md` 就在裡面），連結檢查才會涵蓋它——建議加。
-
-### Step 2a 之後（不要一次做完）
-
-- **2b**：pin + patch JSON emitter → 產生真實輸出 → 存成 fixture → catalog entry + adapter（這三者原子耦合，一起上）
-- **2c**：把 patch 送去上游開 issue／PR
+Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／release 仍是明確
+排除項目，不是下一步。
 
 ---
 
@@ -349,9 +321,9 @@ PY
 | repo | license | 最後 commit | Star | 機器可讀輸出 | 判定 |
 | --- | --- | --- | --- | --- | --- |
 | [NVIDIA/garak](https://github.com/NVIDIA/garak) | Apache-2.0 | 2026-09-09 | 9218 | JSONL report + hitlog ✅ | **Step 1 已完成** |
-| [splx-ai/agentic-radar](https://github.com/splx-ai/agentic-radar) | Apache-2.0 | 2025-11-27 | 1051 | **只有 HTML ❌** | **Step 2（下一步）** |
-| [aira-security/mcp-armor](https://github.com/aira-security/mcp-armor) | Apache-2.0 | 2026-03-27 | 123 | JSON ✅（`--report-type {json,md}`） | Step 3 |
-| [praetorian-inc/augustus](https://github.com/praetorian-inc/augustus) | Apache-2.0 | 2026-09-08 | 288 | JSON / JSONL ✅ | Step 4 |
+| [splx-ai/agentic-radar](https://github.com/splx-ai/agentic-radar) | Apache-2.0 | 2025-11-27 | 1051 | 上游 graph JSON + 本機 versioned envelope fixture | **Step 2 已完成（`7a07d65`）** |
+| [aira-security/mcp-armor](https://github.com/aira-security/mcp-armor) | Apache-2.0 | 2026-03-27 | 123 | JSON ✅（`--report-type {json,md}`） | **Step 3 已收斂（`5e01895`）** |
+| [praetorian-inc/augustus](https://github.com/praetorian-inc/augustus) | Apache-2.0 | 2026-09-08 | 288 | JSON / JSONL ✅ | **Step 4 純資料 ladder 已收斂（`89091fa`）** |
 | [SPriTLab-iitj/TriShieldRAG](https://github.com/SPriTLab-iitj/TriShieldRAG) | **NOASSERTION** | 2026-08-31 | 2（7 commits） | 無 findings | **不納入**（§4.2） |
 | [0din-ai/ai-scanner](https://github.com/0din-ai/ai-scanner) | — | — | — | 是 web app 不是 scanner | **不當 engine 收**（§4.2） |
 
@@ -368,7 +340,7 @@ PY
 
 ### 其他
 
-`.upstreams/` 有 43 個 org 目錄的研究 checkout，全部 gitignore、**未追蹤**；`engines/upstreams.lock.json` 只有 61 筆是被追蹤的。兩者刻意不同步，**這就是 `lock-upstreams.mjs` 不能跑的原因**（§4.4）。
+`.upstreams/` 的研究 checkout 全部 gitignore、**未追蹤**；`engines/upstreams.lock.json` 有 63 筆被追蹤的研究 pin。兩者刻意不同步，**這就是 `lock-upstreams.mjs` 不能跑的原因**（§4.4）。
 
 ---
 
@@ -376,11 +348,11 @@ PY
 
 [`docs/project-handover.zh-TW.md`](project-handover.zh-TW.md)（978 行）仍然是專案全景與歷史的主文件，**但它的基線是 `9f1f570`（2026-09-10 23:35）**，因此以下內容已被本文取代：
 
-- §1「21 個已整合上游工具」→ 現在是 **22 筆目錄、21 個可派送 + 1 個 experimental 不可派送**
-- §1「`adapter_fixtures` 共 92 項測試」→ 現在 **95**
-- §7「21 個整合工具的真實狀態」→ 需補 garak 一列
+- §1「21 個已整合上游工具」→ 現在是 **24 筆目錄、21 個可派送 + 3 個 experimental 不可派送**
+- §1「`adapter_fixtures` 共 92 項測試」→ 現在 **105**
+- §7「21 個整合工具的真實狀態」→ 需補 garak、Agentic Radar、MCP Armor
 - 整條報告設計線（2026-09-11 ～ 09-12 約 60 個 commit）在那份文件裡沒有紀錄，只有 §8.4／§12.3／§16 P1-1 對照過 `d7d2652`
 
 其餘章節（狀態用語、產品方針、系統與資料流、程式碼地圖、runtime 與資料安全、踩過的坑、工作方法、測試與 CI、不要做的事）仍然有效，值得完整讀過一次。
 
-`docs/research/vibescan-evaluation.md` 是 pinned 研究決定的格式範本，寫 agentic-radar 那份時照抄它的結構。
+`docs/research/vibescan-evaluation.md` 是 pinned 研究決定的格式範本；Agentic Radar 的已完成決定在 `docs/research/agentic-radar-evaluation.md`。
