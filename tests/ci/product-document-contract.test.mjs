@@ -283,6 +283,14 @@ test("release records and optional mappings do not choose the roadmap", async ()
   const mappings = await load("mappings/README.md");
   assert.match(mappings, /optional/i);
   assert.match(mappings, /not a compliance result|不是合規結果/i);
+  assert.match(
+    mappings,
+    /Every\s+AIDEFEND and OWASP Top 10 for LLM Applications control must declare either\s+`ai_system` or `ai_generated_artifact`/iu,
+  );
+  assert.match(
+    mappings,
+    /Only a CWE identifier assigned by the upstream scanner can select a published\s+OWASP Top 10 2021 category/iu,
+  );
 });
 
 test("public development status stays catalog-backed and excludes local handoff detail", async () => {

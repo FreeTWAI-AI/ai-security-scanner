@@ -34,6 +34,17 @@ finding title, severity, or target-controlled text. Inventory and discovery
 observations such as Syft, CloudQuery, Naabu, and httpx output are not mapped
 as control failures.
 
+AI-gated coordinates use one control-level `applicability` field. Every
+AIDEFEND and OWASP Top 10 for LLM Applications control must declare either
+`ai_system` or `ai_generated_artifact`; controls from other frameworks must
+not declare the field. Applicability comes from attributed case facts, never
+from a finding or mapping entry, so a rule match cannot invent AI context.
+
+CWE-derived relationships are kept separately in `cwe_derived_controls`.
+Only a CWE identifier assigned by the upstream scanner can select a published
+OWASP Top 10 2021 category. The product does not derive a category from a rule
+name, title, severity, description, or other untrusted text.
+
 MCP Armor's configuration-only machine output names exactly two stable check
 identifiers. Those exact identifiers are reviewed independently: the
 hardcoded-credential check maps to credential protection, while the excessive
