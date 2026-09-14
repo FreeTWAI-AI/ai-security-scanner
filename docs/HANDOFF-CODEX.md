@@ -23,9 +23,18 @@ See [`PRODUCT-DOCTRINE.md`](PRODUCT-DOCTRINE.md). Short form: optimize **time-to
 
 **AI 引擎研究／experimental integration 軸已在不可派送邊界收斂。** garak、Agentic Radar、MCP Armor 與 Augustus 的既定研究或純資料證據均已保留；這不代表它們已建立可派送能力。不要自行處理 image、typed framework-selection、上游 PR／release、launcher、網路、provider 或憑證 blocker。
 
-下一條可開軸線只在 §3 命名，尚未開始。
+**報告的兩項小型誠實性／可讀性工作也已收斂：** Severity mix 在 `bda3f3a` 區分
+「已量測且為零」與「未量測」；running header／footer 在 `9fda6f4` 完成一項小幅可讀性
+修正。本次文件同步不命名或開始新的產品軸，後續等待 Ted 明示。
 
-### 剛完成：Agentic Radar Step 2 收尾
+### 剛完成：報告誠實性與可讀性收尾
+
+| commit | 內容 |
+| --- | --- |
+| `bda3f3a` | Severity mix 明示 measured-zero 與 not-measured，不再共用空白格 |
+| `9fda6f4` | 保留 running header 的案例／輪次識別；running footer 改用精簡的在地化文件身分，完整條款仍只放在報告末端 |
+
+### 前一里程碑：Agentic Radar Step 2 收尾
 
 | commit | 內容 |
 | --- | --- |
@@ -35,7 +44,7 @@ See [`PRODUCT-DOCTRINE.md`](PRODUCT-DOCTRINE.md). Short form: optimize **time-to
 | `488698b` | 重新核對 shallow checkout、pin、license 與文件時態 |
 | `7a07d65` | Step 2b／2c 收斂稽核：pin、patch、fixtures、catalog、adapter 與草稿一致 |
 
-**未 push。`7a07d65` 時 `main` 有 50 個未推送 commit。** Ted 的指示是 `main 未推送先不要 push`；要 push 需要他明確點頭。
+**未 push。`9fda6f4` 時 `main` 有 53 個未推送 commit。** Ted 的指示是 `main 未推送先不要 push`；要 push 需要他明確點頭。
 
 ### 交接時的測試數字（全綠）
 
@@ -98,24 +107,24 @@ cargo 1622 的分佈：lib 1032、cli 35、`adapter_fixtures` 95、`all_engine_r
 | Step 2 Agentic Radar | **已完成**（`7a07d65` 收斂）；experimental、不可派送，三項 blocker 不動 | `docs/research/agentic-radar-evaluation.md` |
 | Step 3 MCP Armor | 已在 `5e01895` 收斂；experimental、不可派送 | `docs/research/mcp-armor-evaluation.md` |
 | Step 4 Augustus | 14-rule 純資料 preflight ladder 已在 `89091fa` 完成收斂稽核；沒有派送路徑 | `docs/research/augustus-evaluation.md` |
-| 報告 header／footer 美化 | **本輪小幅可讀性修正已完成**；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
+| 報告 header／footer 美化 | **已完成本輪排定的小幅可讀性修正**（`9fda6f4`）；只調整 running footer，不做整體重設計 | `src-tauri/src/case_service.rs` 的 HTML 報告產生器 |
 | 資產看板 Severity mix 空白格 | **已完成**（`bda3f3a`） | `html_asset_severity_strip` 現在把「已量測且為零」呈現為 `0 problems`／`0 個問題`，把「沒有量測」呈現為 `Not measured`／`未量測` |
 | `npm run validate:aidefend` 紅燈 | **HEAD 上就是紅的**，不是這輪改壞的 | 見 §4.4 |
 
 ---
 
-## 3. 本輪接續的最小軸線
+## 3. 已收斂的報告小軸（沒有開啟下一軸）
 
 **資產看板 Severity mix 的空白狀態誠實性已在 `bda3f3a` 完成。** 報告 fixture 已釘死
 兩種資料狀態：真正完成安全檢查且零問題會明示 `0 problems`／`0 個問題`；只有 inventory
 或沒有可量測的安全結果則明示 `Not measured`／`未量測`，不再共用空白格。
 
-本輪已接續 Ted 排隊中的一項小型報告可讀性修正：running header 保留案例與輪次識別，
-running footer 改用精簡、在地化的文件身分，不在每一頁重複正式條款。完整條款仍只放在
-報告末端。這不是 header／footer 重設計，也不改報告資訊架構。
+Ted 排隊中的小型報告可讀性修正也已在 `9fda6f4` 完成：running header 保留案例與輪次
+識別，running footer 改用精簡、在地化的文件身分，不在每一頁重複正式條款。完整條款
+仍只放在報告末端。這不是 header／footer 重設計，也沒有改報告資訊架構。
 
 Agentic Radar 的 packaged image、typed framework-selection path、上游 PR／release 仍是明確
-排除項目，不是下一步。
+排除項目，不是下一步。**本輪不命名或開始新的產品軸；下一步等待 Ted 明示。**
 
 ---
 
