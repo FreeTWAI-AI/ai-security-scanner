@@ -14924,6 +14924,10 @@ fn html_framework_section(
                 })
                 .collect::<Vec<_>>();
             mix.sort_by(|left, right| right.0.cmp(&left.0));
+            let empty_state = match findings.is_empty() {
+                true => HtmlSeverityMixEmptyState::MeasuredZero,
+                false => HtmlSeverityMixEmptyState::NotMeasured,
+            };
             rows.push_str(&format!(
                 concat!(
                     "<tr><td><code>{}</code></td><td>{}</td>",
@@ -14932,7 +14936,7 @@ fn html_framework_section(
                 html_escape(&control.control_id),
                 html_escape(&control_title_text(&control.title, catalog)),
                 catalog.format_number(findings.len()),
-                html_asset_severity_strip(&mix, catalog),
+                html_asset_severity_strip(&mix, empty_state, catalog),
             ));
         }
 
@@ -15169,12 +15173,33 @@ fn asset_severity_counts(
 /// Segments are sized with `flex` rather than a percentage so the smallest
 /// one still has a floor width, and every segment is named in the line below
 /// the bar: the colour is the shortcut, not the only carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HtmlSeverityMixEmptyState {
+    /// At least one applicable security check completed and produced no
+    /// problem whose severity could contribute to the mix.
+    MeasuredZero,
+    /// No completed security check established a severity distribution.
+    NotMeasured,
+}
+
 fn html_asset_severity_strip(
     counts: &[(crate::domain::Severity, usize)],
+    empty_state: HtmlSeverityMixEmptyState,
     catalog: HtmlReportCatalog,
 ) -> String {
     if counts.is_empty() {
-        return String::new();
+        let (class_name, label) = match empty_state {
+            HtmlSeverityMixEmptyState::MeasuredZero => {
+                ("zero", catalog.text("0 problems", "0 個問題"))
+            }
+            HtmlSeverityMixEmptyState::NotMeasured => {
+                ("unmeasured", catalog.text("Not measured", "未量測"))
+            }
+        };
+        return format!(
+            "<span class=\"asset-severity__empty asset-severity__empty--{class_name}\">{}</span>",
+            html_escape(label),
+        );
     }
     let mut segments = String::new();
     let mut named = Vec::new();
@@ -15605,7 +15630,14 @@ fn html_asset_result_section(
                 html_escape_breakable_identity(target_label),
                 target_kind,
                 html_escape(&status_label),
-                html_asset_severity_strip(&severity_counts, catalog),
+                html_asset_severity_strip(
+                    &severity_counts,
+                    match completed_security_checks {
+                        0 => HtmlSeverityMixEmptyState::NotMeasured,
+                        _ => HtmlSeverityMixEmptyState::MeasuredZero,
+                    },
+                    catalog,
+                ),
             ),
             action,
         ));
@@ -18275,6 +18307,7 @@ fn html_report_bytes(
         ".asset-result__mix .asset-severity{display:inline-flex;width:3rem;",
         "vertical-align:middle;margin:0 .4rem 0 0}",
         ".asset-result__mix .asset-severity__legend{display:inline;margin:0;font-size:.75rem}",
+        ".asset-result__mix .asset-severity__empty{font-size:.75rem;color:var(--muted)}",
         ".asset-result-steps{margin:.55rem 0 0;font-size:.82rem;color:var(--muted);line-height:1.45}",
         ".asset-result-steps strong{color:var(--body)}",
         ".asset-result__identity{text-align:left;font-weight:400}",
@@ -33701,6 +33734,64 @@ mod tests {
         let zh_html = html_asset_result_section(&report, &zh_labels, zh_catalog);
         assert!(zh_html.contains("伺服器或工作站"));
         assert!(zh_html.contains("查看涵蓋缺口並完成缺少的檢查。"));
+    }
+
+    #[test]
+    fn html_asset_board_distinguishes_measured_zero_from_not_measured_severity() {
+        let fixture = Fixture::new();
+        let prepared = crate::localhost_quick_scan::prepare_localhost_quick_scan(
+            &fixture.storage,
+            fixture.engines.manifests(),
+            9001,
+        )
+        .unwrap();
+        let mut case = fixture
+            .storage
+            .get_case(&prepared.prepared.case_id)
+            .unwrap();
+        close_run_without_execution_for_report_fixture(&mut case, &prepared.prepared.scan_run_id);
+        let mut report =
+            build_beginner_master_report(&case, &prepared.prepared.scan_run_id).unwrap();
+        report.findings.clear();
+        report.coverage_gaps.clear();
+        let check = report.actual.checks.first_mut().unwrap();
+        check.status = CoverageDimensionStatus::TestedComplete;
+        check.result_kind = Some(CheckResultKind::SecurityCheck);
+
+        for (locale, zero, not_measured) in [
+            (
+                crate::export::ReportLocale::En,
+                "0 problems",
+                "Not measured",
+            ),
+            (crate::export::ReportLocale::ZhHant, "0 個問題", "未量測"),
+        ] {
+            let catalog = HtmlReportCatalog::new(locale);
+            let labels = readable_target_labels(&report, catalog);
+            let measured = html_asset_result_section(&report, &labels, catalog);
+            assert!(measured.contains(&format!(
+                "<span class=\"asset-severity__empty asset-severity__empty--zero\">{zero}</span>"
+            )));
+            assert!(!measured.contains(not_measured));
+        }
+
+        report.actual.checks[0].result_kind = Some(CheckResultKind::Inventory);
+        for (locale, zero, not_measured) in [
+            (
+                crate::export::ReportLocale::En,
+                "0 problems",
+                "Not measured",
+            ),
+            (crate::export::ReportLocale::ZhHant, "0 個問題", "未量測"),
+        ] {
+            let catalog = HtmlReportCatalog::new(locale);
+            let labels = readable_target_labels(&report, catalog);
+            let unmeasured = html_asset_result_section(&report, &labels, catalog);
+            assert!(unmeasured.contains(&format!(
+                "<span class=\"asset-severity__empty asset-severity__empty--unmeasured\">{not_measured}</span>"
+            )));
+            assert!(!unmeasured.contains(zero));
+        }
     }
 
     #[test]
