@@ -805,6 +805,13 @@ mod tests {
         serde_json::from_str(CATALOG_JSON).expect("embedded catalog JSON")
     }
 
+    fn mapping_schema_fixture() -> Value {
+        serde_json::from_str(include_str!(
+            "../../../mappings/control-mappings.schema.json"
+        ))
+        .expect("control mapping schema JSON")
+    }
+
     fn kube_bench_cis_1_11_check_ids() -> Vec<String> {
         let fixture: Value = serde_json::from_str(KUBE_BENCH_CIS_1_11_FIXTURE)
             .expect("valid kube-bench execution fixture");
@@ -870,6 +877,23 @@ mod tests {
         assert_eq!(provenance.reviewed_at, "2026-09-13");
         assert_eq!(provenance.review_process, REVIEW_PROCESS_V1);
         assert_eq!(provenance.catalog_sha256.len(), 64);
+
+        let schema = mapping_schema_fixture();
+        assert_eq!(
+            schema["properties"]["controls"]["items"]["allOf"][0]["if"]["properties"]["framework"]
+                ["enum"],
+            serde_json::json!(AI_GATED_FRAMEWORKS),
+            "Rust and JSON Schema must gate the same AI frameworks"
+        );
+        let applicability_values =
+            schema["properties"]["controls"]["items"]["properties"]["applicability"]["enum"]
+                .as_array()
+                .expect("AI applicability schema enum");
+        assert_eq!(applicability_values.len(), 2);
+        for value in applicability_values {
+            serde_json::from_value::<AiApplicability>(value.clone())
+                .expect("every schema applicability value must deserialize in Rust");
+        }
     }
 
     /// Guards the failure that broke five entries at once: a `source_rule`
@@ -1289,10 +1313,7 @@ mod tests {
 
     #[test]
     fn catalog_rejects_more_cwe_derived_controls_than_the_schema_allows() {
-        let schema: Value = serde_json::from_str(include_str!(
-            "../../../mappings/control-mappings.schema.json"
-        ))
-        .expect("control mapping schema JSON");
+        let schema = mapping_schema_fixture();
         assert_eq!(
             schema["properties"]["cwe_derived_controls"]["maxItems"].as_u64(),
             Some(MAX_CWE_DERIVED_CONTROLS as u64),
