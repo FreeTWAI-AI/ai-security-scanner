@@ -10,6 +10,7 @@ import type {
   BeginnerCheckResultKind,
   BeginnerInventoryItem,
   BeginnerMasterReport,
+  BeginnerTechnicalExecution,
   CaseExport,
   ContextFactor,
   ExportPreview,
@@ -25,6 +26,7 @@ import type {
   CoverageState,
   DataClass,
   DiffState,
+  DistributionMode,
   EngineManifest,
   EngineCheckpoint,
   EngineFailureKind,
@@ -221,7 +223,7 @@ interface NativeEngineRun {
   manifest_schema_version?: string | null;
   source_revision?: string | null;
   repository_url?: string | null;
-  distribution_mode?: string | null;
+  distribution_mode?: DistributionMode | null;
   image_repository?: string | null;
   command_sha256?: string | null;
   scope_contract_sha256?: string | null;
@@ -333,6 +335,37 @@ interface NativeBeginnerInventory {
     representative_sample: NativeBeginnerInventoryItem[];
   }>;
 }
+
+type NativeBeginnerTechnicalExecution =
+  | {
+      kind: "catalog_engine";
+      engine_id: string;
+      engine_version: string | null;
+      image_digest: string | null;
+      command_sha256: string | null;
+      runtime_provider: string | null;
+      runtime_version: string | null;
+      runtime_security_options: string | null;
+      distribution_mode: DistributionMode | null;
+      image_repository: string | null;
+      adapter_version: string;
+      rule_version: string | null;
+    }
+  | {
+      kind: "built_in_localhost_tcp";
+      endpoint: string;
+      timeout_ms: number;
+      payload_bytes: number;
+      observation: {
+        outcome: LocalhostTcpObservation["outcome"];
+        observed_at: string;
+      } | null;
+      contract: string;
+    }
+  | {
+      kind: "invalid_built_in_task";
+      explanation: string;
+    };
 
 export interface NativeBeginnerMasterReport {
   schema_version: string;
@@ -507,7 +540,7 @@ export interface NativeBeginnerMasterReport {
       cleanup_removed: boolean | null;
       error_code: string | null;
       evidence_sha256: string[];
-      execution: Record<string, unknown> & { kind?: string };
+      execution: NativeBeginnerTechnicalExecution;
     }>;
   };
   framework_notice: {
@@ -2547,6 +2580,40 @@ const adaptBeginnerInventoryCounts = (counts: NativeBeginnerInventory["counts"])
   workflowRelationships: counts.workflow_relationships ?? 0,
 });
 
+const adaptBeginnerTechnicalExecution = (
+  execution: NativeBeginnerTechnicalExecution,
+): BeginnerTechnicalExecution => {
+  if (execution.kind === "catalog_engine") return {
+    kind: execution.kind,
+    engineId: execution.engine_id,
+    engineVersion: execution.engine_version ?? undefined,
+    imageDigest: execution.image_digest ?? undefined,
+    commandSha256: execution.command_sha256 ?? undefined,
+    runtimeProvider: execution.runtime_provider ?? undefined,
+    runtimeVersion: execution.runtime_version ?? undefined,
+    runtimeSecurityOptions: execution.runtime_security_options ?? undefined,
+    distributionMode: execution.distribution_mode ?? undefined,
+    imageRepository: execution.image_repository ?? undefined,
+    adapterVersion: execution.adapter_version,
+    ruleVersion: execution.rule_version ?? undefined,
+  };
+  if (execution.kind === "built_in_localhost_tcp") return {
+    kind: execution.kind,
+    endpoint: execution.endpoint,
+    timeoutMs: execution.timeout_ms,
+    payloadBytes: execution.payload_bytes,
+    observation: execution.observation ? {
+      outcome: execution.observation.outcome,
+      observedAt: execution.observation.observed_at,
+    } : undefined,
+    contract: execution.contract,
+  };
+  return {
+    kind: execution.kind,
+    explanation: execution.explanation,
+  };
+};
+
 export const adaptBeginnerMasterReport = (
   report: NativeBeginnerMasterReport,
 ): BeginnerMasterReport => ({
@@ -2732,7 +2799,7 @@ export const adaptBeginnerMasterReport = (
       cleanupRemoved: task.cleanup_removed ?? undefined,
       errorCode: task.error_code ?? undefined,
       evidenceSha256: [...task.evidence_sha256],
-      execution: { ...task.execution },
+      execution: adaptBeginnerTechnicalExecution(task.execution),
     })),
   },
   frameworkNotice: {

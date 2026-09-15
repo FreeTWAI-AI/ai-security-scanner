@@ -388,7 +388,17 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
         cleanup_removed: true,
         error_code: null,
         evidence_sha256: ["a".repeat(64)],
-        execution: { kind: "built_in_localhost_tcp" },
+        execution: {
+          kind: "built_in_localhost_tcp",
+          endpoint: "127.0.0.1:9001",
+          timeout_ms: 3000,
+          payload_bytes: 0,
+          observation: {
+            outcome: "timed_out",
+            observed_at: "2026-08-30T12:00:03Z",
+          },
+          contract: "connect_only_no_payload",
+        },
       }],
     },
     framework_notice: {
@@ -403,6 +413,17 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
   assert.equal(report.actual.checks[0]?.status, "tested_partial");
   assert.equal(report.actual.checks[0]?.resultKind, "connectivity");
   assert.equal(report.technicalDetails.tasks[0]?.status, "partial");
+  assert.deepEqual(report.technicalDetails.tasks[0]?.execution, {
+    kind: "built_in_localhost_tcp",
+    endpoint: "127.0.0.1:9001",
+    timeoutMs: 3000,
+    payloadBytes: 0,
+    observation: {
+      outcome: "timed_out",
+      observedAt: "2026-08-30T12:00:03Z",
+    },
+    contract: "connect_only_no_payload",
+  });
   assert.deepEqual(report.inventory?.counts, {
     services: 1,
     softwareComponents: 0,

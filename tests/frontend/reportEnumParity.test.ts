@@ -48,6 +48,23 @@ const rustVariants = (source: string, name: string): string[] => {
   )].map((match) => match[1] ?? serdeSnakeCase(match[2]!));
 };
 
+/** Variants of an internally tagged Rust enum whose members carry fields. */
+const rustTaggedVariants = (source: string, name: string): string[] => {
+  const declaration = source.indexOf(`pub enum ${name} {`);
+  assert.ok(declaration > 0, `Rust enum ${name} was not found`);
+  const attributes = source.slice(Math.max(0, declaration - 400), declaration);
+  assert.ok(
+    attributes.includes('#[serde(tag = "kind", rename_all = "snake_case")]'),
+    `${name} is compared as a kind-tagged snake_case enum but does not declare it`,
+  );
+  const body = source.slice(declaration + `pub enum ${name} {`.length);
+  const end = body.indexOf("\n}");
+  assert.ok(end > 0, `Rust enum ${name} has no closing brace`);
+  return [...body.slice(0, end).matchAll(
+    /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*)[ \t]*\{[ \t]*$/gmu,
+  )].map((match) => match[1] ?? serdeSnakeCase(match[2]!));
+};
+
 /** The string members of one exported TypeScript string-union type. */
 const unionMembers = (name: string): string[] => {
   const declaration = typescript.indexOf(`export type ${name} =`);
@@ -56,6 +73,16 @@ const unionMembers = (name: string): string[] => {
   const end = body.indexOf(";");
   assert.ok(end > 0, `TypeScript type ${name} is not terminated`);
   return [...body.slice(0, end).matchAll(/"([^"]+)"/gu)].map((match) => match[1]!);
+};
+
+/** `kind` literals from one exported TypeScript discriminated union. */
+const discriminatedUnionMembers = (name: string): string[] => {
+  const declaration = typescript.indexOf(`export type ${name} =`);
+  assert.ok(declaration > 0, `TypeScript type ${name} was not found`);
+  const body = typescript.slice(declaration);
+  const nextDeclaration = body.slice(1).search(/\nexport (?:interface|type) /u);
+  const definition = nextDeclaration < 0 ? body : body.slice(0, nextDeclaration + 1);
+  return [...definition.matchAll(/\bkind:[ \t]*"([^"]+)"/gu)].map((match) => match[1]!);
 };
 
 // Every closed vocabulary the app has to narrow on. A new one belongs here the
@@ -78,6 +105,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "ContextFactor", "ContextFactor"],
   ["domain.rs", "EvidenceKind", "EvidenceKind"],
   ["domain.rs", "EngineRunStatus", "EngineRunStatusWire"],
+  ["domain.rs", "DistributionMode", "DistributionMode"],
   ["domain.rs", "FindingDiffReasonCode", "FindingDiffReasonCode"],
   ["domain.rs", "FindingDiffStatus", "FindingDiffStatus"],
   ["domain.rs", "FindingFamily", "FindingFamily"],
@@ -88,6 +116,11 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
 ];
 
+const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
+  ["beginner_report.rs", "BeginnerInventoryItemKind", "BeginnerInventoryItem"],
+  ["beginner_report.rs", "TechnicalExecution", "BeginnerTechnicalExecution"],
+];
+
 for (const [file, rustName, typescriptName] of PAIRS) {
   test(`${rustName} and ${typescriptName} describe the same set of values`, () => {
     const fromRust = rustVariants(file === "domain.rs" ? domain : beginnerReport, rustName);
@@ -96,6 +129,20 @@ for (const [file, rustName, typescriptName] of PAIRS) {
     assert.ok(fromRust.length > 0, `${rustName} extracted no variants`);
     // Sets, not sequences: the two files are free to declare in different
     // orders, and neither order reaches the reader.
+    assert.deepEqual(
+      [...fromRust].sort(),
+      [...fromTypescript].sort(),
+      `${rustName} and ${typescriptName} disagree`,
+    );
+  });
+}
+
+for (const [file, rustName, typescriptName] of TAGGED_PAIRS) {
+  test(`${rustName} and ${typescriptName} describe the same kind tags`, () => {
+    const fromRust = rustTaggedVariants(file === "domain.rs" ? domain : beginnerReport, rustName);
+    const fromTypescript = discriminatedUnionMembers(typescriptName);
+
+    assert.ok(fromRust.length > 0, `${rustName} extracted no tagged variants`);
     assert.deepEqual(
       [...fromRust].sort(),
       [...fromTypescript].sort(),
@@ -127,4 +174,9 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
     "no_applicable_checks",
   ]);
   assert.deepEqual(unionMembers("BeginnerReportLifecycle"), ["final"]);
+  assert.deepEqual(rustTaggedVariants(beginnerReport, "TechnicalExecution"), [
+    "catalog_engine",
+    "built_in_localhost_tcp",
+    "invalid_built_in_task",
+  ]);
 });

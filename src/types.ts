@@ -641,6 +641,13 @@ export type EngineRunStatus =
   | "not_executed"
   | "cancelled";
 
+/** Exact immutable scanner distribution vocabulary serialized by Rust. */
+export type DistributionMode =
+  | "bundled_image"
+  | "pull_pinned_image"
+  | "build_from_pinned_source"
+  | "external_executable";
+
 export type ExecutionStage =
   | "planned"
   | "preflight"
@@ -726,7 +733,7 @@ export interface EngineRun {
   manifestSchemaVersion?: string;
   sourceRevision?: string;
   repositoryUrl?: string;
-  distributionMode?: string;
+  distributionMode?: DistributionMode;
   imageRepository?: string;
   commandSha256?: string;
   knowledgeInput?: {
@@ -1028,6 +1035,34 @@ export interface BeginnerReportFinding {
   }>;
 }
 
+export type BeginnerTechnicalExecution =
+  | {
+      kind: "catalog_engine";
+      engineId: string;
+      engineVersion?: string;
+      imageDigest?: string;
+      commandSha256?: string;
+      runtimeProvider?: string;
+      runtimeVersion?: string;
+      runtimeSecurityOptions?: string;
+      distributionMode?: DistributionMode;
+      imageRepository?: string;
+      adapterVersion: string;
+      ruleVersion?: string;
+    }
+  | {
+      kind: "built_in_localhost_tcp";
+      endpoint: string;
+      timeoutMs: number;
+      payloadBytes: number;
+      observation?: LocalhostTcpObservation;
+      contract: string;
+    }
+  | {
+      kind: "invalid_built_in_task";
+      explanation: string;
+    };
+
 export interface BeginnerTechnicalTaskDetails {
   taskId: string;
   targetAssetIds: string[];
@@ -1040,7 +1075,7 @@ export interface BeginnerTechnicalTaskDetails {
   cleanupRemoved?: boolean;
   errorCode?: string;
   evidenceSha256: string[];
-  execution: Record<string, unknown> & { kind?: string };
+  execution: BeginnerTechnicalExecution;
 }
 
 export interface BeginnerInventorySource {
