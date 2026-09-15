@@ -483,7 +483,7 @@ test("live activity names the saved assets in the current check", () => {
     {
       assetId: "asset-2",
       label: "https://example.invalid",
-      assetKind: "service",
+      assetKind: "web_service",
       labelAvailability: "recorded",
       assetKindAvailability: "recorded",
     },

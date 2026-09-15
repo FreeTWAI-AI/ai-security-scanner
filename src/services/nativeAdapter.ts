@@ -5,6 +5,7 @@ import type {
   AiGeneratedArtifactAnswer,
   AwsIamPolicyFindingDetails,
   Asset,
+  AssetKind,
   AssetType,
   BeginnerInventoryItem,
   BeginnerMasterReport,
@@ -340,7 +341,7 @@ export interface NativeBeginnerMasterReport {
     targets: Array<{
       asset_id: string;
       label: string | null;
-      asset_kind: string | null;
+      asset_kind: AssetKind | null;
       label_availability: BeginnerMasterReport["requested"]["targets"][number]["labelAvailability"];
       asset_kind_availability: BeginnerMasterReport["requested"]["targets"][number]["assetKindAvailability"];
     }>;

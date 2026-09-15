@@ -817,10 +817,32 @@ export type BeginnerNextActionCode =
   | "no_action_unless_scope_changes"
   | "add_asset_identifier";
 
+/** Exact wire vocabulary serialized by Rust's domain::AssetKind. */
+export type AssetKind =
+  | "cloud_organization"
+  | "cloud_account"
+  | "subscription"
+  | "project"
+  | "tenant"
+  | "domain"
+  | "ip_address"
+  | "host"
+  | "web_service"
+  | "cloud_resource"
+  | "identity"
+  | "repository"
+  | "file_system"
+  | "iac_project"
+  | "container_image"
+  | "container_registry"
+  | "kubernetes_cluster"
+  | "ai_model_endpoint"
+  | "other";
+
 export interface BeginnerRequestedTarget {
   assetId: string;
   label?: string;
-  assetKind?: string;
+  assetKind?: AssetKind;
   labelAvailability: BeginnerReportDataAvailability;
   assetKindAvailability: BeginnerReportDataAvailability;
 }
