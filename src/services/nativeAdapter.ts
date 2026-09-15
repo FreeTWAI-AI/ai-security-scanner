@@ -37,6 +37,7 @@ import type {
   FrozenExternalScope,
   ExportFormat,
   Finding,
+  FindingDiffStatus,
   FindingFamily,
   FindingGroup,
   FindingGroupAction,
@@ -669,7 +670,7 @@ interface NativeFindingDiff {
   fingerprint: string;
   baseline_finding_id: string | null;
   current_finding_id: string | null;
-  status: string;
+  status: FindingDiffStatus;
   explanation: string;
   baseline_severity?: SeverityWire | null;
   current_severity?: SeverityWire | null;
@@ -2332,7 +2333,7 @@ export const adaptNativeCase = (
       })),
       diffs: comparison.diffs.map((diff, index) => {
         const sourceFinding = nativeFindingById.get(diff.current_finding_id ?? "") ?? nativeFindingById.get(diff.baseline_finding_id ?? "");
-        const statusMap: Record<string, DiffState> = {
+        const statusMap: Record<FindingDiffStatus, DiffState> = {
           resolved: "resolved",
           still_present: "persistent",
           newly_observed: "new",

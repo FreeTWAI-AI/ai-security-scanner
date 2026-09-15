@@ -1516,6 +1516,14 @@ export interface FindingWorkflowUpdateInput {
   expiresAt?: string;
 }
 
+/** Exact comparison status serialized by Rust's domain::FindingDiffStatus. */
+export type FindingDiffStatus =
+  | "resolved"
+  | "still_present"
+  | "newly_observed"
+  | "changed"
+  | "unable_to_verify";
+
 export type DiffState = "resolved" | "persistent" | "new" | "unverifiable";
 
 export interface VerificationDiff {
@@ -1525,7 +1533,7 @@ export interface VerificationDiff {
   assetName: string;
   state: DiffState;
   /** Native five-way status retained so presentation can distinguish changed from unchanged. */
-  comparisonStatus?: string;
+  comparisonStatus?: FindingDiffStatus;
   beforeSeverity?: Severity;
   afterSeverity?: Severity;
   explanation: string;
