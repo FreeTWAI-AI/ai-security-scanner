@@ -1,10 +1,12 @@
+import type { FindingDiffReasonCode } from "./types";
+
 export interface ComparisonLimitation {
-  code: string;
+  code: FindingDiffReasonCode;
   engineId?: string;
 }
 
 interface FindingDiffReasonPresentation {
-  code: string;
+  code: FindingDiffReasonCode;
   engineId?: string;
   assetId?: string;
   detail: string;
@@ -23,7 +25,7 @@ interface FindingDiffPresentationInput {
  * Kept in this screen-only module because the HTML report does not render a
  * finding diff explanation.
  */
-const reasonLabelsZhTW: Readonly<Record<string, string>> = {
+const reasonLabelsZhTW: Readonly<Record<FindingDiffReasonCode, string>> = {
   coordinate_not_completed: "掃描座標未完成",
   comparison_identity_missing: "比較識別資料缺失",
   scope_contract_changed: "範圍、權限或目標合約有變更",
@@ -66,7 +68,7 @@ const fixedReasonDetailsZhTW: Readonly<Record<string, readonly [string, string]>
 };
 
 export const verificationDiffReasonLabelZhTW = (code: string): string | undefined =>
-  reasonLabelsZhTW[code];
+  reasonLabelsZhTW[code as FindingDiffReasonCode];
 
 interface TranslatedReasonDetail {
   text: string;

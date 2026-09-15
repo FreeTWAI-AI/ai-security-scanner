@@ -1524,6 +1524,29 @@ export type FindingDiffStatus =
   | "changed"
   | "unable_to_verify";
 
+/** Machine-readable comparison reasons serialized by Rust's domain::FindingDiffReasonCode. */
+export type FindingDiffReasonCode =
+  | "coordinate_not_completed"
+  | "comparison_identity_missing"
+  | "scope_contract_changed"
+  | "manifest_schema_changed"
+  | "engine_version_changed"
+  | "image_changed"
+  | "rule_version_changed"
+  | "knowledge_input_changed"
+  | "adapter_version_changed"
+  | "source_revision_changed"
+  | "repository_changed"
+  | "distribution_mode_changed"
+  | "command_changed"
+  | "mapping_version_changed"
+  | "fingerprint_schema_changed"
+  | "severity_changed"
+  | "confidence_changed"
+  | "evidence_changed"
+  | "affected_assets_changed"
+  | "observing_engines_changed";
+
 export type DiffState = "resolved" | "persistent" | "new" | "unverifiable";
 
 export interface VerificationDiff {
@@ -1539,7 +1562,7 @@ export interface VerificationDiff {
   explanation: string;
   evidenceChanged: boolean;
   changeReasons?: Array<{
-    code: string;
+    code: FindingDiffReasonCode;
     engineId?: string;
     assetId?: string;
     detail: string;
@@ -1553,7 +1576,7 @@ export interface VerificationSummary {
   comparisonAt: string;
   complete?: boolean;
   completenessIssues?: Array<{
-    code: string;
+    code: FindingDiffReasonCode;
     engineId?: string;
     assetId?: string;
     detail: string;

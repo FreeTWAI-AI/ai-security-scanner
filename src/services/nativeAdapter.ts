@@ -37,6 +37,7 @@ import type {
   FrozenExternalScope,
   ExportFormat,
   Finding,
+  FindingDiffReasonCode,
   FindingDiffStatus,
   FindingFamily,
   FindingGroup,
@@ -660,7 +661,7 @@ const adaptNativeReportLocale = (value: string): ReportLocale => {
 };
 
 interface NativeDiffReason {
-  code: string;
+  code: FindingDiffReasonCode;
   engine_id?: string | null;
   asset_id?: string | null;
   detail: string;
