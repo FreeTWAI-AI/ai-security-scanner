@@ -929,6 +929,24 @@ const managedRuntimeSetupPhases = new Set<ManagedRuntimeSetupPhase>([
   "cancelled",
 ]);
 
+const managedRuntimeSetupFailureReasons = new Set<ManagedRuntimeSetupFailureReason>([
+  "windows_wsl_not_installed",
+  "windows_wsl_optional_feature_disabled",
+  "windows_wsl_update_required",
+  "windows_restart_required",
+  "windows_wsl_command_failed",
+  "packaged_runtime_missing",
+  "packaged_runtime_verification_failed",
+]);
+
+const managedRuntimeSetupNextActions = new Set<ManagedRuntimeSetupNextAction>([
+  "install_wsl",
+  "enable_wsl_optional_features",
+  "update_wsl",
+  "restart_windows",
+  "retry_wsl_check",
+]);
+
 const boundedRuntimeOperationField = (
   value: string | null | undefined,
   maximumLength: number,
@@ -946,20 +964,29 @@ const boundedRuntimeTimestamp = (value: string | null | undefined): string | und
 
 /**
  * Adapts the snake-case Tauri DTO and enforces its terminal-failure contract.
- * A stale or partially mismatched recovery pair is deliberately hidden rather
- * than presenting the user with the wrong Windows instruction.
+ * Unknown, missing, or mismatched recovery values are hidden rather than
+ * presenting the user with an instruction the product cannot stand behind.
  */
 export const adaptManagedRuntimeSetupStatus = (
   status: NativeManagedRuntimeSetupStatus,
 ): ManagedRuntimeSetupStatus => {
   const phase = managedRuntimeSetupPhases.has(status.phase) ? status.phase : "failed";
+  const failureReason = typeof status.failure_reason === "string"
+    && managedRuntimeSetupFailureReasons.has(status.failure_reason)
+    ? status.failure_reason
+    : null;
+  const nextAction = typeof status.next_action === "string"
+    && managedRuntimeSetupNextActions.has(status.next_action)
+    ? status.next_action
+    : null;
   const hasValidRecovery = phase === "failed"
-    && status.failure_reason !== null
-    && managedRuntimeRecoveryActions[status.failure_reason] === status.next_action;
+    && failureReason !== null
+    && nextAction !== null
+    && managedRuntimeRecoveryActions[failureReason] === nextAction;
   const hasValidNonRetryableFailure = phase === "failed"
     && status.can_retry === false
-    && status.failure_reason !== null
-    && managedRuntimeNonRetryableFailures.has(status.failure_reason)
+    && failureReason !== null
+    && managedRuntimeNonRetryableFailures.has(failureReason)
     && status.next_action === null;
   const operationId = boundedRuntimeOperationField(status.operation_id, 128);
   const startedAt = boundedRuntimeTimestamp(status.started_at);
@@ -980,9 +1007,9 @@ export const adaptManagedRuntimeSetupStatus = (
     canCancel: status.can_cancel,
     canRetry: status.can_retry,
     failureReason: hasValidRecovery || hasValidNonRetryableFailure
-      ? status.failure_reason ?? undefined
+      ? failureReason ?? undefined
       : undefined,
-    nextAction: hasValidRecovery ? status.next_action ?? undefined : undefined,
+    nextAction: hasValidRecovery ? nextAction ?? undefined : undefined,
     detail: status.detail,
   };
 };

@@ -935,6 +935,21 @@ test("managed runtime setup adapter preserves the exact failed recovery contract
     nextAction: "enable_wsl_optional_features",
     detail: "bounded technical detail",
   });
+
+  for (const [failureReason, nextAction] of [
+    ["windows_wsl_not_installed", "install_wsl"],
+    ["windows_wsl_optional_feature_disabled", "enable_wsl_optional_features"],
+    ["windows_wsl_update_required", "update_wsl"],
+    ["windows_restart_required", "restart_windows"],
+    ["windows_wsl_command_failed", "retry_wsl_check"],
+  ] as const) {
+    const adapted = adaptManagedRuntimeSetupStatus(runtimeSetupDto({
+      failure_reason: failureReason,
+      next_action: nextAction,
+    }));
+    assert.equal(adapted.failureReason, failureReason);
+    assert.equal(adapted.nextAction, nextAction);
+  }
 });
 
 test("managed runtime setup adapter rejects the retired manual WSL distribution contract", () => {
@@ -1031,7 +1046,29 @@ test("managed runtime setup adapter hides recovery fields outside failed or when
   }));
   assert.equal(mismatched.failureReason, undefined);
   assert.equal(mismatched.nextAction, undefined);
+});
 
+test("managed runtime setup adapter hides unknown, missing, or unpaired recovery values", () => {
+  const unknownReason = adaptManagedRuntimeSetupStatus(runtimeSetupDto({
+    failure_reason: "not_a_setup_failure_reason",
+    next_action: "enable_wsl_optional_features",
+  }));
+  assert.equal(unknownReason.failureReason, undefined);
+  assert.equal(unknownReason.nextAction, undefined);
+
+  const { next_action: _omitted, ...missingActionPayload } = runtimeSetupDto({
+    failure_reason: "not_a_setup_failure_reason",
+  });
+  const missingAction = adaptManagedRuntimeSetupStatus(missingActionPayload);
+  assert.equal(missingAction.failureReason, undefined);
+  assert.equal(missingAction.nextAction, undefined);
+
+  const missingKnownAction = adaptManagedRuntimeSetupStatus({
+    ...runtimeSetupDto({ failure_reason: "windows_wsl_not_installed" }),
+    next_action: undefined,
+  });
+  assert.equal(missingKnownAction.failureReason, undefined);
+  assert.equal(missingKnownAction.nextAction, undefined);
 });
 
 test("declared website metadata adapts a bounded preset", () => {
