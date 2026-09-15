@@ -81,6 +81,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "FindingDiffStatus", "FindingDiffStatus"],
   ["domain.rs", "FindingFamily", "FindingFamily"],
   ["domain.rs", "FindingGroupAction", "FindingGroupAction"],
+  ["domain.rs", "FindingStatus", "FindingStatusWire"],
   ["domain.rs", "ScanRequestOutcomeCode", "ScanRequestOutcomeCode"],
   ["domain.rs", "Severity", "SeverityWire"],
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],

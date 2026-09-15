@@ -1218,6 +1218,15 @@ export type SeverityWire = "unknown" | "informational" | "low" | "medium" | "hig
 export type Severity = "critical" | "high" | "medium" | "low" | "unknown" | "info";
 /** Exact confidence vocabulary serialized by Rust's domain::Confidence. */
 export type Confidence = "confirmed" | "high" | "medium" | "low";
+/** Exact workflow vocabulary serialized by Rust's domain::FindingStatus. */
+export type FindingStatusWire =
+  | "unreviewed"
+  | "expert_review_requested"
+  | "confirmed"
+  | "false_positive"
+  | "remediation_reported"
+  | "verified_resolved";
+
 export type FindingWorkflowState =
   | "unreviewed"
   | "expert_review_requested"

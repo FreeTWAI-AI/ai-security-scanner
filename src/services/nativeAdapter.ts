@@ -43,6 +43,7 @@ import type {
   FindingGroup,
   FindingGroupAction,
   FindingGroupEvent,
+  FindingStatusWire,
   FindingWorkflowState,
   LocalInputProfile,
   LocalhostTcpObservation,
@@ -590,7 +591,7 @@ interface NativeFinding {
   rollback_considerations?: string | null;
   official_references: string[];
   recommended_expert_type: string;
-  status: string;
+  status: FindingStatusWire;
   tags?: string[];
   family?: string | null;
   severity_basis_code?: string | null;
@@ -601,8 +602,8 @@ interface NativeFinding {
 interface NativeFindingWorkflowEvent {
   id: string;
   finding_id: string;
-  from_status: string;
-  to_status: string;
+  from_status: FindingStatusWire;
+  to_status: FindingStatusWire;
   decided_by: string;
   decided_at: string;
   reason: string;
@@ -1492,19 +1493,21 @@ const mapConfidence = (confidence: string): Confidence => {
 };
 
 const mapWorkflow = (status: string): FindingWorkflowState => {
-  const states: Record<string, FindingWorkflowState> = {
+  const canonicalStates: Record<FindingStatusWire, FindingWorkflowState> = {
     unreviewed: "unreviewed",
-    sent_for_review: "expert_review_requested",
     expert_review_requested: "expert_review_requested",
     confirmed: "confirmed",
     false_positive: "false_positive",
-    remediation_planned: "assigned",
     remediation_reported: "remediation_reported",
-    remediated_pending_verification: "remediated_pending_verification",
-    closed: "verified_resolved",
     verified_resolved: "verified_resolved",
   };
-  return states[status] ?? "unreviewed";
+  const compatibilityStates: Record<string, FindingWorkflowState> = {
+    sent_for_review: "expert_review_requested",
+    remediation_planned: "assigned",
+    remediated_pending_verification: "remediated_pending_verification",
+    closed: "verified_resolved",
+  };
+  return canonicalStates[status as FindingStatusWire] ?? compatibilityStates[status] ?? "unreviewed";
 };
 
 const mapEngineStatus = (status: string): EngineRunStatus => {
