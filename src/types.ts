@@ -847,10 +847,13 @@ export interface BeginnerRequestedTarget {
   assetKindAvailability: BeginnerReportDataAvailability;
 }
 
+/** Where a frozen report limit was recorded before execution. */
+export type BeginnerRequestedLimitSource = "frozen_task_contract" | "frozen_scope_grant";
+
 export interface BeginnerRequestedLimit {
   name: string;
   value: string;
-  source: "frozen_task_contract" | "frozen_scope_grant";
+  source: BeginnerRequestedLimitSource;
 }
 
 export interface BeginnerUnavailableDimension {
