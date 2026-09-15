@@ -26,6 +26,15 @@ export type CloudPlatform =
 
 export type CompanySize = "unknown" | "solo" | "small" | "medium" | "large";
 export type DataClass = "pii" | "phi" | "payment" | "credentials" | "none";
+/** Exact `DataClass` values serialized by the native Rust domain. */
+export type DataClassWire =
+  | "general"
+  | "personally_identifiable_information"
+  | "protected_health_information"
+  | "payment_card_information"
+  | "financial"
+  | "credentials_and_secrets"
+  | "other";
 
 export type AssessmentActivity =
   | "configuration_assessment"

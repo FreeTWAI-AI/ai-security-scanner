@@ -35,6 +35,8 @@ import type {
   ConnectSourceSnapshotInput,
   CorrelationReport,
   CreateCaseInput,
+  DataClass,
+  DataClassWire,
   EngineManifest,
   ExportCaseInput,
   ExportPreview,
@@ -286,7 +288,7 @@ const employeeRanges: Record<CreateCaseInput["companySize"], string> = {
   large: "250+",
 };
 
-const nativeDataClasses: Record<CreateCaseInput["dataClasses"][number], string> = {
+export const nativeDataClasses: Record<DataClass, DataClassWire> = {
   pii: "personally_identifiable_information",
   phi: "protected_health_information",
   payment: "payment_card_information",

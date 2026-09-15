@@ -32,6 +32,7 @@ import type {
   CoverageState,
   CoverageStatusWire,
   DataClass,
+  DataClassWire,
   DiffState,
   DirectNetworkTargetKind,
   DistributionMode,
@@ -1178,14 +1179,22 @@ const mapCompanySize = (value: string): CompanySize => {
   return "small";
 };
 
-const mapDataClasses = (values: string[]): DataClass[] => {
-  const mapped = values.map((value): DataClass => {
-    if (value === "personally_identifiable_information") return "pii";
-    if (value === "protected_health_information") return "phi";
-    if (value === "payment_card_information" || value === "financial") return "payment";
-    if (value === "credentials_and_secrets") return "credentials";
-    return "none";
-  });
+const dataClassByWire: Record<DataClassWire, DataClass> = {
+  general: "none",
+  personally_identifiable_information: "pii",
+  protected_health_information: "phi",
+  payment_card_information: "payment",
+  financial: "payment",
+  credentials_and_secrets: "credentials",
+  other: "none",
+};
+
+export const mapDataClasses = (values: string[]): DataClass[] => {
+  const mapped = values.map((value): DataClass =>
+    Object.prototype.hasOwnProperty.call(dataClassByWire, value)
+      ? dataClassByWire[value as DataClassWire]
+      : "none",
+  );
   const concrete = unique(mapped.filter((value) => value !== "none"));
   return concrete.length > 0 ? concrete : ["none"];
 };

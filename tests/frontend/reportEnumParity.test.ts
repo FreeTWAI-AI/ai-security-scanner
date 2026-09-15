@@ -59,7 +59,7 @@ const typescript = typescriptSource("types.ts");
 
 const bundledAdapter = await build({
   stdin: {
-    contents: 'export { adaptDeclaredHostScanMetadata, localQuestionnaireKinds } from "./src/services/nativeAdapter.ts";',
+    contents: 'export { adaptDeclaredHostScanMetadata, localQuestionnaireKinds, mapDataClasses } from "./src/services/nativeAdapter.ts"; export { nativeDataClasses } from "./src/services/scanner.ts";',
     loader: "ts",
     resolveDir: process.cwd(),
     sourcefile: "report-enum-parity-adapter-entry.ts",
@@ -75,11 +75,15 @@ assert.ok(bundledAdapterSource, "the declared-input adapter bundle should contai
 const {
   adaptDeclaredHostScanMetadata,
   localQuestionnaireKinds,
+  mapDataClasses,
+  nativeDataClasses,
 }: {
   adaptDeclaredHostScanMetadata: (metadata: Record<string, unknown> | undefined) => {
     scanProfile: string;
   } | undefined;
   localQuestionnaireKinds: ReadonlySet<string>;
+  mapDataClasses: (values: string[]) => string[];
+  nativeDataClasses: Readonly<Record<string, string>>;
 } = await import(
   `data:text/javascript;base64,${Buffer.from(bundledAdapterSource).toString("base64")}`
 );
@@ -177,6 +181,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "ConfidenceBasisCode", "ConfidenceBasisCode"],
   ["domain.rs", "ContextFactor", "ContextFactor"],
   ["domain.rs", "CoverageStatus", "CoverageStatusWire"],
+  ["domain.rs", "DataClass", "DataClassWire"],
   ["domain.rs", "EvidenceKind", "EvidenceKind"],
   ["domain.rs", "EngineCategory", "EngineCategory"],
   ["domain.rs", "EngineRunStatus", "EngineRunStatusWire"],
@@ -198,6 +203,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "SourceConnectionStatus", "SourceConnectionStatus"],
   ["domain.rs", "SourceKind", "SourceKind"],
   ["export.rs", "RedactionProfile", "RedactionProfile"],
+  ["export.rs", "ReportLocale", "ReportLocale"],
   ["external_scope.rs", "ExternalActivity", "ExternalActivity"],
   ["external_scope.rs", "TransportProtocol", "TransportProtocol"],
   ["external_scope.rs", "DirectNetworkTargetKind", "DirectNetworkTargetKind"],
@@ -286,6 +292,11 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
     "none",
     "standard",
   ]);
+  // A non-serde attribute before a per-variant rename must not hide it.
+  assert.deepEqual(rustVariants(exportLayer, "ReportLocale"), [
+    "en",
+    "zh-Hant",
+  ]);
   assert.deepEqual(rustTaggedVariants(beginnerReport, "TechnicalExecution"), [
     "catalog_engine",
     "built_in_localhost_tcp",
@@ -350,6 +361,21 @@ test("DeclaredHostScanProfile maps exhaustively onto InternalHostScanProfile", (
       adapted?.scanProfile,
       ui,
       `adaptDeclaredHostScanMetadata did not translate ${wire} to ${ui}`,
+    );
+  }
+});
+
+test("DataClass round-trips through the outbound and inbound adapters", () => {
+  const uiDataClasses = unionMembers("DataClass");
+
+  assert.ok(uiDataClasses.length > 0, "DataClass extracted no members");
+  for (const dataClass of uiDataClasses) {
+    const wire = nativeDataClasses[dataClass];
+    assert.ok(wire, `nativeDataClasses does not translate ${dataClass}`);
+    assert.deepEqual(
+      mapDataClasses([wire]),
+      [dataClass],
+      `${dataClass} did not survive the adapter round trip`,
     );
   }
 });
