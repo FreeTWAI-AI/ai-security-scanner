@@ -881,11 +881,14 @@ export interface BeginnerRequestedCoverage {
   unavailableDimensions: BeginnerUnavailableDimension[];
 }
 
+/** Product report semantics for one completed or attempted check. */
+export type BeginnerCheckResultKind = "security_check" | "inventory" | "connectivity";
+
 export interface BeginnerActualCheck {
   taskId: string;
   checkId: string;
   /** Absent only on reports saved before check-result semantics were frozen. */
-  resultKind?: "security_check" | "inventory" | "connectivity";
+  resultKind?: BeginnerCheckResultKind;
   targetAssetIds: string[];
   status: BeginnerCoverageStatus;
   startedAt?: string;

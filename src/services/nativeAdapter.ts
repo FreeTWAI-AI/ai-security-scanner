@@ -7,6 +7,7 @@ import type {
   Asset,
   AssetKind,
   AssetType,
+  BeginnerCheckResultKind,
   BeginnerInventoryItem,
   BeginnerMasterReport,
   CaseExport,
@@ -372,7 +373,7 @@ export interface NativeBeginnerMasterReport {
     checks: Array<{
       task_id: string;
       check_id: string;
-      result_kind?: "security_check" | "inventory" | "connectivity" | null;
+      result_kind?: BeginnerCheckResultKind | null;
       target_asset_ids: string[];
       status: BeginnerMasterReport["actual"]["checks"][number]["status"];
       started_at: string | null;
