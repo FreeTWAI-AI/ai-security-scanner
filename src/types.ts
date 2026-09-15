@@ -609,6 +609,7 @@ export interface Asset {
 
 export type ExternalActivity = "passive_public_discovery" | "low_impact_external" | "active_external";
 export type TransportProtocol = "tcp" | "udp" | "tls" | "http" | "https";
+export type DirectNetworkTargetKind = "hostname" | "address" | "network";
 
 export interface ExternalRatePolicy {
   requestsPerSecond: number;
@@ -644,7 +645,7 @@ export interface FrozenExternalScope extends ExternalScopeRequest {
   id: string;
   caseId: string;
   assetId: string;
-  targetKind: "hostname" | "address" | "network";
+  targetKind: DirectNetworkTargetKind;
   approvedBy: string;
   approvedAt: string;
   expiresAt: string;

@@ -19,6 +19,19 @@ const typescript = readFileSync(new URL("../../src/types.ts", import.meta.url), 
 
 const beginnerReport = rust("beginner_report.rs");
 const domain = rust("domain.rs");
+const externalScope = rust("external_scope.rs");
+
+const rustSources: Readonly<Record<string, string>> = {
+  "beginner_report.rs": beginnerReport,
+  "domain.rs": domain,
+  "external_scope.rs": externalScope,
+};
+
+const rustSource = (file: string): string => {
+  const source = rustSources[file];
+  assert.ok(source, `Rust source ${file} was not loaded`);
+  return source;
+};
 
 /** Serde's `rename_all = "snake_case"`: lower-case, `_` before each capital. */
 const serdeSnakeCase = (variant: string): string =>
@@ -129,6 +142,9 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
   ["domain.rs", "SourceConnectionStatus", "SourceConnectionStatus"],
   ["domain.rs", "SourceKind", "SourceKind"],
+  ["external_scope.rs", "ExternalActivity", "ExternalActivity"],
+  ["external_scope.rs", "TransportProtocol", "TransportProtocol"],
+  ["external_scope.rs", "DirectNetworkTargetKind", "DirectNetworkTargetKind"],
 ];
 
 const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
@@ -140,7 +156,7 @@ const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, ty
 
 for (const [file, rustName, typescriptName] of PAIRS) {
   test(`${rustName} and ${typescriptName} describe the same set of values`, () => {
-    const fromRust = rustVariants(file === "domain.rs" ? domain : beginnerReport, rustName);
+    const fromRust = rustVariants(rustSource(file), rustName);
     const fromTypescript = unionMembers(typescriptName);
 
     assert.ok(fromRust.length > 0, `${rustName} extracted no variants`);
@@ -156,7 +172,7 @@ for (const [file, rustName, typescriptName] of PAIRS) {
 
 for (const [file, rustName, typescriptName] of TAGGED_PAIRS) {
   test(`${rustName} and ${typescriptName} describe the same kind tags`, () => {
-    const fromRust = rustTaggedVariants(file === "domain.rs" ? domain : beginnerReport, rustName);
+    const fromRust = rustTaggedVariants(rustSource(file), rustName);
     const fromTypescript = discriminatedUnionMembers(typescriptName);
 
     assert.ok(fromRust.length > 0, `${rustName} extracted no tagged variants`);
@@ -189,6 +205,11 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
     "no_effective_scope_grants",
     "no_ownership_confirmed_targets",
     "no_applicable_checks",
+  ]);
+  assert.deepEqual(rustVariants(externalScope, "DirectNetworkTargetKind"), [
+    "hostname",
+    "address",
+    "network",
   ]);
   assert.deepEqual(unionMembers("BeginnerReportLifecycle"), ["final"]);
   assert.deepEqual(rustTaggedVariants(beginnerReport, "TechnicalExecution"), [
