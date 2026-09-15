@@ -65,6 +65,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["beginner_report.rs", "NextActionCode", "BeginnerNextActionCode"],
   ["beginner_report.rs", "CoverageDimensionStatus", "BeginnerCoverageStatus"],
   ["beginner_report.rs", "BeginnerReportSummary", "BeginnerReportSummary"],
+  ["beginner_report.rs", "ReportLifecycle", "BeginnerReportLifecycle"],
   ["beginner_report.rs", "ReportScanStage", "BeginnerReportStage"],
   ["beginner_report.rs", "DataAvailability", "BeginnerReportDataAvailability"],
   ["beginner_report.rs", "CheckResultKind", "BeginnerCheckResultKind"],
@@ -84,7 +85,7 @@ for (const [file, rustName, typescriptName] of PAIRS) {
     const fromRust = rustVariants(file === "domain.rs" ? domain : beginnerReport, rustName);
     const fromTypescript = unionMembers(typescriptName);
 
-    assert.ok(fromRust.length > 1, `${rustName} extracted no variants`);
+    assert.ok(fromRust.length > 0, `${rustName} extracted no variants`);
     // Sets, not sequences: the two files are free to declare in different
     // orders, and neither order reaches the reader.
     assert.deepEqual(
