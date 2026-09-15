@@ -88,7 +88,7 @@ task-provenance, and packaged-engine metadata used to decide what the reader see
 permissions and task kinds fail closed: they cannot create authorization, scanner provenance, completed
 work, or covered-asset credit.
 
-The automated baseline completed with 1,691 Rust tests, 644 frontend tests, 262 component tests, 46 CI
+The automated baseline completed with 1,691 Rust tests, 678 frontend tests, 263 component tests, 46 CI
 contract tests, and 8 engine-catalog tests, together with TypeScript checking, production build, Rust
 formatting, Clippy, mapping validation, and the five-scenario usability-evidence contract. The usability
 record contains no human session, and this review does not claim installed-product acceptance.
