@@ -29,7 +29,9 @@ import type {
   DataClass,
   DiffState,
   DistributionMode,
+  EngineCategory,
   EngineManifest,
+  EngineManifestStatusWire,
   EngineCheckpoint,
   EngineFailureKind,
   EngineRecoveryAction,
@@ -59,6 +61,8 @@ import type {
   ManagedRuntimeSetupNextAction,
   ManagedRuntimeSetupPhase,
   ManagedRuntimeSetupStatus,
+  KnowledgeInputKind,
+  KnowledgePinState,
   ProviderSourceProfile,
   RunStatus,
   ScanRequestOutcome,
@@ -226,7 +230,7 @@ interface NativeEngineRun {
   manifest_schema_version?: string | null;
   source_revision?: string | null;
   repository_url?: string | null;
-  distribution_mode?: DistributionMode | null;
+  distribution_mode?: string | null;
   image_repository?: string | null;
   command_sha256?: string | null;
   scope_contract_sha256?: string | null;
@@ -1623,6 +1627,52 @@ const mapEngineStatus = (status: string): EngineRunStatus => {
   return states[status as EngineRunStatusWire] ?? "not_executed";
 };
 
+const DISTRIBUTION_MODES: readonly DistributionMode[] = [
+  "bundled_image",
+  "pull_pinned_image",
+  "build_from_pinned_source",
+  "external_executable",
+];
+
+const mapDistributionMode = (
+  value: string | null | undefined,
+): DistributionMode | undefined => DISTRIBUTION_MODES.includes(value as DistributionMode)
+  ? value as DistributionMode
+  : undefined;
+
+const KNOWLEDGE_INPUT_KINDS: readonly KnowledgeInputKind[] = [
+  "embedded",
+  "external_pinned",
+  "external_pin_required",
+  "not_applicable",
+  "runtime_live",
+  "runtime_bound",
+];
+
+const KNOWLEDGE_PIN_STATES: readonly KnowledgePinState[] = [
+  "awaiting_pin",
+  "runtime_live",
+  "runtime_bound",
+  "pinned_or_not_applicable",
+];
+
+const mapEngineKnowledgeInput = (
+  input: NativeEngineRun["knowledge_input"],
+): EngineRun["knowledgeInput"] => {
+  if (!input
+    || !KNOWLEDGE_INPUT_KINDS.includes(input.kind as KnowledgeInputKind)
+    || !KNOWLEDGE_PIN_STATES.includes(input.pin_state as KnowledgePinState)) return undefined;
+  return {
+    kind: input.kind as KnowledgeInputKind,
+    identifier: input.identifier,
+    version: input.version ?? undefined,
+    acquisitionSource: input.acquisition_source ?? undefined,
+    pinState: input.pin_state as KnowledgePinState,
+    knowledgeDate: input.knowledge_date ?? undefined,
+    supportUntil: input.support_until ?? undefined,
+  };
+};
+
 const mapEngineTaskKind = (taskKind: NativeEngineRun["task_kind"]): EngineTaskKind => {
   if (taskKind?.kind !== "built_in_localhost_tcp") return { kind: "catalog_engine" };
   return {
@@ -1886,6 +1936,34 @@ export const adaptNativeExportPreview = (item: NativeExportPreview): ExportPrevi
   coverageManifestIncluded: item.coverage_manifest_included,
 });
 
+const ENGINE_CATEGORIES: readonly EngineCategory[] = [
+  "cloud_inventory",
+  "cloud_configuration",
+  "identity_and_access",
+  "microsoft365",
+  "external_attack_surface",
+  "code_and_secrets",
+  "infrastructure_as_code",
+  "container_and_sbom",
+  "kubernetes",
+  "host",
+  "schema_and_export",
+  "ai_model_endpoint",
+  "ai_agent_framework",
+  "ai_mcp_configuration",
+];
+
+const mapEngineCategory = (value: string): EngineCategory | undefined =>
+  ENGINE_CATEGORIES.includes(value as EngineCategory) ? value as EngineCategory : undefined;
+
+const MANIFEST_STATUSES: Record<EngineManifestStatusWire, EngineManifest["status"]> = {
+  integrated: "ready",
+  experimental: "not_downloaded",
+  research_only: "unsupported",
+  deprecated: "outdated",
+  license_review: "unsupported",
+};
+
 export const adaptNativeManifest = (manifest: NativeEngineManifest): EngineManifest => {
   const supportedProviders = manifest.supported_providers
     .map((provider): CloudPlatform | undefined => provider === "microsoft365" ? "m365" : ["aws", "azure", "gcp"].includes(provider) ? provider as CloudPlatform : undefined)
@@ -1893,13 +1971,15 @@ export const adaptNativeManifest = (manifest: NativeEngineManifest): EngineManif
   const platforms = supportedProviders.length > 0 ? supportedProviders : unique(manifest.supported_asset_kinds.map((kind) =>
     platformFromAsset({ id: "", kind, name: "", provider: null, region: null, identifiers: [], discovered_from: [], candidate: false, owner_confirmed: false }),
   ));
-  const distribution: EngineManifest["redistribution"] = manifest.distribution_mode === "bundled_image"
-    ? "bundled"
-    : manifest.distribution_mode === "external_executable" ? "external" : "on_demand";
-  const catalogStatus: EngineManifest["status"] = manifest.status === "integrated"
-    ? "ready"
-    : manifest.status === "deprecated" ? "outdated"
-      : manifest.status === "experimental" ? "not_downloaded" : "unsupported";
+  const distributionMode = mapDistributionMode(manifest.distribution_mode);
+  const distributionByMode: Record<DistributionMode, EngineManifest["redistribution"]> = {
+    bundled_image: "bundled",
+    pull_pinned_image: "on_demand",
+    build_from_pinned_source: "on_demand",
+    external_executable: "external",
+  };
+  const distribution = distributionMode ? distributionByMode[distributionMode] : "unknown";
+  const catalogStatus = MANIFEST_STATUSES[manifest.status as EngineManifestStatusWire] ?? "unsupported";
   const rawRunnable = manifest.compatibility?.runnable;
   const rawBlockedBy = manifest.compatibility?.blocked_by;
   const runnableShapeValid = rawRunnable === undefined || typeof rawRunnable === "boolean";
@@ -1959,7 +2039,7 @@ export const adaptNativeManifest = (manifest: NativeEngineManifest): EngineManif
   return {
     id: manifest.id,
     name: manifest.display_name,
-    category: manifest.category,
+    category: mapEngineCategory(manifest.category) ?? "unknown",
     version: manifest.engine_version ?? manifest.rule_version ?? adapterText("Not reported", "未回報"),
     imageDigest: manifest.image?.digest ?? adapterText("No image digest", "未提供映像摘要"),
     license: manifest.license_spdx,
@@ -2280,18 +2360,14 @@ export const adaptNativeCase = (
         manifestSchemaVersion: isBuiltInLocalhostTcp ? undefined : engineRun.manifest_schema_version ?? undefined,
         sourceRevision: isBuiltInLocalhostTcp ? undefined : engineRun.source_revision ?? undefined,
         repositoryUrl: isBuiltInLocalhostTcp ? undefined : engineRun.repository_url ?? undefined,
-        distributionMode: isBuiltInLocalhostTcp ? undefined : engineRun.distribution_mode ?? undefined,
+        distributionMode: isBuiltInLocalhostTcp
+          ? undefined
+          : mapDistributionMode(engineRun.distribution_mode),
         imageRepository: isBuiltInLocalhostTcp ? undefined : engineRun.image_repository ?? undefined,
         commandSha256: isBuiltInLocalhostTcp ? undefined : engineRun.command_sha256 ?? undefined,
-        knowledgeInput: !isBuiltInLocalhostTcp && engineRun.knowledge_input ? {
-          kind: engineRun.knowledge_input.kind,
-          identifier: engineRun.knowledge_input.identifier,
-          version: engineRun.knowledge_input.version ?? undefined,
-          acquisitionSource: engineRun.knowledge_input.acquisition_source ?? undefined,
-          pinState: engineRun.knowledge_input.pin_state,
-          knowledgeDate: engineRun.knowledge_input.knowledge_date ?? undefined,
-          supportUntil: engineRun.knowledge_input.support_until ?? undefined,
-        } : undefined,
+        knowledgeInput: isBuiltInLocalhostTcp
+          ? undefined
+          : mapEngineKnowledgeInput(engineRun.knowledge_input),
         runtimeProvider: isBuiltInLocalhostTcp ? undefined : engineRun.runtime_provider ?? undefined,
         runtimeVersion: isBuiltInLocalhostTcp ? undefined : engineRun.runtime_version ?? undefined,
         runtimeSecurityOptions: isBuiltInLocalhostTcp ? undefined : engineRun.runtime_security_options ?? undefined,

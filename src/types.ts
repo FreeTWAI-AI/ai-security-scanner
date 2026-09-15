@@ -656,6 +656,43 @@ export type DistributionMode =
   | "build_from_pinned_source"
   | "external_executable";
 
+export type EngineCategory =
+  | "cloud_inventory"
+  | "cloud_configuration"
+  | "identity_and_access"
+  | "microsoft365"
+  | "external_attack_surface"
+  | "code_and_secrets"
+  | "infrastructure_as_code"
+  | "container_and_sbom"
+  | "kubernetes"
+  | "host"
+  | "schema_and_export"
+  | "ai_model_endpoint"
+  | "ai_agent_framework"
+  | "ai_mcp_configuration";
+
+export type EngineManifestStatusWire =
+  | "integrated"
+  | "experimental"
+  | "research_only"
+  | "deprecated"
+  | "license_review";
+
+export type KnowledgeInputKind =
+  | "embedded"
+  | "external_pinned"
+  | "external_pin_required"
+  | "not_applicable"
+  | "runtime_live"
+  | "runtime_bound";
+
+export type KnowledgePinState =
+  | "awaiting_pin"
+  | "runtime_live"
+  | "runtime_bound"
+  | "pinned_or_not_applicable";
+
 export type ExecutionStage =
   | "planned"
   | "preflight"
@@ -729,7 +766,7 @@ export interface EngineRun {
   id: string;
   engineId: string;
   engineName: string;
-  category: string;
+  category: EngineCategory | "built_in_localhost_tcp" | "unknown";
   /** Absent for product-owned tasks that do not use a catalog engine. */
   version?: string;
   /** Absent for product-owned tasks that do not use a container image. */
@@ -745,11 +782,11 @@ export interface EngineRun {
   imageRepository?: string;
   commandSha256?: string;
   knowledgeInput?: {
-    kind: string;
+    kind: KnowledgeInputKind;
     identifier: string;
     version?: string;
     acquisitionSource?: string;
-    pinState: string;
+    pinState: KnowledgePinState;
     knowledgeDate?: string;
     supportUntil?: string;
   };
@@ -1738,11 +1775,11 @@ export interface ExportPreview {
 export interface EngineManifest {
   id: string;
   name: string;
-  category: string;
+  category: EngineCategory | "unknown";
   version: string;
   imageDigest: string;
   license: string;
-  redistribution: "bundled" | "on_demand" | "external";
+  redistribution: "bundled" | "on_demand" | "external" | "unknown";
   platforms: CloudPlatform[];
   supportedProviders: CloudPlatform[];
   status: "ready" | "not_downloaded" | "unsupported" | "outdated";

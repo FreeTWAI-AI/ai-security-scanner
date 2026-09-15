@@ -1299,6 +1299,15 @@ test("missing or malformed manifest compatibility fails soft instead of inventin
     assert.equal(malformed.runnable, undefined);
     assert.equal(malformed.compatibilityValid, false);
   }
+
+  const futureVocabulary = adaptNativeManifest(nativeManifestFixture({
+    category: "future_category",
+    distribution_mode: "future_distribution",
+    status: "future_status",
+  }));
+  assert.equal(futureVocabulary.category, "unknown");
+  assert.equal(futureVocabulary.redistribution, "unknown");
+  assert.equal(futureVocabulary.status, "unsupported");
 });
 
 test("case summaries display only applicable source platforms and preserve real multi-platform scope", () => {
@@ -2281,6 +2290,57 @@ test("mixed terminal and queued engine work keeps the scan queued for downstream
     assert.equal(workspace.runs[0]?.engineRuns[1]?.status, "pending", terminalStatus);
     assert.equal(workspace.runs[0]?.status, "queued", terminalStatus);
   }
+});
+
+test("engine knowledge metadata accepts only the closed Rust wire vocabularies", () => {
+  const validManifest = adaptNativeManifest(nativeManifestFixture({ id: "valid-knowledge" }));
+  const invalidManifest = adaptNativeManifest(nativeManifestFixture({ id: "future-knowledge" }));
+  const workspace = adaptNativeCase(platformCaseFixture({
+    scan_runs: [{
+      id: "knowledge-run",
+      case_id: "case-platforms-1",
+      sequence: 1,
+      created_at: "2026-08-26T00:00:00Z",
+      completed_at: "2026-08-26T00:01:00Z",
+      knowledge_cutoff: "2026-08-24T00:00:00Z",
+      engine_runs: [{
+        ...engineRunFixture("valid-knowledge", "completed"),
+        distribution_mode: "pull_pinned_image",
+        knowledge_input: {
+          kind: "external_pinned",
+          identifier: "rules",
+          version: "2026.08",
+          acquisition_source: "managed image",
+          pin_state: "pinned_or_not_applicable",
+          knowledge_date: "2026-08-24",
+          support_until: "2026-12-31",
+        },
+      }, {
+        ...engineRunFixture("future-knowledge", "completed"),
+        distribution_mode: "future_distribution",
+        knowledge_input: {
+          kind: "future_kind",
+          identifier: "untrusted",
+          version: null,
+          acquisition_source: null,
+          pin_state: "future_pin_state",
+        },
+      }],
+    }],
+  }), [validManifest, invalidManifest]);
+
+  assert.deepEqual(workspace.runs[0]?.engineRuns[0]?.knowledgeInput, {
+    kind: "external_pinned",
+    identifier: "rules",
+    version: "2026.08",
+    acquisitionSource: "managed image",
+    pinState: "pinned_or_not_applicable",
+    knowledgeDate: "2026-08-24",
+    supportUntil: "2026-12-31",
+  });
+  assert.equal(workspace.runs[0]?.engineRuns[0]?.distributionMode, "pull_pinned_image");
+  assert.equal(workspace.runs[0]?.engineRuns[1]?.knowledgeInput, undefined);
+  assert.equal(workspace.runs[0]?.engineRuns[1]?.distributionMode, undefined);
 });
 
 test("run-bound packaged scanner issues remain available to technical diagnostics", () => {
