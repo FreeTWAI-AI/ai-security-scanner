@@ -945,10 +945,16 @@ export interface UnattributedResults {
   discardedResults: number;
 }
 
+/** Where this report finding's reader-visible data came from. */
+export type BeginnerFindingSnapshotSource =
+  | "frozen_selected_run"
+  | "current_canonical_legacy_fallback"
+  | "observation_only";
+
 export interface BeginnerReportFinding {
   findingId: string;
   fingerprint: string;
-  snapshotSource: "frozen_selected_run" | "current_canonical_legacy_fallback" | "observation_only";
+  snapshotSource: BeginnerFindingSnapshotSource;
   title: string;
   plainLanguageRisk: string;
   possibleImpact: string;
