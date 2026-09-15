@@ -56,6 +56,7 @@ import type {
   ScopeMode,
   ScannerFindingDetails,
   Severity,
+  SeverityWire,
   SourceKind,
   SourceCapabilityProvider,
   TransportProtocol,
@@ -435,12 +436,9 @@ export interface NativeBeginnerMasterReport {
     title: string;
     plain_language_risk: string;
     possible_impact: string;
-    // The backend writes this from a Rust enum whose `Informational` variant
-    // serializes as "informational", which is not a member of the TypeScript
-    // union and not a key of `severityMeta`. Typing it as `Severity` here was
-    // an assertion about the wire, not a fact, and it hid that this mapper
-    // never normalized the value the way the canonical one does.
-    severity: string;
+    // The native wire uses "informational"; the reader-facing union uses
+    // "info". Keep this DTO exact and normalize only at the adapter boundary.
+    severity: SeverityWire;
     confidence: string;
     priority: number | null;
     priority_reasons: string[];
@@ -576,7 +574,7 @@ interface NativeFinding {
   title: string;
   plain_language_summary: string;
   possible_impact: string;
-  severity: string;
+  severity: SeverityWire;
   confidence: string;
   priority: number;
   priority_reasons?: string[];
@@ -671,8 +669,8 @@ interface NativeFindingDiff {
   current_finding_id: string | null;
   status: string;
   explanation: string;
-  baseline_severity?: string | null;
-  current_severity?: string | null;
+  baseline_severity?: SeverityWire | null;
+  current_severity?: SeverityWire | null;
   evidence_changed?: boolean;
   reasons?: NativeDiffReason[];
 }

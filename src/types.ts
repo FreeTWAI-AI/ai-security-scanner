@@ -1212,6 +1212,9 @@ export interface ScanReadiness {
   nextStep?: ScanReadinessNextStep;
 }
 
+/** Exact wire vocabulary serialized by Rust's domain::Severity. */
+export type SeverityWire = "unknown" | "informational" | "low" | "medium" | "high" | "critical";
+/** Reader-facing vocabulary after the native adapter normalizes informational. */
 export type Severity = "critical" | "high" | "medium" | "low" | "unknown" | "info";
 /** Exact confidence vocabulary serialized by Rust's domain::Confidence. */
 export type Confidence = "confirmed" | "high" | "medium" | "low";
