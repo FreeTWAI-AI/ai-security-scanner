@@ -31,6 +31,7 @@ import type {
   CoverageStatusWire,
   DataClass,
   DiffState,
+  DirectNetworkTargetKind,
   DistributionMode,
   EngineCategory,
   EngineManifest,
@@ -152,7 +153,7 @@ interface NativeExternalScope {
   id: string;
   case_id: string;
   asset_id: string;
-  target: { kind: "hostname" | "address" | "network"; value: string };
+  target: { kind: DirectNetworkTargetKind; value: string };
   ports: number[];
   protocol: TransportProtocol;
   activity: ExternalActivity;
