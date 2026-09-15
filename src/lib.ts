@@ -167,6 +167,7 @@ export const severityMeta: Record<Severity, { label: string; tone: string }> = {
 };
 
 export const confidenceMeta: Record<Confidence, string> = {
+  get confirmed() { return translateActiveStatic("status.confidence.confirmed"); },
   get high() { return translateActiveStatic("status.confidence.high"); },
   get medium() { return translateActiveStatic("status.confidence.medium"); },
   get low() { return translateActiveStatic("status.confidence.low"); },

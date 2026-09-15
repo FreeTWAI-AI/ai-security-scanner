@@ -186,6 +186,7 @@ export const en = {
   "status.severity.low": "Low",
   "status.severity.unknown": "Unknown — scanner did not rate",
   "status.severity.info": "Informational",
+  "status.confidence.confirmed": "Confirmed",
   "status.confidence.high": "High confidence",
   "status.confidence.medium": "Medium confidence",
   "status.confidence.low": "Low confidence",

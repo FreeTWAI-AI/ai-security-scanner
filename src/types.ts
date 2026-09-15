@@ -1213,7 +1213,8 @@ export interface ScanReadiness {
 }
 
 export type Severity = "critical" | "high" | "medium" | "low" | "unknown" | "info";
-export type Confidence = "high" | "medium" | "low";
+/** Exact confidence vocabulary serialized by Rust's domain::Confidence. */
+export type Confidence = "confirmed" | "high" | "medium" | "low";
 export type FindingWorkflowState =
   | "unreviewed"
   | "expert_review_requested"

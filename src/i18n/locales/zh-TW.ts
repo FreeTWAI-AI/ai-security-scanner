@@ -188,6 +188,7 @@ export const zhTW = {
   "status.severity.low": "低",
   "status.severity.unknown": "未知（掃描器未評等）",
   "status.severity.info": "資訊",
+  "status.confidence.confirmed": "已確認",
   "status.confidence.high": "高信心",
   "status.confidence.medium": "中等信心",
   "status.confidence.low": "低信心",

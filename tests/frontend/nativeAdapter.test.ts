@@ -597,7 +597,7 @@ test("the report the findings list is built from carries severity and codes the 
   assert.ok(finding, "the report dropped its only finding");
 
   assert.equal(finding.severity, "info");
-  assert.equal(finding.confidence, "high");
+  assert.equal(finding.confidence, "confirmed");
   assert.ok(
     RENDERABLE_SEVERITIES.includes(finding.severity),
     `severityMeta has no "${finding.severity}" entry, so every row renderer reads .label of undefined`,
