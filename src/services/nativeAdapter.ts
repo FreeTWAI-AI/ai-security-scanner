@@ -32,6 +32,7 @@ import type {
   EngineRun,
   EngineRunStatus,
   EngineTaskKind,
+  EvidenceKind,
   ExternalActivity,
   FrozenExternalScope,
   ExportFormat,
@@ -459,7 +460,7 @@ export interface NativeBeginnerMasterReport {
       source_rule?: string | null;
       scanner_details?: NativeScannerFindingDetails | null;
       summary?: string | null;
-      kind?: string | null;
+      kind?: EvidenceKind | null;
       engine_run_id?: string | null;
       artifact_id?: string | null;
       redacted?: boolean | null;
@@ -516,7 +517,7 @@ interface NativeEvidence {
   finding_id?: string;
   run_id?: string;
   engine_run_id?: string | null;
-  kind?: string;
+  kind?: EvidenceKind;
   engine_id: string;
   source_rule?: string | null;
   scanner_details?: NativeScannerFindingDetails | null;

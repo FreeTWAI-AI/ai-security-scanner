@@ -992,7 +992,7 @@ export interface BeginnerReportFinding {
     /** Scanner-authored, untrusted evidence detail; never a product action. */
     scannerDetails?: ScannerFindingDetails;
     summary?: string;
-    kind?: string;
+    kind?: EvidenceKind;
     engineRunId?: string;
     artifactId?: string;
     redacted?: boolean;
@@ -1229,6 +1229,16 @@ export type FindingWorkflowState =
   | "remediated_pending_verification"
   | "verified_resolved";
 
+/** Exact evidence provenance vocabulary serialized by Rust's domain::EvidenceKind. */
+export type EvidenceKind =
+  | "configuration"
+  | "observation"
+  | "external_validation"
+  | "source_code"
+  | "package_inventory"
+  | "user_declaration"
+  | "raw_tool_output";
+
 export interface Evidence {
   id: string;
   sourceEngine: string;
@@ -1242,7 +1252,7 @@ export interface Evidence {
   location?: string;
   rawArtifactHash: string;
   rawArtifactPath?: string;
-  kind?: string;
+  kind?: EvidenceKind;
   runId?: string;
   engineRunId?: string;
   artifactId?: string;
