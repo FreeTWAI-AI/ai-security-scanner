@@ -925,6 +925,158 @@ test("a clean terminal run is not an empty state, while incomplete and failed ru
   );
 });
 
+const emptyState = (container: HTMLElement): HTMLElement => {
+  const node = container.querySelector<HTMLElement>(".empty-state");
+  if (!node) throw new Error("the empty state did not render");
+  return node;
+};
+
+test("a terminal run with an empty check list does not claim completed checks found no issues", () => {
+  const { container } = renderReport(
+    report("no_checks_completed", { coverageCounts: counts({ notTested: 4 }) }),
+    [],
+    [catalogRun("trivy")],
+  );
+
+  const empty = emptyState(container);
+  expect(empty.querySelector("h2")?.textContent).not.toContain(
+    "No problems were observed in the work that completed",
+  );
+  expect(empty.textContent).not.toContain(
+    "The completed checks recorded no issues in their tested scope",
+  );
+  // Nothing completed is not inventory-completed.
+  expect(empty.querySelector("h2")?.textContent).not.toContain("Inventory or connectivity results");
+  expect(empty.textContent).not.toContain("The completed work records inventory or connectivity only");
+  expect(empty.querySelector("h2")?.textContent).toContain("Scan needs attention");
+  expect(empty.textContent).toContain("Retry unfinished checks");
+  const pill = statePill(container);
+  expect(pill.textContent).toContain("No checks completed");
+  expect(pill.className).toContain("status-pill--danger");
+  expect(pill.className).not.toContain("status-pill--positive");
+
+  cleanup();
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const { container: zh } = renderReport(
+    report("no_checks_completed", { coverageCounts: counts({ notTested: 4 }) }),
+    [],
+    [catalogRun("trivy")],
+  );
+  const zhEmpty = emptyState(zh);
+  expect(zhEmpty.querySelector("h2")?.textContent).toContain("掃描需要處理");
+  expect(zhEmpty.textContent).toContain("請到「掃描進度」重試未完成的檢查。");
+  expect(zhEmpty.textContent).not.toContain("已完成的檢查在實際測試範圍內沒有記錄問題");
+});
+
+test("a terminal run whose security checks all failed does not claim completed checks found no issues", () => {
+  const base = report("no_checks_completed");
+  const { container } = renderReport(report("no_checks_completed", {
+    requested: { ...base.requested, requestedCheckIds: ["trivy"] },
+    actual: {
+      checks: [{
+        taskId: "trivy-task",
+        checkId: "trivy",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "failed",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageCounts: counts({ failed: 1 }),
+  }), [], [catalogRun("trivy")]);
+
+  const empty = emptyState(container);
+  expect(empty.querySelector("h2")?.textContent).not.toContain(
+    "No problems were observed in the work that completed",
+  );
+  expect(empty.textContent).not.toContain(
+    "The completed checks recorded no issues in their tested scope",
+  );
+  expect(empty.querySelector("h2")?.textContent).not.toContain("Inventory or connectivity results");
+  expect(empty.textContent).not.toContain("The completed work records inventory or connectivity only");
+  expect(empty.querySelector("h2")?.textContent).toContain("Scan needs attention");
+  expect(empty.textContent).toContain("Retry unfinished checks");
+  const pill = statePill(container);
+  expect(pill.textContent).toContain("No checks completed");
+  expect(pill.className).toContain("status-pill--danger");
+});
+
+test("completed inventory with a failed security check does not claim a clean completed scope", () => {
+  const base = report("partial");
+  const { container } = renderReport(report("partial", {
+    requested: { ...base.requested, requestedCheckIds: ["syft", "trivy"] },
+    actual: {
+      checks: [{
+        taskId: "syft-task",
+        checkId: "syft",
+        resultKind: "inventory",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [],
+      }, {
+        taskId: "trivy-task",
+        checkId: "trivy",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "failed",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageCounts: counts({ testedComplete: 1, failed: 1 }),
+  }), [], [catalogRun("trivy")]);
+
+  const empty = emptyState(container);
+  expect(empty.querySelector("h2")?.textContent).not.toContain(
+    "No problems were observed in the work that completed",
+  );
+  expect(empty.textContent).not.toContain(
+    "The completed checks recorded no issues in their tested scope",
+  );
+  expect(empty.querySelector("h2")?.textContent).toContain("Inventory or connectivity results");
+  expect(empty.textContent).toContain(
+    "The completed work records inventory or connectivity only. Choose an applicable security check to look for weaknesses.",
+  );
+  const pill = statePill(container);
+  expect(pill.textContent).toContain("Completed with gaps");
+  expect(pill.className).not.toContain("status-pill--positive");
+
+  cleanup();
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const { container: zh } = renderReport(report("partial", {
+    requested: { ...base.requested, requestedCheckIds: ["syft", "trivy"] },
+    actual: {
+      checks: [{
+        taskId: "syft-task",
+        checkId: "syft",
+        resultKind: "inventory",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [],
+      }, {
+        taskId: "trivy-task",
+        checkId: "trivy",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "failed",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageCounts: counts({ testedComplete: 1, failed: 1 }),
+  }), [], [catalogRun("trivy")]);
+  const zhEmpty = emptyState(zh);
+  expect(zhEmpty.querySelector("h2")?.textContent).toContain("盤點或連線結果");
+  expect(zhEmpty.textContent).toContain(
+    "已完成的工作只記錄盤點或連線資訊。若要尋找弱點，請選擇適用的資安檢查。",
+  );
+  expect(zhEmpty.textContent).not.toContain("已完成的檢查在實際測試範圍內沒有記錄問題");
+});
+
 test("an incomplete asset row exposes a direct action control, not only prose", () => {
   const onOpenProgress = vi.fn();
   const { container } = renderReport(report("partial", {

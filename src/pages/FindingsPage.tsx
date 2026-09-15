@@ -2205,6 +2205,10 @@ export function FindingsPage({
       ? localhostTcpBeginnerSummary(latestRun.engineRuns[0]!)
       : undefined;
     const requestOutcomeSummary = latestRequestOutcomeSummary;
+    const hasCompletedSecurityCheck = Boolean(report?.actual.checks.some((check) =>
+      check.status === "tested_complete" && checkResultKind(check) === "security_check"));
+    const hasCompletedNonSecurityWork = Boolean(report?.actual.checks.some((check) =>
+      check.status === "tested_complete" && checkResultKind(check) !== "security_check"));
     const title = !latestRun
       ? text(copy.emptyNoRunTitle)
       : requestOutcomeSummary
@@ -2217,7 +2221,11 @@ export function FindingsPage({
               ? text(copy.emptyIncompleteTitle)
               : unknownSources > 0
                 ? text(copy.emptyUnknownTitle)
-                : text(copy.emptyCompletedTitle);
+                : hasCompletedSecurityCheck
+                  ? text(copy.emptyCompletedTitle)
+                  : hasCompletedNonSecurityWork
+                    ? text(copy.nonSecurityEmptyTitle)
+                    : text(copy.emptyIncompleteTitle);
     const description = !latestRun
       ? text(copy.emptyNoRunDescription)
       : requestOutcomeSummary
@@ -2234,9 +2242,11 @@ export function FindingsPage({
               ? text(copy.emptyIncompleteDescription)
               : unknownSources > 0
                 ? text(copy.emptyUnknownDescription, { count: formatNumber(unknownSources) })
-                : text(copy.emptyCompletedDescription, { count: formatNumber(connectedWithoutAssets) });
-    const hasCompletedSecurityCheck = Boolean(report?.actual.checks.some((check) =>
-      check.status === "tested_complete" && checkResultKind(check) === "security_check"));
+                : hasCompletedSecurityCheck
+                  ? text(copy.emptyCompletedDescription, { count: formatNumber(connectedWithoutAssets) })
+                  : hasCompletedNonSecurityWork
+                    ? text(copy.nonSecurityEmptyDescription)
+                    : text(copy.emptyIncompleteDescription);
     const cleanCompletedOutcome = Boolean(latestRun)
       && !incompleteRun
       && !requestOutcomeSummary
