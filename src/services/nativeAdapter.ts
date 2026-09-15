@@ -207,14 +207,12 @@ interface NativeCoverageEntry {
 interface NativeEngineRun {
   id: string;
   engine_id: string;
-  task_kind?:
-    | { kind: "catalog_engine" }
-    | {
-        kind: "built_in_localhost_tcp";
-        port: number;
-        timeout_ms: number;
-        payload_bytes: number;
-      };
+  task_kind?: {
+    kind: string;
+    port?: unknown;
+    timeout_ms?: unknown;
+    payload_bytes?: unknown;
+  };
   localhost_tcp_observation?: {
     outcome: string;
     observed_at: string;
@@ -1684,10 +1682,18 @@ const mapEngineKnowledgeInput = (
 };
 
 const mapEngineTaskKind = (taskKind: NativeEngineRun["task_kind"]): EngineTaskKind => {
-  if (taskKind?.kind !== "built_in_localhost_tcp") return { kind: "catalog_engine" };
+  if (!taskKind || taskKind.kind === "catalog_engine") return { kind: "catalog_engine" };
+  if (
+    taskKind.kind !== "built_in_localhost_tcp"
+    || !Number.isInteger(taskKind.port)
+    || Number(taskKind.port) < 1
+    || Number(taskKind.port) > 65_535
+    || taskKind.timeout_ms !== 3_000
+    || taskKind.payload_bytes !== 0
+  ) return { kind: "invalid_task" };
   return {
     kind: "built_in_localhost_tcp",
-    port: taskKind.port,
+    port: Number(taskKind.port),
     timeoutMs: taskKind.timeout_ms,
     payloadBytes: taskKind.payload_bytes,
   };
@@ -2317,7 +2323,9 @@ export const adaptNativeCase = (
       }) && taskKind.kind === "built_in_localhost_tcp" ? taskKind : undefined;
       const isBuiltInLocalhostTcp = Boolean(builtInLocalhostTask);
       const manifest = isBuiltInLocalhostTcp ? undefined : manifestById.get(engineRun.engine_id);
-      const status = mapEngineStatus(engineRun.status);
+      const status = taskKind.kind === "invalid_task"
+        ? "not_executed"
+        : mapEngineStatus(engineRun.status);
       const checkpoint = parseCheckpoint(engineRun.resume_token, engineRun);
       const releaseIncompatible = engineRun.error_code === "resume_release_incompatible";
       const savedWorkPlanUnavailable = engineRun.error_code === "resume_work_plan_invalid";
@@ -2439,7 +2447,7 @@ export const adaptNativeCase = (
       return applicableRuns.length > 0 && applicableRuns.every((engineRun) =>
         engineRun.taskKind.kind === "built_in_localhost_tcp"
           ? exactCompletedLocalhostBinding(engineRun, assetId, nativeCase.assets)
-          : engineRun.status === "completed"
+          : engineRun.taskKind.kind === "catalog_engine" && engineRun.status === "completed"
       );
     });
     const status = requestOutcome ? "no_checks_completed" : runStatus(engineRuns);

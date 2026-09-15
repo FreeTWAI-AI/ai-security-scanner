@@ -769,8 +769,8 @@ export type EngineRecoveryAction =
   | "continue_saved_results"
   | "finish_cleanup";
 
-/** The immutable work contract saved for one check. */
-export type EngineTaskKind =
+/** Exact `EngineTaskKind` tags and fields serialized by the native Rust domain. */
+export type EngineTaskKindWire =
   | { kind: "catalog_engine" }
   | {
       kind: "built_in_localhost_tcp";
@@ -778,6 +778,9 @@ export type EngineTaskKind =
       timeoutMs: number;
       payloadBytes: number;
     };
+
+/** The work contract the app can present without inventing scanner provenance. */
+export type EngineTaskKind = EngineTaskKindWire | { kind: "invalid_task" };
 
 export type LocalhostTcpOutcome = "reachable" | "closed" | "timed_out";
 

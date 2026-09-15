@@ -2344,6 +2344,33 @@ test("mixed terminal and queued engine work keeps the scan queued for downstream
   }
 });
 
+test("unknown or malformed native tasks never claim scanner completion or coverage", () => {
+  for (const task_kind of [
+    { kind: "future_task" },
+    { kind: "built_in_localhost_tcp", port: 9001, timeout_ms: 4_000, payload_bytes: 0 },
+  ]) {
+    const workspace = adaptNativeCase(platformCaseFixture({
+      scan_runs: [{
+        id: "run-invalid-task",
+        case_id: "case-platforms-1",
+        sequence: 1,
+        created_at: "2026-08-26T00:00:00Z",
+        completed_at: "2026-08-26T00:01:00Z",
+        knowledge_cutoff: "2026-08-24T00:00:00Z",
+        engine_runs: [{
+          ...engineRunFixture("invalid-task", "completed"),
+          task_kind,
+        }],
+      }],
+    }));
+
+    assert.deepEqual(workspace.runs[0]?.engineRuns[0]?.taskKind, { kind: "invalid_task" });
+    assert.equal(workspace.runs[0]?.engineRuns[0]?.status, "not_executed");
+    assert.equal(workspace.runs[0]?.coveredAssetCount, 0);
+    assert.equal(workspace.runs[0]?.status, "failed");
+  }
+});
+
 test("engine knowledge metadata accepts only the closed Rust wire vocabularies", () => {
   const validManifest = adaptNativeManifest(nativeManifestFixture({ id: "valid-knowledge" }));
   const invalidManifest = adaptNativeManifest(nativeManifestFixture({ id: "future-knowledge" }));

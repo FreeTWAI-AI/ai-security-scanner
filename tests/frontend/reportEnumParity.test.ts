@@ -134,7 +134,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
 const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
   ["beginner_report.rs", "BeginnerInventoryItemKind", "BeginnerInventoryItem"],
   ["beginner_report.rs", "TechnicalExecution", "BeginnerTechnicalExecution"],
-  ["domain.rs", "EngineTaskKind", "EngineTaskKind"],
+  ["domain.rs", "EngineTaskKind", "EngineTaskKindWire"],
 ];
 
 for (const [file, rustName, typescriptName] of PAIRS) {
