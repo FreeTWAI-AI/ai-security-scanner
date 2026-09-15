@@ -1395,6 +1395,28 @@ test("draft summaries with no assets or applicable sources fall back to the sele
   assert.deepEqual(snapshot.cases[0]?.platforms, ["external"]);
 });
 
+test("unknown native case and coverage statuses fail closed", () => {
+  const snapshot = adaptNativeSnapshot(snapshotFixture([summaryFixture({
+    status: "future_case_status",
+  })]), []);
+  const workspace = adaptNativeCase(platformCaseFixture({
+    status: "future_case_status",
+    coverage: [{
+      id: "coverage-future",
+      label: "Future coverage state",
+      source_kind: "user_declared",
+      asset_id: null,
+      status: "future_coverage_status",
+      explanation: "A newer backend value must not imply completed coverage.",
+      observed_at: null,
+    }],
+  }));
+
+  assert.equal(snapshot.cases[0]?.phase, "needs_attention");
+  assert.equal(workspace.case.phase, "needs_attention");
+  assert.equal(workspace.coverage[0]?.state, "source_unavailable_unknown");
+});
+
 const platformCaseFixture = (overrides: Record<string, unknown> = {}) => ({
   id: "case-platforms-1",
   title: "Platform display case",

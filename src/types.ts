@@ -37,6 +37,18 @@ export type AssessmentActivity =
 /** The saved answer to whether selected code was generated or materially changed by AI. */
 export type AiGeneratedArtifactAnswer = "yes" | "no" | "unknown";
 
+/** Exact `CaseStatus` values serialized by the native Rust domain. */
+export type CaseStatusWire =
+  | "draft"
+  | "discovering"
+  | "scope_review"
+  | "ready"
+  | "scanning"
+  | "needs_attention"
+  | "ready_for_handoff"
+  | "verifying"
+  | "archived";
+
 export type CasePhase =
   | "draft"
   | "discovering"
@@ -154,6 +166,15 @@ export type CoverageState =
   | "authorized_incomplete"
   | "source_connected_none"
   | "source_unavailable_unknown"
+  | "not_applicable";
+
+/** Exact `CoverageStatus` values serialized by the native Rust domain. */
+export type CoverageStatusWire =
+  | "discovered_authorized_scanned"
+  | "discovered_not_authorized"
+  | "authorized_scan_incomplete"
+  | "source_connected_nothing_discovered"
+  | "source_not_connected_unknown"
   | "not_applicable";
 
 export type SourceKind =

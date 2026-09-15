@@ -17,6 +17,7 @@ import type {
   ExportPreview,
   ReportLocale,
   CasePhase,
+  CaseStatusWire,
   CaseWorkspace,
   CloudPlatform,
   CompanySize,
@@ -26,6 +27,7 @@ import type {
   ControlMappingProvenance,
   CoverageRecord,
   CoverageState,
+  CoverageStatusWire,
   DataClass,
   DiffState,
   DistributionMode,
@@ -1111,7 +1113,7 @@ const withDraftIntentFallback = (
     ? suggestedPlatformsForIntent(intent)
     : platforms;
 
-const phaseMap: Record<string, CasePhase> = {
+const phaseMap: Record<CaseStatusWire, CasePhase> = {
   draft: "draft",
   discovering: "discovering",
   scope_review: "scope_review",
@@ -1123,7 +1125,10 @@ const phaseMap: Record<string, CasePhase> = {
   archived: "archived",
 };
 
-const mapPhase = (status: string): CasePhase => phaseMap[status] ?? "needs_attention";
+const mapPhase = (status: string): CasePhase =>
+  Object.prototype.hasOwnProperty.call(phaseMap, status)
+    ? phaseMap[status as CaseStatusWire]
+    : "needs_attention";
 
 const mapCompanySize = (value: string): CompanySize => {
   if (!value.trim() || /not provided|unknown|unspecified|not sure/i.test(value)) return "unknown";
@@ -1315,7 +1320,7 @@ export const adaptDeclaredHostScanMetadata = (
 };
 
 const mapCoverageState = (status: string): CoverageState => {
-  const states: Record<string, CoverageState> = {
+  const states: Record<CoverageStatusWire, CoverageState> = {
     discovered_authorized_scanned: "discovered_authorized_scanned",
     discovered_not_authorized: "discovered_not_authorized",
     authorized_scan_incomplete: "authorized_incomplete",
@@ -1323,7 +1328,9 @@ const mapCoverageState = (status: string): CoverageState => {
     source_not_connected_unknown: "source_unavailable_unknown",
     not_applicable: "not_applicable",
   };
-  return states[status] ?? "source_unavailable_unknown";
+  return Object.prototype.hasOwnProperty.call(states, status)
+    ? states[status as CoverageStatusWire]
+    : "source_unavailable_unknown";
 };
 
 const mapSourceKind = (kind: string): SourceKind => {
