@@ -20,11 +20,13 @@ const typescript = readFileSync(new URL("../../src/types.ts", import.meta.url), 
 const beginnerReport = rust("beginner_report.rs");
 const domain = rust("domain.rs");
 const externalScope = rust("external_scope.rs");
+const managedRuntime = rust("managed_runtime.rs");
 
 const rustSources: Readonly<Record<string, string>> = {
   "beginner_report.rs": beginnerReport,
   "domain.rs": domain,
   "external_scope.rs": externalScope,
+  "managed_runtime.rs": managedRuntime,
 };
 
 const rustSource = (file: string): string => {
@@ -38,27 +40,31 @@ const serdeSnakeCase = (variant: string): string =>
   variant.replaceAll(/(?<!^)[A-Z]/gu, (capital) => `_${capital}`).toLowerCase();
 
 /**
- * The variants of one `#[serde(rename_all = "snake_case")]` enum, as the wire
- * spells them, including any per-variant `serde(rename)` override.
+ * The variants of one snake_case wire enum, as the wire spells them, including
+ * any per-variant `serde(rename)` override.
  *
- * The attribute is required rather than assumed: an enum without it serializes
- * its variants verbatim, and comparing those against a snake_case union would
- * report drift that is not there -- or, worse, miss drift that is.
+ * Snake-case on the wire is required rather than assumed: an enum without
+ * `rename_all = "snake_case"` serializes its variants verbatim unless every
+ * variant has an explicit `serde(rename)`. Comparing PascalCase wire names
+ * against a snake_case union would report drift that is not there -- or,
+ * worse, miss drift that is.
  */
 const rustVariants = (source: string, name: string): string[] => {
   const declaration = source.indexOf(`pub enum ${name} {`);
   assert.ok(declaration > 0, `Rust enum ${name} was not found`);
   const attributes = source.slice(Math.max(0, declaration - 400), declaration);
-  assert.ok(
-    attributes.includes('#[serde(rename_all = "snake_case")]'),
-    `${name} is compared as snake_case but does not declare it`,
-  );
+  const hasRenameAll = attributes.includes('#[serde(rename_all = "snake_case")]');
   const body = source.slice(declaration + `pub enum ${name} {`.length);
   const end = body.indexOf("\n}");
   assert.ok(end > 0, `Rust enum ${name} has no closing brace`);
-  return [...body.slice(0, end).matchAll(
+  const matches = [...body.slice(0, end).matchAll(
     /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*),[ \t]*$/gmu,
-  )].map((match) => match[1] ?? serdeSnakeCase(match[2]!));
+  )];
+  assert.ok(
+    hasRenameAll || (matches.length > 0 && matches.every((match) => match[1])),
+    `${name} is compared as snake_case but does not declare rename_all or per-variant serde rename`,
+  );
+  return matches.map((match) => match[1] ?? serdeSnakeCase(match[2]!));
 };
 
 /** Variants of an internally tagged Rust enum whose members carry fields. */
@@ -145,6 +151,9 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["external_scope.rs", "ExternalActivity", "ExternalActivity"],
   ["external_scope.rs", "TransportProtocol", "TransportProtocol"],
   ["external_scope.rs", "DirectNetworkTargetKind", "DirectNetworkTargetKind"],
+  ["managed_runtime.rs", "ManagedRuntimeSetupPhase", "ManagedRuntimeSetupPhase"],
+  ["managed_runtime.rs", "ManagedRuntimeSetupFailureReason", "ManagedRuntimeSetupFailureReason"],
+  ["managed_runtime.rs", "ManagedRuntimeSetupNextAction", "ManagedRuntimeSetupNextAction"],
 ];
 
 const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
@@ -210,6 +219,16 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
     "hostname",
     "address",
     "network",
+  ]);
+  // Explicit per-variant serde names, with no enum-level rename_all.
+  assert.deepEqual(rustVariants(managedRuntime, "ManagedRuntimeSetupFailureReason"), [
+    "packaged_runtime_missing",
+    "packaged_runtime_verification_failed",
+    "windows_wsl_not_installed",
+    "windows_wsl_optional_feature_disabled",
+    "windows_wsl_update_required",
+    "windows_restart_required",
+    "windows_wsl_command_failed",
   ]);
   assert.deepEqual(unionMembers("BeginnerReportLifecycle"), ["final"]);
   assert.deepEqual(rustTaggedVariants(beginnerReport, "TechnicalExecution"), [
