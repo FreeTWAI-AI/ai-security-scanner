@@ -1,4 +1,3 @@
-import type { UseCaseId } from "./useCases";
 import type { InternalDeviceScanProfile } from "./internalDeviceProfile";
 import type { InternalEndpointScanProfile } from "./internalEndpointProfile";
 import type { InternalHostScanProfile } from "./internalHostProfile";
@@ -34,6 +33,18 @@ export type AssessmentActivity =
   | "low_impact_external_checks"
   | "active_external_vulnerability_tests";
 
+/** Exact `AssessmentIntent` values serialized by the native Rust domain. */
+export type AssessmentIntent =
+  | "deployed_website"
+  | "external_ip_or_domain"
+  | "internal_it_environment"
+  | "ai_application"
+  | "source_code"
+  | "infrastructure_as_code"
+  | "cloud_account"
+  | "container_image"
+  | "kubernetes";
+
 /** The saved answer to whether selected code was generated or materially changed by AI. */
 export type AiGeneratedArtifactAnswer = "yes" | "no" | "unknown";
 
@@ -66,7 +77,7 @@ export interface AssessmentCase {
   id: string;
   name: string;
   /** The plain-language route the user chose when creating this scan project. */
-  assessmentIntent?: UseCaseId;
+  assessmentIntent?: AssessmentIntent;
   aiGeneratedArtifact: AiGeneratedArtifactAnswer;
   organizationName: string;
   companySize: CompanySize;
@@ -92,7 +103,7 @@ export interface AssessmentCase {
 
 export interface CreateCaseInput {
   name: string;
-  assessmentIntent?: UseCaseId;
+  assessmentIntent?: AssessmentIntent;
   aiGeneratedArtifact: AiGeneratedArtifactAnswer;
   organizationName: string;
   companySize: CompanySize;

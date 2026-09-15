@@ -1,17 +1,9 @@
 import type { IconName } from "./components/Icon";
 import type { Provider } from "./providerAuthorizationPolicy";
-import type { AssessmentActivity, CloudPlatform, KnownAssetKind } from "./types";
+import type { AssessmentActivity, AssessmentIntent, CloudPlatform, KnownAssetKind } from "./types";
 
-export type UseCaseId =
-  | "deployed_website"
-  | "external_ip_or_domain"
-  | "internal_it_environment"
-  | "ai_application"
-  | "source_code"
-  | "infrastructure_as_code"
-  | "cloud_account"
-  | "container_image"
-  | "kubernetes";
+/** Product-facing name for the native assessment-intent wire coordinate. */
+export type UseCaseId = AssessmentIntent;
 
 export type UseCaseInputKind =
   | "url"

@@ -1384,6 +1384,18 @@ test("missing or malformed AI-generated answers fail closed to unknown", () => {
   }
 });
 
+test("unknown native assessment intents never select a guided scan route", () => {
+  const snapshot = adaptNativeSnapshot(snapshotFixture([summaryFixture({
+    assessment_intent: "future_assessment_intent",
+  })]), []);
+  const workspace = adaptNativeCase(platformCaseFixture({
+    assessment_intent: "future_assessment_intent",
+  }));
+
+  assert.equal(snapshot.cases[0]?.assessmentIntent, undefined);
+  assert.equal(workspace.case.assessmentIntent, undefined);
+});
+
 test("draft summaries with no assets or applicable sources fall back to the selected assessment route", () => {
   const snapshot = adaptNativeSnapshot(snapshotFixture([summaryFixture({
     assessment_intent: "deployed_website",
