@@ -39,6 +39,7 @@ import type {
   Finding,
   FindingFamily,
   FindingGroup,
+  FindingGroupAction,
   FindingGroupEvent,
   FindingWorkflowState,
   LocalInputProfile,
@@ -690,7 +691,7 @@ interface NativeFindingGroupEvent {
   id: string;
   case_id: string;
   group_id: string;
-  action: "created" | "removed";
+  action: FindingGroupAction;
   title: string;
   finding_ids: string[];
   rationale: string;
