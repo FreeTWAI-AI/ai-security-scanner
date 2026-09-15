@@ -775,6 +775,100 @@ test("beginner check result kinds preserve known values, legacy absence, and fai
   }
 });
 
+test("report target and stage availability fail closed on unknown required values", () => {
+  const adaptedFor = (availability: unknown) => {
+    const fixture = beginnerStatusReportFixture();
+    return adaptBeginnerMasterReport({
+      ...fixture,
+      requested: {
+        ...fixture.requested,
+        targets: fixture.requested.targets.map((target) => ({
+          ...target,
+          label_availability: availability,
+          asset_kind_availability: availability,
+        })),
+        stage: { ...fixture.requested.stage, availability },
+      },
+    });
+  };
+
+  for (const availability of ["recorded", "current_case_fallback", "unavailable"]) {
+    const report = adaptedFor(availability);
+    assert.equal(report.requested.targets[0]?.labelAvailability, availability);
+    assert.equal(report.requested.targets[0]?.assetKindAvailability, availability);
+    assert.equal(report.requested.stage.availability, availability);
+  }
+  for (const availability of [undefined, null, "future_provenance", true, 1]) {
+    const report = adaptedFor(availability);
+    assert.equal(report.requested.targets[0]?.labelAvailability, "unavailable");
+    assert.equal(report.requested.targets[0]?.assetKindAvailability, "unavailable");
+    assert.equal(report.requested.stage.availability, "unavailable");
+  }
+});
+
+test("unknown beginner inventory kinds cannot become named cloud resources", () => {
+  const fixture = beginnerStatusReportFixture();
+  const source = {
+    observation_id: "inventory-unknown",
+    engine_id: "future-engine",
+    engine_run_id: "task-status",
+    artifact_id: "artifact-unknown",
+    artifact_sha256: "f".repeat(64),
+    pointer: "/items/0",
+    observed_at: "2026-09-15T12:00:00Z",
+  };
+  const unknownItem = {
+    kind: "future_inventory_kind",
+    asset_id: "asset-status",
+    resource_type: "misleading-resource",
+    native_id: "misleading-id",
+    display_name: "Misleading cloud resource",
+    sources: [source],
+  };
+  const cloudResource = {
+    kind: "cloud_resource",
+    asset_id: "asset-status",
+    resource_type: "aws_s3_bucket",
+    native_id: "bucket-1",
+    display_name: "Known bucket",
+    sources: [{ ...source, observation_id: "inventory-known", pointer: "/items/1" }],
+  };
+  const report = adaptBeginnerMasterReport({
+    ...fixture,
+    inventory: {
+      total: 2,
+      counts: {
+        services: 0,
+        software_components: 0,
+        cloud_resources: 1,
+        workflow_components: 0,
+        workflow_relationships: 0,
+      },
+      asset_ids: ["asset-status"],
+      representative_sample: [unknownItem],
+      items: [unknownItem, cloudResource],
+      by_asset: [{
+        asset_id: "asset-status",
+        total: 2,
+        counts: {
+          services: 0,
+          software_components: 0,
+          cloud_resources: 1,
+          workflow_components: 0,
+          workflow_relationships: 0,
+        },
+        representative_sample: [unknownItem],
+      }],
+    },
+  });
+
+  assert.deepEqual(report.inventory?.representativeSample, []);
+  assert.equal(report.inventory?.items.length, 1);
+  assert.equal(report.inventory?.items[0]?.kind, "cloud_resource");
+  assert.deepEqual(report.inventory?.byAsset[0]?.representativeSample, []);
+  assert.doesNotMatch(JSON.stringify(report.inventory), /Misleading cloud resource/u);
+});
+
 test("beginner coverage gap kinds preserve known values and fail closed to unavailable", () => {
   const known = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapKind: "failed" }));
   assert.equal(known.coverageGaps[0]?.kind, "failed");
@@ -1094,6 +1188,21 @@ test("managed runtime setup adapter preserves the exact failed recovery contract
     }));
     assert.equal(adapted.failureReason, failureReason);
     assert.equal(adapted.nextAction, nextAction);
+  }
+});
+
+test("managed runtime control claims require exact booleans", () => {
+  for (const malformed of [undefined, null, "true", 1, {}]) {
+    const active = adaptManagedRuntimeSetupStatus(runtimeSetupDto({ active: malformed }));
+    assert.equal(active.active, false);
+
+    const cancel = adaptManagedRuntimeSetupStatus(runtimeSetupDto({ can_cancel: malformed }));
+    assert.equal(cancel.canCancel, false);
+
+    const retry = adaptManagedRuntimeSetupStatus(runtimeSetupDto({ can_retry: malformed }));
+    assert.equal(retry.canRetry, false);
+    assert.equal(retry.failureReason, "windows_wsl_optional_feature_disabled");
+    assert.equal(retry.nextAction, "enable_wsl_optional_features");
   }
 });
 
@@ -2578,6 +2687,153 @@ test("unknown native scope permissions cannot create authorization", () => {
   assert.deepEqual(workspace.scopeGrants, []);
 });
 
+const frozenExternalScopeFixture = (overrides: Record<string, unknown> = {}) => {
+  const templatePolicy = {
+    revision: "nuclei-safe-v1",
+    profile_id: "nuclei_safe_http",
+    allowed_template_ids: [],
+    allow_headless: false,
+    allow_out_of_band: false,
+    allow_fuzzing: false,
+    allow_file_upload: false,
+    allow_denial_of_service: false,
+    allow_credential_attacks: false,
+    ...(overrides.template_policy as Record<string, unknown> | undefined),
+  };
+  return {
+    id: "external-scope-1",
+    case_id: "case-platforms-1",
+    asset_id: "repository-asset",
+    target: { kind: "hostname", value: "example.test" },
+    ports: [443],
+    protocol: "https",
+    activity: "active_external",
+    rate_policy: { requests_per_second: 5, concurrency: 2, timeout_seconds: 10 },
+    asserted_authority: "Approved test target",
+    approved_by: "Owner",
+    approved_at: "2026-08-26T00:00:00Z",
+    expires_at: "2026-09-26T00:00:00Z",
+    allow_sensitive_networks: false,
+    ...overrides,
+    template_policy: templatePolicy,
+  };
+};
+
+const caseWithExternalScope = (externalScope: unknown, omit = false) => adaptNativeCase(platformCaseFixture({
+  scope_grants: [{
+    id: "scope-external",
+    asset_id: "repository-asset",
+    permission: "active_external_testing",
+    confirmed_by: "Owner",
+    confirmed_at: "2026-08-26T00:00:00Z",
+    notes: null,
+    ...(omit ? {} : { external_scope: externalScope }),
+  }],
+}));
+
+test("frozen external scopes preserve absence and drop malformed authorization claims", () => {
+  assert.equal(caseWithExternalScope(undefined, true).scopeGrants[0]?.externalScope, undefined);
+  assert.equal(caseWithExternalScope(null).scopeGrants[0]?.externalScope, undefined);
+  assert.deepEqual(caseWithExternalScope(frozenExternalScopeFixture()).scopeGrants[0]?.externalScope, {
+    id: "external-scope-1",
+    caseId: "case-platforms-1",
+    assetId: "repository-asset",
+    target: "example.test",
+    targetKind: "hostname",
+    ports: [443],
+    protocol: "https",
+    activity: "active_external",
+    ratePolicy: { requestsPerSecond: 5, concurrency: 2, timeoutSeconds: 10 },
+    templatePolicy: {
+      revision: "nuclei-safe-v1",
+      profileId: "nuclei_safe_http",
+      allowedTemplateIds: [],
+      allowHeadless: false,
+      allowOutOfBand: false,
+      allowFuzzing: false,
+      allowFileUpload: false,
+      allowDenialOfService: false,
+      allowCredentialAttacks: false,
+    },
+    assertedAuthority: "Approved test target",
+    approvedBy: "Owner",
+    approvedAt: "2026-08-26T00:00:00Z",
+    expiresAt: "2026-09-26T00:00:00Z",
+    allowSensitiveNetworks: false,
+  });
+
+  const malformedScopes = [
+    frozenExternalScopeFixture({ target: { kind: "future_target", value: "example.test" } }),
+    frozenExternalScopeFixture({ protocol: "future_protocol" }),
+    frozenExternalScopeFixture({ activity: "future_activity" }),
+    ...[
+      "allow_headless",
+      "allow_out_of_band",
+      "allow_fuzzing",
+      "allow_file_upload",
+    ].map((field) => frozenExternalScopeFixture({ template_policy: { [field]: "false" } })),
+    frozenExternalScopeFixture({ template_policy: { allow_denial_of_service: true } }),
+    frozenExternalScopeFixture({ template_policy: { allow_credential_attacks: true } }),
+    frozenExternalScopeFixture({ allow_sensitive_networks: "false" }),
+  ];
+  const siblingFinding = {
+    id: "finding-kept",
+    case_id: "case-platforms-1",
+    first_seen_run_id: "run-1",
+    last_seen_run_id: "run-1",
+    fingerprint: "fingerprint-finding-kept",
+    title: "Retained finding",
+    plain_language_summary: "Review this scanner observation.",
+    possible_impact: "Impact was not rated by the source.",
+    severity: "high",
+    confidence: "medium",
+    priority: 50,
+    priority_reasons: [],
+    asset_ids: ["repository-asset"],
+    evidence: [],
+    control_references: [],
+    recommendation: "Ask a qualified reviewer.",
+    verification_guidance: "Review the source evidence.",
+    rollback_considerations: null,
+    official_references: [],
+    recommended_expert_type: "Security reviewer",
+    status: "unreviewed",
+    tags: [],
+  };
+  for (const scope of malformedScopes) {
+    const workspace = adaptNativeCase(platformCaseFixture({
+      scope_grants: [{
+        id: "scope-external",
+        asset_id: "repository-asset",
+        permission: "active_external_testing",
+        confirmed_by: "Owner",
+        confirmed_at: "2026-08-26T00:00:00Z",
+        notes: null,
+        external_scope: scope,
+      }, {
+        id: "scope-sibling",
+        asset_id: "repository-asset",
+        permission: "local_artifact_read",
+        confirmed_by: "Owner",
+        confirmed_at: "2026-08-26T00:00:00Z",
+        notes: null,
+        external_scope: null,
+      }],
+      findings: [siblingFinding],
+    }));
+    const malformedGrant = workspace.scopeGrants.find((grant) => grant.id === "scope-external");
+    const siblingGrant = workspace.scopeGrants.find((grant) => grant.id === "scope-sibling");
+    assert.equal(workspace.scopeGrants.length, 2);
+    assert.equal(malformedGrant?.externalScope, undefined);
+    assert.deepEqual(malformedGrant?.modes, ["active_external"]);
+    assert.deepEqual(siblingGrant?.modes, ["local_artifact"]);
+    assert.equal(siblingGrant?.externalScope, undefined);
+    assert.equal(workspace.findings.length, 1);
+    assert.equal(workspace.findings[0]?.id, "finding-kept");
+    assert.equal(workspace.findings[0]?.title, "Retained finding");
+  }
+});
+
 const engineRunFixture = (id: string, status: string) => ({
   id,
   engine_id: id,
@@ -2595,6 +2851,63 @@ const engineRunFixture = (id: string, status: string) => ({
   raw_artifact_ids: [],
   error_code: status === "failed" ? "execution_failed" : null,
   error_message: status === "failed" ? "bounded test failure" : null,
+});
+
+test("scan attempts require a valid task that entered execution", () => {
+  const attemptedFor = (engineRun: Record<string, unknown> | undefined, lastRunId: unknown = null) => {
+    const workspace = adaptNativeCase(platformCaseFixture({
+      coverage: [{
+        id: "coverage-attempt",
+        label: "Repository",
+        source_kind: "file_system",
+        asset_id: "repository-asset",
+        status: "authorized_scan_incomplete",
+        explanation: "Attempt state under test.",
+        last_run_id: lastRunId,
+        observed_at: "2026-08-26T00:01:00Z",
+      }],
+      scan_runs: engineRun ? [{
+        id: "run-attempt",
+        case_id: "case-platforms-1",
+        sequence: 1,
+        created_at: "2026-08-26T00:00:00Z",
+        completed_at: "2026-08-26T00:01:00Z",
+        knowledge_cutoff: "2026-08-24T00:00:00Z",
+        engine_runs: [engineRun],
+      }] : [],
+    }));
+    return [workspace.assets[0]?.scanAttempted, workspace.coverage[0]?.scanAttempted];
+  };
+
+  assert.deepEqual(
+    attemptedFor(undefined, "run-attempt"),
+    [true, true],
+    "a retained last-run ID remains an attempt when the run is not in the loaded set",
+  );
+  assert.deepEqual(attemptedFor(undefined, undefined), [false, false], "legacy absence remains non-assertive");
+  assert.deepEqual(attemptedFor(undefined, null), [false, false]);
+  assert.deepEqual(attemptedFor(undefined, ""), [false, false]);
+  for (const standIn of [1, true, {}]) {
+    assert.deepEqual(attemptedFor(undefined, standIn), [false, false]);
+  }
+  assert.deepEqual(attemptedFor(engineRunFixture("queued-task", "queued")), [false, false]);
+  assert.deepEqual(attemptedFor({
+    ...engineRunFixture("unknown-status", "completed"),
+    status: "future_status",
+  }), [false, false]);
+  assert.deepEqual(attemptedFor({
+    ...engineRunFixture("invalid-task", "completed"),
+    task_kind: { kind: "future_task" },
+  }), [false, false]);
+  assert.deepEqual(attemptedFor({
+    ...engineRunFixture("missing-start", "completed"),
+    started_at: null,
+  }), [false, false]);
+  assert.deepEqual(
+    attemptedFor(engineRunFixture("legacy-catalog-task", "completed")),
+    [true, true],
+    "an absent legacy task kind keeps its defined catalog-engine meaning",
+  );
 });
 
 test("mixed terminal and queued engine work keeps the scan queued for downstream pages", () => {

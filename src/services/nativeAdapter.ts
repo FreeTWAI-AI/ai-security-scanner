@@ -974,6 +974,9 @@ export const adaptManagedRuntimeSetupStatus = (
   status: NativeManagedRuntimeSetupStatus,
 ): ManagedRuntimeSetupStatus => {
   const phase = managedRuntimeSetupPhases.has(status.phase) ? status.phase : "failed";
+  const active = exactBoolean(status.active) === true;
+  const canCancel = exactBoolean(status.can_cancel) === true;
+  const canRetry = exactBoolean(status.can_retry) === true;
   const failureReason = typeof status.failure_reason === "string"
     && managedRuntimeSetupFailureReasons.has(status.failure_reason)
     ? status.failure_reason
@@ -987,7 +990,7 @@ export const adaptManagedRuntimeSetupStatus = (
     && nextAction !== null
     && managedRuntimeRecoveryActions[failureReason] === nextAction;
   const hasValidNonRetryableFailure = phase === "failed"
-    && status.can_retry === false
+    && exactBoolean(status.can_retry) === false
     && failureReason !== null
     && managedRuntimeNonRetryableFailures.has(failureReason)
     && status.next_action === null;
@@ -996,7 +999,7 @@ export const adaptManagedRuntimeSetupStatus = (
   const lastHeartbeatAt = boundedRuntimeTimestamp(status.last_heartbeat_at);
   return {
     phase,
-    active: status.active,
+    active,
     prerequisiteRepairActive: status.prerequisite_repair_active,
     ...(operationId ? { operationId } : {}),
     ...(startedAt ? { startedAt } : {}),
@@ -1007,8 +1010,8 @@ export const adaptManagedRuntimeSetupStatus = (
     totalBytes: status.total_bytes ?? undefined,
     progressPercent: status.progress_percent ?? undefined,
     resumedFromBytes: status.resumed_from_bytes,
-    canCancel: status.can_cancel,
-    canRetry: status.can_retry,
+    canCancel,
+    canRetry,
     failureReason: hasValidRecovery || hasValidNonRetryableFailure
       ? failureReason ?? undefined
       : undefined,
@@ -1032,6 +1035,14 @@ const localNetworkCandidateStatuses = new Set<LocalNetworkCandidateStatus>([
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Untrusted IPC may send a truthy stand-in; only an exact boolean may stand as a claim. */
+const exactBoolean = (value: unknown): boolean | undefined =>
+  typeof value === "boolean" ? value : undefined;
+
+/** Untrusted IPC may send a truthy stand-in; only an exact non-empty string may stand as a retained identifier. */
+const exactNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0;
 
 const canonicalPrivateIpv4Cidr = (value: unknown): { target: string; addressCount: number } | undefined => {
   if (typeof value !== "string" || value.length > 18) return undefined;
@@ -1444,39 +1455,65 @@ const mapScopeMode = (permission: string): ScopeMode | undefined => {
     : undefined;
 };
 
-const adaptExternalScope = (scope: NativeExternalScope): FrozenExternalScope => ({
-  id: scope.id,
-  caseId: scope.case_id,
-  assetId: scope.asset_id,
-  target: scope.target.value,
-  targetKind: scope.target.kind,
-  ports: scope.ports,
-  protocol: scope.protocol,
-  activity: scope.activity,
-  ratePolicy: {
-    requestsPerSecond: scope.rate_policy.requests_per_second,
-    concurrency: scope.rate_policy.concurrency,
-    timeoutSeconds: scope.rate_policy.timeout_seconds,
-  },
-  templatePolicy: {
-    revision: scope.template_policy.revision,
-    ...(typeof scope.template_policy.profile_id === "string"
-      ? { profileId: scope.template_policy.profile_id }
-      : {}),
-    allowedTemplateIds: scope.template_policy.allowed_template_ids,
-    allowHeadless: scope.template_policy.allow_headless,
-    allowOutOfBand: scope.template_policy.allow_out_of_band,
-    allowFuzzing: scope.template_policy.allow_fuzzing,
-    allowFileUpload: scope.template_policy.allow_file_upload,
-    allowDenialOfService: scope.template_policy.allow_denial_of_service,
-    allowCredentialAttacks: scope.template_policy.allow_credential_attacks,
-  },
-  assertedAuthority: scope.asserted_authority,
-  approvedBy: scope.approved_by,
-  approvedAt: scope.approved_at,
-  expiresAt: scope.expires_at,
-  allowSensitiveNetworks: scope.allow_sensitive_networks,
-});
+const DIRECT_NETWORK_TARGET_KINDS: readonly DirectNetworkTargetKind[] = ["hostname", "address", "network"];
+const TRANSPORT_PROTOCOLS: readonly TransportProtocol[] = ["tcp", "udp", "tls", "http", "https"];
+const EXTERNAL_ACTIVITIES: readonly ExternalActivity[] = [
+  "passive_public_discovery",
+  "low_impact_external",
+  "active_external",
+];
+
+const adaptExternalScope = (scope: NativeExternalScope): FrozenExternalScope | undefined => {
+  // A corrupted saved approval is dropped rather than becoming a different scope or blocking the case.
+  if (
+    !isRecord(scope.target)
+    || !DIRECT_NETWORK_TARGET_KINDS.includes(scope.target.kind as DirectNetworkTargetKind)
+    || !TRANSPORT_PROTOCOLS.includes(scope.protocol as TransportProtocol)
+    || !EXTERNAL_ACTIVITIES.includes(scope.activity as ExternalActivity)
+    || exactBoolean(scope.template_policy?.allow_headless) === undefined
+    || exactBoolean(scope.template_policy?.allow_out_of_band) === undefined
+    || exactBoolean(scope.template_policy?.allow_fuzzing) === undefined
+    || exactBoolean(scope.template_policy?.allow_file_upload) === undefined
+    || scope.template_policy?.allow_denial_of_service !== false
+    || scope.template_policy?.allow_credential_attacks !== false
+    || exactBoolean(scope.allow_sensitive_networks) === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    id: scope.id,
+    caseId: scope.case_id,
+    assetId: scope.asset_id,
+    target: scope.target.value,
+    targetKind: scope.target.kind,
+    ports: scope.ports,
+    protocol: scope.protocol,
+    activity: scope.activity,
+    ratePolicy: {
+      requestsPerSecond: scope.rate_policy.requests_per_second,
+      concurrency: scope.rate_policy.concurrency,
+      timeoutSeconds: scope.rate_policy.timeout_seconds,
+    },
+    templatePolicy: {
+      revision: scope.template_policy.revision,
+      ...(typeof scope.template_policy.profile_id === "string"
+        ? { profileId: scope.template_policy.profile_id }
+        : {}),
+      allowedTemplateIds: scope.template_policy.allowed_template_ids,
+      allowHeadless: scope.template_policy.allow_headless,
+      allowOutOfBand: scope.template_policy.allow_out_of_band,
+      allowFuzzing: scope.template_policy.allow_fuzzing,
+      allowFileUpload: scope.template_policy.allow_file_upload,
+      allowDenialOfService: scope.template_policy.allow_denial_of_service,
+      allowCredentialAttacks: scope.template_policy.allow_credential_attacks,
+    },
+    assertedAuthority: scope.asserted_authority,
+    approvedBy: scope.approved_by,
+    approvedAt: scope.approved_at,
+    expiresAt: scope.expires_at,
+    allowSensitiveNetworks: scope.allow_sensitive_networks,
+  };
+};
 
 const mapSeverity = (severity: string): Severity => {
   const normalized = severity.trim().toLowerCase();
@@ -1736,10 +1773,6 @@ const mapLocalhostTcpObservation = (
     observedAt: observation.observed_at,
   };
 };
-
-/** Untrusted IPC may send a truthy stand-in; only an exact boolean may stand as a claim. */
-const exactBoolean = (value: unknown): boolean | undefined =>
-  typeof value === "boolean" ? value : undefined;
 
 const exactCompletedLocalhostBinding = (
   engineRun: EngineRun,
@@ -2188,7 +2221,16 @@ export const adaptNativeCase = (
     };
   });
   const scanAttemptedAssetIds = new Set(
-    nativeCase.scan_runs.flatMap((run) => run.engine_runs.flatMap((engineRun) => engineRun.asset_ids)),
+    nativeCase.scan_runs.flatMap((run) => run.engine_runs.flatMap((engineRun) => {
+      const status = mapEngineStatus(engineRun.status);
+      const startedAt = typeof engineRun.started_at === "string" && Number.isFinite(Date.parse(engineRun.started_at));
+      // A planned target is not attempted until a valid task has entered execution.
+      return mapEngineTaskKind(engineRun.task_kind).kind !== "invalid_task"
+        && !["pending", "not_executed"].includes(status)
+        && startedAt
+        ? engineRun.asset_ids
+        : [];
+    })),
   );
   const coverage: CoverageRecord[] = nativeCase.coverage.map((entry) => ({
     id: entry.id,
@@ -2201,7 +2243,7 @@ export const adaptNativeCase = (
     detail: entry.explanation,
     lastCheckedAt: entry.observed_at ?? undefined,
     scanAttempted: entry.asset_id
-      ? Boolean(entry.last_run_id) || scanAttemptedAssetIds.has(entry.asset_id)
+      ? exactNonEmptyString(entry.last_run_id) || scanAttemptedAssetIds.has(entry.asset_id)
       : undefined,
   }));
   const coverageByAsset = new Map(nativeCase.coverage.filter((entry) => entry.asset_id).map((entry) => [entry.asset_id, entry]));
@@ -2243,7 +2285,7 @@ export const adaptNativeCase = (
       allowedModes,
       findingCount: findingCount.get(asset.id) ?? 0,
       lastObservedAt: entry?.observed_at ?? undefined,
-      scanAttempted: Boolean(entry?.last_run_id) || scanAttemptedAssetIds.has(asset.id),
+      scanAttempted: exactNonEmptyString(entry?.last_run_id) || scanAttemptedAssetIds.has(asset.id),
       questionnairePlaceholder: localQuestionnaireKinds.has(String(asset.metadata?.questionnaire_kind)) && !localInputProfile,
       localInputProfile,
       mcpConfigurationCandidates: mcpConfigurationsFromAsset(asset),
@@ -2720,7 +2762,7 @@ export const adaptNativeSnapshot = (
 
 const adaptBeginnerInventoryItem = (
   item: NativeBeginnerInventoryItem,
-): BeginnerInventoryItem => {
+): BeginnerInventoryItem | undefined => {
   const common = {
     assetId: item.asset_id,
     sources: item.sources.map((source) => ({
@@ -2766,14 +2808,22 @@ const adaptBeginnerInventoryItem = (
     target: item.target,
     condition: item.condition ?? undefined,
   };
-  return {
+  if (item.kind === "cloud_resource") return {
     ...common,
     kind: item.kind,
     resourceType: item.resource_type,
     nativeId: item.native_id ?? undefined,
     displayName: item.display_name ?? undefined,
   };
+  // An unknown inventory tag cannot become a named observation of another type.
+  return undefined;
 };
+
+const adaptBeginnerInventoryItems = (items: NativeBeginnerInventoryItem[]): BeginnerInventoryItem[] =>
+  items.flatMap((item) => {
+    const adapted = adaptBeginnerInventoryItem(item);
+    return adapted ? [adapted] : [];
+  });
 
 const adaptBeginnerInventoryCounts = (counts: NativeBeginnerInventory["counts"]) => ({
   services: counts.services,
@@ -2850,6 +2900,16 @@ const mapBeginnerCoverageGapKind = (value: unknown): BeginnerCoverageGapKind =>
     ? value as BeginnerCoverageGapKind
     : "unavailable";
 
+const BEGINNER_REPORT_DATA_AVAILABILITIES = ["recorded", "current_case_fallback", "unavailable"] as const;
+
+// An unknown provenance value must expose the report dimension as unavailable.
+const mapBeginnerReportDataAvailability = (
+  value: unknown,
+): BeginnerMasterReport["requested"]["stage"]["availability"] =>
+  BEGINNER_REPORT_DATA_AVAILABILITIES.includes(value as typeof BEGINNER_REPORT_DATA_AVAILABILITIES[number])
+    ? value as typeof BEGINNER_REPORT_DATA_AVAILABILITIES[number]
+    : "unavailable";
+
 export const adaptBeginnerMasterReport = (
   report: NativeBeginnerMasterReport,
 ): BeginnerMasterReport => ({
@@ -2868,12 +2928,12 @@ export const adaptBeginnerMasterReport = (
       assetId: target.asset_id,
       label: target.label ?? undefined,
       assetKind: target.asset_kind ?? undefined,
-      labelAvailability: target.label_availability,
-      assetKindAvailability: target.asset_kind_availability,
+      labelAvailability: mapBeginnerReportDataAvailability(target.label_availability),
+      assetKindAvailability: mapBeginnerReportDataAvailability(target.asset_kind_availability),
     })),
     stage: {
       value: report.requested.stage.value ?? undefined,
-      availability: report.requested.stage.availability,
+      availability: mapBeginnerReportDataAvailability(report.requested.stage.availability),
       explanation: report.requested.stage.explanation,
     },
     limits: report.requested.limits.map((limit) => ({ ...limit })),
@@ -2947,13 +3007,13 @@ export const adaptBeginnerMasterReport = (
     total: report.inventory.total,
     counts: adaptBeginnerInventoryCounts(report.inventory.counts),
     assetIds: [...report.inventory.asset_ids],
-    representativeSample: report.inventory.representative_sample.map(adaptBeginnerInventoryItem),
-    items: report.inventory.items.map(adaptBeginnerInventoryItem),
+    representativeSample: adaptBeginnerInventoryItems(report.inventory.representative_sample),
+    items: adaptBeginnerInventoryItems(report.inventory.items),
     byAsset: report.inventory.by_asset.map((asset) => ({
       assetId: asset.asset_id,
       total: asset.total,
       counts: adaptBeginnerInventoryCounts(asset.counts),
-      representativeSample: asset.representative_sample.map(adaptBeginnerInventoryItem),
+      representativeSample: adaptBeginnerInventoryItems(asset.representative_sample),
     })),
   } : undefined,
   findings: report.findings.map((finding) => ({
