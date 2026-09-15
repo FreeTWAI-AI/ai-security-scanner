@@ -1771,6 +1771,9 @@ export type ExportFormat =
   | "oscal"
   | "html";
 
+/** Exact `RedactionProfile` values serialized by the native export layer. */
+export type RedactionProfile = "standard" | "none";
+
 export interface CaseExport {
   id: string;
   caseId: string;
@@ -1797,7 +1800,7 @@ export interface ExportPreview {
   /** Presentation locale bound to this exact preview coordinate. */
   locale: ReportLocale;
   format: ExportFormat;
-  redactionProfile: "standard" | "none";
+  redactionProfile: RedactionProfile;
   includeRawEvidence: boolean;
   dataSourceCount: number;
   coverageEntryCount: number;

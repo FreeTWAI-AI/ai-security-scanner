@@ -19,12 +19,14 @@ const typescript = readFileSync(new URL("../../src/types.ts", import.meta.url), 
 
 const beginnerReport = rust("beginner_report.rs");
 const domain = rust("domain.rs");
+const exportLayer = rust("export.rs");
 const externalScope = rust("external_scope.rs");
 const managedRuntime = rust("managed_runtime.rs");
 
 const rustSources: Readonly<Record<string, string>> = {
   "beginner_report.rs": beginnerReport,
   "domain.rs": domain,
+  "export.rs": exportLayer,
   "external_scope.rs": externalScope,
   "managed_runtime.rs": managedRuntime,
 };
@@ -148,6 +150,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
   ["domain.rs", "SourceConnectionStatus", "SourceConnectionStatus"],
   ["domain.rs", "SourceKind", "SourceKind"],
+  ["export.rs", "RedactionProfile", "RedactionProfile"],
   ["external_scope.rs", "ExternalActivity", "ExternalActivity"],
   ["external_scope.rs", "TransportProtocol", "TransportProtocol"],
   ["external_scope.rs", "DirectNetworkTargetKind", "DirectNetworkTargetKind"],
@@ -231,6 +234,11 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
     "windows_wsl_command_failed",
   ]);
   assert.deepEqual(unionMembers("BeginnerReportLifecycle"), ["final"]);
+  // Closed export vocabulary: as_str() and serde snake_case agree on these two.
+  assert.deepEqual(rustVariants(exportLayer, "RedactionProfile"), [
+    "none",
+    "standard",
+  ]);
   assert.deepEqual(rustTaggedVariants(beginnerReport, "TechnicalExecution"), [
     "catalog_engine",
     "built_in_localhost_tcp",
