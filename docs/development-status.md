@@ -1,6 +1,6 @@
 # Development status
 
-_Updated 2026-09-14._
+_Updated 2026-09-15._
 
 This page summarizes current engineering status for contributors. It is not a product specification
 or release declaration. [The product specification](product-spec.md) remains the source of truth for
@@ -14,6 +14,8 @@ product behavior, and the [current product review](product-audit.md) tracks the 
   upstream checks and feed one product-owned report.
 - Report presentation distinguishes measured zero findings from an asset that was not measured, and
   keeps compact document identity in printed headers and footers.
+- Native report, case, coverage, route, permission, and engine-task vocabularies are bound to their Rust
+  wire contracts; unknown permissions and tasks cannot claim authorization, execution, or coverage.
 - No model endpoint or hosted provider was contacted while developing the experimental AI paths.
 
 ## AI integration work

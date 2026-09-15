@@ -1,6 +1,6 @@
 # Current product review
 
-Reviewed: 2026-09-10
+Reviewed: 2026-09-15
 
 Canonical behavior: [Product specification](product-spec.md)
 
@@ -78,6 +78,20 @@ The first layer answers:
 Findings retain scanner provenance under the product explanation. Cross-engine ordering, grouping, deduplication, localization, and framework references belong to the shared report layer. Observed services appear in their own non-vulnerability section. Formal report terms and technical records appear at the end.
 
 Terminal runs include completed, completed with gaps, no checks completed, failed, and cancelled outcomes. Runs without a comparable completed check remain visible in Results and Export but are not offered as verification baselines.
+
+## Engineering closure
+
+The in-repository beginner journey and its native report boundary were re-audited through case setup,
+scope review, progress, terminal results, reopen, comparison, and export. Cross-language tests now bind
+every closed report vocabulary plus the case, coverage, guided-route, source, permission, engine-status,
+task-provenance, and packaged-engine metadata used to decide what the reader sees. Unknown native
+permissions and task kinds fail closed: they cannot create authorization, scanner provenance, completed
+work, or covered-asset credit.
+
+The automated baseline completed with 1,691 Rust tests, 644 frontend tests, 262 component tests, 46 CI
+contract tests, and 8 engine-catalog tests, together with TypeScript checking, production build, Rust
+formatting, Clippy, mapping validation, and the five-scenario usability-evidence contract. The usability
+record contains no human session, and this review does not claim installed-product acceptance.
 
 ## Current acceptance work
 
