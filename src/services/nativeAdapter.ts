@@ -31,6 +31,7 @@ import type {
   EngineRecoveryAction,
   EngineRun,
   EngineRunStatus,
+  EngineRunStatusWire,
   EngineTaskKind,
   EvidenceKind,
   ExternalActivity,
@@ -207,7 +208,7 @@ interface NativeEngineRun {
     observed_at: string;
   } | null;
   asset_ids: string[];
-  status: string;
+  status: EngineRunStatusWire;
   progress_percent: number;
   phase: string;
   started_at: string | null;
@@ -497,7 +498,7 @@ export interface NativeBeginnerMasterReport {
     tasks: Array<{
       task_id: string;
       target_asset_ids: string[];
-      status: EngineRunStatus;
+      status: EngineRunStatusWire;
       phase: string;
       progress_percent: number;
       started_at: string | null;
@@ -1511,7 +1512,7 @@ const mapWorkflow = (status: string): FindingWorkflowState => {
 };
 
 const mapEngineStatus = (status: string): EngineRunStatus => {
-  const states: Record<string, EngineRunStatus> = {
+  const states: Record<EngineRunStatusWire, EngineRunStatus> = {
     not_executed: "not_executed",
     queued: "pending",
     preparing: "running",
@@ -1522,7 +1523,7 @@ const mapEngineStatus = (status: string): EngineRunStatus => {
     failed: "failed",
     cancelled: "cancelled",
   };
-  return states[status] ?? "not_executed";
+  return states[status as EngineRunStatusWire] ?? "not_executed";
 };
 
 const mapEngineTaskKind = (taskKind: NativeEngineRun["task_kind"]): EngineTaskKind => {
@@ -2722,7 +2723,7 @@ export const adaptBeginnerMasterReport = (
     tasks: report.technical_details.tasks.map((task) => ({
       taskId: task.task_id,
       targetAssetIds: [...task.target_asset_ids],
-      status: task.status,
+      status: mapEngineStatus(task.status),
       phase: task.phase,
       progressPercent: task.progress_percent,
       startedAt: task.started_at ?? undefined,

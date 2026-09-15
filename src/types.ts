@@ -619,6 +619,18 @@ export type RunStatus =
   | "failed"
   | "cancelled";
 
+/** Exact task status vocabulary serialized by Rust's domain::EngineRunStatus. */
+export type EngineRunStatusWire =
+  | "not_executed"
+  | "queued"
+  | "preparing"
+  | "running"
+  | "paused"
+  | "completed"
+  | "partially_completed"
+  | "failed"
+  | "cancelled";
+
 export type EngineRunStatus =
   | "pending"
   | "running"

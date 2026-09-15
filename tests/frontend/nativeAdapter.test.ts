@@ -374,7 +374,23 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
       task_id: "task-1",
       recommended_expert_type: "IT administrator",
     }],
-    technical_details: { collapsed_by_default: true, tasks: [] },
+    technical_details: {
+      collapsed_by_default: true,
+      tasks: [{
+        task_id: "task-1",
+        target_asset_ids: ["asset-1"],
+        status: "partially_completed",
+        phase: "completed",
+        progress_percent: 100,
+        started_at: "2026-08-30T12:00:00Z",
+        finished_at: "2026-08-30T12:00:03Z",
+        exit_code: 0,
+        cleanup_removed: true,
+        error_code: null,
+        evidence_sha256: ["a".repeat(64)],
+        execution: { kind: "built_in_localhost_tcp" },
+      }],
+    },
     framework_notice: {
       non_certification: "Not certification.",
       aidefend_mapping_status: "Independent mapping.",
@@ -386,6 +402,7 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
   assert.equal(report.requested.targets[0]?.label, "127.0.0.1:9001");
   assert.equal(report.actual.checks[0]?.status, "tested_partial");
   assert.equal(report.actual.checks[0]?.resultKind, "connectivity");
+  assert.equal(report.technicalDetails.tasks[0]?.status, "partial");
   assert.deepEqual(report.inventory?.counts, {
     services: 1,
     softwareComponents: 0,
