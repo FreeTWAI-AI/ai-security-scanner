@@ -4,6 +4,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { FindingsPage } from "../../src/pages/FindingsPage";
 import { I18nProvider, localeStorageKey } from "../../src/i18n";
 import type {
+  BeginnerCheckResultKindWire,
+  BeginnerCoverageStatus,
   BeginnerMasterReport,
   BeginnerReportFinding,
   BeginnerReportSummary,
@@ -930,6 +932,131 @@ const emptyState = (container: HTMLElement): HTMLElement => {
   if (!node) throw new Error("the empty state did not render");
   return node;
 };
+
+const nonSecurityStatusCases = [
+  ["inventory", "tested_complete"],
+  ["inventory", "tested_partial"],
+  ["inventory", "failed"],
+  ["inventory", "timed_out"],
+  ["inventory", "not_tested"],
+  ["connectivity", "tested_complete"],
+  ["connectivity", "tested_partial"],
+  ["connectivity", "failed"],
+  ["connectivity", "timed_out"],
+  ["connectivity", "not_tested"],
+] as const satisfies ReadonlyArray<readonly [BeginnerCheckResultKindWire, BeginnerCoverageStatus]>;
+
+const renderNonSecurityStatusCase = (
+  resultKind: BeginnerCheckResultKindWire,
+  status: BeginnerCoverageStatus,
+) => {
+  const tested = status === "tested_complete" || status === "tested_partial";
+  const value = report(tested
+    ? status === "tested_complete" ? "complete" : "partial"
+    : "no_checks_completed", {
+    actual: {
+      checks: [{
+        taskId: `${resultKind}-${status}-task`,
+        checkId: `${resultKind}-matrix`,
+        resultKind,
+        targetAssetIds: ["asset-1"],
+        status,
+        testedDimensions: tested ? [{
+          dimension: resultKind,
+          value: status,
+          observation: `${resultKind} recorded ${status} work.`,
+        }] : [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageCounts: counts({ [status === "tested_complete"
+      ? "testedComplete"
+      : status === "tested_partial"
+        ? "testedPartial"
+        : status === "timed_out"
+          ? "timedOut"
+          : status === "not_tested"
+            ? "notTested"
+            : "failed"]: 1 }),
+  });
+  return {
+    ...renderReport(value, [], [catalogRun(`${resultKind}-matrix`)]),
+    tested,
+  };
+};
+
+test.each(nonSecurityStatusCases)(
+  "%s-only %s work gives the report pill an honest label and tone",
+  (resultKind, status) => {
+    const { container, tested } = renderNonSecurityStatusCase(resultKind, status);
+    const pill = statePill(container);
+    expect({ label: pill.textContent, tone: pill.className }).toEqual({
+      label: tested ? "Inventory or connectivity only" : "No checks completed",
+      tone: expect.stringContaining(tested ? "status-pill--neutral" : "status-pill--danger"),
+    });
+  },
+);
+
+test.each(nonSecurityStatusCases)(
+  "%s-only %s work gives the page header an honest outcome",
+  (resultKind, status) => {
+    const { container, tested } = renderNonSecurityStatusCase(resultKind, status);
+    const header = container.querySelector<HTMLElement>(".page-header");
+    expect({
+      title: header?.querySelector("h1")?.textContent,
+      description: header?.querySelector("p")?.textContent,
+    }).toEqual(tested ? {
+      title: "Inventory or connectivity only — no security check ran",
+      description: "This run completed inventory or connectivity, not a security check. Choose an applicable security scan.",
+    } : {
+      title: "Problem list",
+      description: "Review this run's outcome and next action.",
+    });
+  },
+);
+
+test.each(nonSecurityStatusCases)(
+  "%s-only %s work gives the empty state an honest outcome",
+  (resultKind, status) => {
+    const { container, tested } = renderNonSecurityStatusCase(resultKind, status);
+    const empty = emptyState(container);
+    expect({
+      title: empty.querySelector("h2")?.textContent,
+      description: empty.querySelector("p")?.textContent,
+    }).toEqual(tested ? {
+      title: "Inventory or connectivity results",
+      description: "The completed work records inventory or connectivity only. Choose an applicable security check to look for weaknesses.",
+    } : {
+      title: "Scan needs attention",
+      description: "Retry unfinished checks from Scan progress.",
+    });
+  },
+);
+
+test("failed non-security work uses the existing Traditional Chinese incomplete copy", () => {
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const { container } = renderNonSecurityStatusCase("inventory", "failed");
+  const pill = statePill(container);
+  const header = container.querySelector<HTMLElement>(".page-header");
+  const empty = emptyState(container);
+
+  expect({
+    pill: pill.textContent,
+    tone: pill.className,
+    headerTitle: header?.querySelector("h1")?.textContent,
+    headerDescription: header?.querySelector("p")?.textContent,
+    emptyTitle: empty.querySelector("h2")?.textContent,
+    emptyDescription: empty.querySelector("p")?.textContent,
+  }).toEqual({
+    pill: "沒有完成任何檢查",
+    tone: expect.stringContaining("status-pill--danger"),
+    headerTitle: "問題清單",
+    headerDescription: "查看這輪掃描的結果與下一步。",
+    emptyTitle: "掃描需要處理",
+    emptyDescription: "請到「掃描進度」重試未完成的檢查。",
+  });
+});
 
 test("a terminal run with an empty check list does not claim completed checks found no issues", () => {
   const { container } = renderReport(

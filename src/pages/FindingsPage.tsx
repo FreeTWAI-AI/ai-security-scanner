@@ -874,6 +874,20 @@ const checkResultKind = (
 ): BeginnerCheckResultKind =>
   check.resultKind ?? legacyCheckResultKind(check.checkId);
 
+const checkRecordedTestedWork = (
+  check: BeginnerMasterReport["actual"]["checks"][number],
+): boolean =>
+  check.status === "tested_complete"
+  || check.status === "tested_partial"
+  || check.testedDimensions.length > 0;
+
+const hasOnlyTestedNonSecurityWork = (
+  checks: BeginnerMasterReport["actual"]["checks"],
+): boolean =>
+  checks.length > 0
+  && checks.every((check) => checkResultKind(check) !== "security_check")
+  && checks.some(checkRecordedTestedWork);
+
 const assetResultRank: Record<AssetResultStatus, number> = {
   problems_found: 0,
   incomplete_failed: 1,
@@ -1203,8 +1217,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
   const localhostSummary = run && isExactBuiltInLocalhostQuickScanRun(run)
     ? localhostTcpBeginnerSummary(run.engineRuns[0]!)
     : undefined;
-  const nonSecurityOnly = report.actual.checks.length > 0
-    && report.actual.checks.every((check) => checkResultKind(check) !== "security_check");
+  const nonSecurityOnly = hasOnlyTestedNonSecurityWork(report.actual.checks);
   const summary = localhostSummary
     ? { label: copy.reportConnectionOnly, tone: "neutral" as const }
     : nonSecurityOnly
@@ -1214,11 +1227,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
   const coverageItemsLabel = hasManualReview ? copy.coverageAttention : copy.coverageGaps;
   const coverageItemsTitle = hasManualReview ? copy.attentionTitle : copy.gapsTitle;
   const noRecordedGapDetail = localhostSummary?.exclusions ?? copy.noGap;
-  const testedChecks = report.actual.checks.filter((check) =>
-    check.status === "tested_complete"
-    || check.status === "tested_partial"
-    || check.testedDimensions.length > 0,
-  );
+  const testedChecks = report.actual.checks.filter(checkRecordedTestedWork);
   const testedNetworkScopes = report.actual.networkScopes.filter((scope) =>
     scope.outcome === "tested_complete" || scope.outcome === "tested_partial",
   );
@@ -2012,8 +2021,8 @@ export function FindingsPage({
   if (activeRun) {
     return null;
   }
-  const nonSecurityOnly = Boolean(report?.actual.checks.length
-    && report.actual.checks.every((check) => checkResultKind(check) !== "security_check"));
+  const nonSecurityOnly = Boolean(report
+    && hasOnlyTestedNonSecurityWork(report.actual.checks));
   const observationDetails = (finding: Finding): string[] => {
     const retained = finding.observationDetails
       ?? finding.tags?.filter((tag) =>
@@ -2207,8 +2216,8 @@ export function FindingsPage({
     const requestOutcomeSummary = latestRequestOutcomeSummary;
     const hasCompletedSecurityCheck = Boolean(report?.actual.checks.some((check) =>
       check.status === "tested_complete" && checkResultKind(check) === "security_check"));
-    const hasCompletedNonSecurityWork = Boolean(report?.actual.checks.some((check) =>
-      check.status === "tested_complete" && checkResultKind(check) !== "security_check"));
+    const hasTestedNonSecurityWork = Boolean(report?.actual.checks.some((check) =>
+      checkRecordedTestedWork(check) && checkResultKind(check) !== "security_check"));
     const title = !latestRun
       ? text(copy.emptyNoRunTitle)
       : requestOutcomeSummary
@@ -2223,7 +2232,7 @@ export function FindingsPage({
                 ? text(copy.emptyUnknownTitle)
                 : hasCompletedSecurityCheck
                   ? text(copy.emptyCompletedTitle)
-                  : hasCompletedNonSecurityWork
+                  : hasTestedNonSecurityWork
                     ? text(copy.nonSecurityEmptyTitle)
                     : text(copy.emptyIncompleteTitle);
     const description = !latestRun
@@ -2244,7 +2253,7 @@ export function FindingsPage({
                 ? text(copy.emptyUnknownDescription, { count: formatNumber(unknownSources) })
                 : hasCompletedSecurityCheck
                   ? text(copy.emptyCompletedDescription, { count: formatNumber(connectedWithoutAssets) })
-                  : hasCompletedNonSecurityWork
+                  : hasTestedNonSecurityWork
                     ? text(copy.nonSecurityEmptyDescription)
                     : text(copy.emptyIncompleteDescription);
     const cleanCompletedOutcome = Boolean(latestRun)
