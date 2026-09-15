@@ -619,6 +619,32 @@ test("a legacy Steampipe-only report without resultKind remains inventory, not a
   expect(container.textContent).not.toContain("completed security check reported no problems");
 });
 
+test("a legacy Trivy check without resultKind is still treated as a security check", () => {
+  const base = report("complete");
+  const value = report("complete", {
+    actual: {
+      checks: [{
+        taskId: "trivy-task",
+        checkId: "trivy",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    requested: { ...base.requested, requestedCheckIds: ["trivy"] },
+  });
+
+  const { container } = renderReport(value, [], [catalogRun("trivy")]);
+  const row = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(row?.dataset.assetResult).toBe("no_problems_completed");
+  expect(row?.textContent).toContain("1 completed security check reported no problems");
+  expect(container.textContent).not.toContain(
+    "Inventory or connectivity only — no security check ran",
+  );
+});
+
 test("mixed Syft and Trivy work counts only Trivy as a completed security check", () => {
   const value = report("complete", {
     actual: {

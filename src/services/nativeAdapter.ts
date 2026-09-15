@@ -8,6 +8,8 @@ import type {
   AssetKind,
   AssetType,
   BeginnerCheckResultKind,
+  BeginnerCheckResultKindWire,
+  BeginnerCoverageGapKind,
   BeginnerFindingGroupPresentationScope,
   BeginnerInventoryItem,
   BeginnerMasterReport,
@@ -418,7 +420,7 @@ export interface NativeBeginnerMasterReport {
     checks: Array<{
       task_id: string;
       check_id: string;
-      result_kind?: BeginnerCheckResultKind | null;
+      result_kind?: string | null;
       target_asset_ids: string[];
       status: BeginnerMasterReport["actual"]["checks"][number]["status"];
       started_at: string | null;
@@ -446,7 +448,7 @@ export interface NativeBeginnerMasterReport {
     unavailable_dimensions: Array<{ dimension: string; explanation: string }>;
   };
   coverage_gaps: Array<{
-    kind: BeginnerMasterReport["coverageGaps"][number]["kind"];
+    kind: string;
     task_id: string | null;
     target_asset_ids: string[];
     dimension: string;
@@ -1996,6 +1998,15 @@ const ENGINE_CATEGORIES: readonly EngineCategory[] = [
 const mapEngineCategory = (value: string): EngineCategory | undefined =>
   ENGINE_CATEGORIES.includes(value as EngineCategory) ? value as EngineCategory : undefined;
 
+const validManifestDate = (value: unknown): string | undefined => {
+  // An unparseable support boundary cannot establish that an engine is supported.
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return undefined;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value
+    ? value
+    : undefined;
+};
+
 const MANIFEST_STATUSES: Record<EngineManifestStatusWire, EngineManifest["status"]> = {
   integrated: "ready",
   experimental: "not_downloaded",
@@ -2074,7 +2085,7 @@ export const adaptNativeManifest = (manifest: NativeEngineManifest): EngineManif
       ) === index,
     );
   const knowledgeDate = manifest.compatibility?.knowledge_date;
-  const supportUntil = manifest.compatibility?.support_until;
+  const supportUntil = validManifestDate(manifest.compatibility?.support_until);
   const today = new Date().toISOString().slice(0, 10);
   return {
     id: manifest.id,
@@ -2666,7 +2677,8 @@ export const adaptNativeSnapshot = (
     storagePath: snapshot.storage_path,
     runtime: {
       provider: snapshot.runtime.provider,
-      available: snapshot.runtime.available,
+      // Only the backend's exact boolean can make scan tools look ready.
+      available: snapshot.runtime.available === true,
       phase: snapshot.runtime.phase,
       version: snapshot.runtime.version ?? undefined,
       prerequisite: snapshot.runtime.prerequisite ?? undefined,
@@ -2796,6 +2808,39 @@ const adaptBeginnerTechnicalExecution = (
   };
 };
 
+const BEGINNER_CHECK_RESULT_KINDS: readonly BeginnerCheckResultKindWire[] = [
+  "security_check",
+  "inventory",
+  "connectivity",
+];
+
+// Missing legacy values remain inferable from the stable check ID. A present
+// value outside the closed wire vocabulary cannot become a security check.
+const mapBeginnerCheckResultKind = (value: unknown): BeginnerCheckResultKind | undefined => {
+  if (value === undefined || value === null) return undefined;
+  return BEGINNER_CHECK_RESULT_KINDS.includes(value as BeginnerCheckResultKindWire)
+    ? value as BeginnerCheckResultKindWire
+    : "unknown";
+};
+
+const BEGINNER_COVERAGE_GAP_KINDS: readonly BeginnerCoverageGapKind[] = [
+  "not_tested",
+  "failed",
+  "timed_out",
+  "cancelled",
+  "excluded",
+  "truncated",
+  "unavailable",
+  "unattributed",
+  "manual_review",
+];
+
+// An unrecognized gap still means the recorded coverage needs attention.
+const mapBeginnerCoverageGapKind = (value: unknown): BeginnerCoverageGapKind =>
+  BEGINNER_COVERAGE_GAP_KINDS.includes(value as BeginnerCoverageGapKind)
+    ? value as BeginnerCoverageGapKind
+    : "unavailable";
+
 export const adaptBeginnerMasterReport = (
   report: NativeBeginnerMasterReport,
 ): BeginnerMasterReport => ({
@@ -2835,7 +2880,7 @@ export const adaptBeginnerMasterReport = (
     checks: report.actual.checks.map((check) => ({
       taskId: check.task_id,
       checkId: check.check_id,
-      resultKind: check.result_kind ?? undefined,
+      resultKind: mapBeginnerCheckResultKind(check.result_kind),
       targetAssetIds: [...check.target_asset_ids],
       status: check.status,
       startedAt: check.started_at ?? undefined,
@@ -2863,7 +2908,7 @@ export const adaptBeginnerMasterReport = (
     unavailableDimensions: report.actual.unavailable_dimensions.map((dimension) => ({ ...dimension })),
   },
   coverageGaps: report.coverage_gaps.map((gap) => ({
-    kind: gap.kind,
+    kind: mapBeginnerCoverageGapKind(gap.kind),
     taskId: gap.task_id ?? undefined,
     targetAssetIds: [...gap.target_asset_ids],
     dimension: gap.dimension,

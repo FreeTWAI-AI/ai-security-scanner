@@ -993,8 +993,10 @@ export interface BeginnerRequestedCoverage {
   unavailableDimensions: BeginnerUnavailableDimension[];
 }
 
-/** Product report semantics for one completed or attempted check. */
-export type BeginnerCheckResultKind = "security_check" | "inventory" | "connectivity";
+/** Exact check-result vocabulary serialized by the native Rust report. */
+export type BeginnerCheckResultKindWire = "security_check" | "inventory" | "connectivity";
+/** Product report semantics after the native boundary rejects unrecognized values. */
+export type BeginnerCheckResultKind = BeginnerCheckResultKindWire | "unknown";
 
 export interface BeginnerActualCheck {
   taskId: string;

@@ -49,6 +49,7 @@ import {
 import { scanRequestOutcomeBeginnerSummary } from "../scanRequestOutcomePresentation";
 import { scanRunIdentityPresentation } from "../scanRunIdentityPresentation";
 import type {
+  BeginnerCheckResultKind,
   BeginnerCoverageStatus,
   BeginnerInventoryItem,
   BeginnerMasterReport,
@@ -848,7 +849,7 @@ const legacyCheckResultKind = (
 
 const checkResultKind = (
   check: BeginnerMasterReport["actual"]["checks"][number],
-): "security_check" | "inventory" | "connectivity" =>
+): BeginnerCheckResultKind =>
   check.resultKind ?? legacyCheckResultKind(check.checkId);
 
 const assetResultRank: Record<AssetResultStatus, number> = {

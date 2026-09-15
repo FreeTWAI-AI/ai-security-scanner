@@ -640,6 +640,103 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
   });
 });
 
+const beginnerStatusReportFixture = (overrides: {
+  resultKind?: unknown;
+  gapKind?: unknown;
+} = {}) => ({
+  schema_version: "1.1.0",
+  case_id: "case-status",
+  run_id: "run-status",
+  project_title: "Status boundary",
+  state: {
+    summary: "partial",
+    lifecycle: "final",
+    last_durable_update: "2026-09-15T12:00:00Z",
+    explanation: "Some work needs attention.",
+  },
+  requested: {
+    targets: [{
+      asset_id: "asset-status",
+      label: "Status target",
+      asset_kind: "repository",
+      label_availability: "recorded",
+      asset_kind_availability: "recorded",
+    }],
+    stage: { value: "deep", availability: "recorded", explanation: "Recorded before execution." },
+    limits: [],
+    requested_check_ids: ["status-check"],
+    request_outcome_code: null,
+    automatic_reductions: [],
+    reductions_availability: "recorded",
+    unavailable_dimensions: [],
+  },
+  actual: {
+    observed_from: "2026-09-15T11:59:00Z",
+    observed_until: "2026-09-15T12:00:00Z",
+    checks: [{
+      task_id: "task-status",
+      check_id: "status-check",
+      result_kind: overrides.resultKind,
+      target_asset_ids: ["asset-status"],
+      status: "tested_complete",
+      started_at: "2026-09-15T11:59:00Z",
+      finished_at: "2026-09-15T12:00:00Z",
+      tested_dimensions: [],
+    }],
+    unavailable_dimensions: [],
+  },
+  coverage_gaps: [{
+    kind: Object.prototype.hasOwnProperty.call(overrides, "gapKind") ? overrides.gapKind : "failed",
+    task_id: "task-status",
+    target_asset_ids: ["asset-status"],
+    dimension: "Status boundary",
+    reason: "The status needs attention.",
+    next_action_code: "review_coverage",
+    next_action: "Review coverage.",
+  }],
+  coverage_counts: {
+    tested_complete: 1,
+    tested_partial: 0,
+    failed: 1,
+    timed_out: 0,
+    cancelled: 0,
+    not_tested: 0,
+    excluded: 0,
+    truncated: 0,
+    unavailable: 0,
+  },
+  findings: [],
+  next_steps: [],
+  technical_details: { collapsed_by_default: true, tasks: [] },
+  framework_notice: { non_certification: "Not certification.", aidefend_mapping_status: "Not mapped." },
+  data_quality_warnings: [],
+});
+
+test("beginner check result kinds preserve known values, legacy absence, and fail closed on unknown values", () => {
+  const known = adaptBeginnerMasterReport(beginnerStatusReportFixture({ resultKind: "security_check" }));
+  assert.equal(known.actual.checks[0]?.resultKind, "security_check");
+
+  for (const resultKind of [undefined, null]) {
+    const report = adaptBeginnerMasterReport(beginnerStatusReportFixture({ resultKind }));
+    assert.equal(report.actual.checks[0]?.resultKind, undefined);
+  }
+
+  for (const resultKind of ["future_result", true]) {
+    const report = adaptBeginnerMasterReport(beginnerStatusReportFixture({ resultKind }));
+    assert.equal(report.actual.checks[0]?.resultKind, "unknown");
+  }
+});
+
+test("beginner coverage gap kinds preserve known values and fail closed to unavailable", () => {
+  const known = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapKind: "failed" }));
+  assert.equal(known.coverageGaps[0]?.kind, "failed");
+
+  for (const gapKind of [undefined, null, "future_gap", true]) {
+    const report = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapKind }));
+    assert.equal(report.coverageGaps[0]?.kind, "unavailable");
+  }
+});
+
 // Exactly the keys of `severityMeta` in src/lib.ts, which every severity
 // lookup on the findings page indexes without optional chaining.
 const RENDERABLE_SEVERITIES = ["critical", "high", "medium", "low", "unknown", "info"];
@@ -1347,6 +1444,22 @@ test("missing or malformed manifest compatibility fails soft instead of inventin
   assert.equal(futureVocabulary.status, "unsupported");
 });
 
+test("manifest support dates preserve valid dates and never promote malformed dates to supported", () => {
+  const known = adaptNativeManifest(nativeManifestFixture({
+    compatibility: { knowledge_date: "2026-01-01", support_until: "9999-12-31", runnable: true, blocked_by: [] },
+  }));
+  assert.equal(known.supportUntil, "9999-12-31");
+  assert.equal(known.supportStatus, "supported");
+
+  for (const support_until of [undefined, null, "not-a-date", "2026-02-30", true]) {
+    const manifest = adaptNativeManifest(nativeManifestFixture({
+      compatibility: { knowledge_date: "2026-01-01", support_until, runnable: true, blocked_by: [] },
+    }));
+    assert.equal(manifest.supportUntil, undefined);
+    assert.equal(manifest.supportStatus, "unknown");
+  }
+});
+
 test("case summaries display only applicable source platforms and preserve real multi-platform scope", () => {
   const snapshot = adaptNativeSnapshot(snapshotFixture([summaryFixture()]), []);
 
@@ -1385,6 +1498,22 @@ test("native snapshot preserves beginner-safe diagnostics for unreadable saved p
     preserved: true,
   }]);
   assert.equal(snapshot.provenance, "native");
+});
+
+test("native runtime availability preserves booleans and fails closed on malformed values", () => {
+  assert.equal(adaptNativeSnapshot({
+    ...snapshotFixture([]),
+    runtime: { ...snapshotFixture([]).runtime, available: true },
+  }, []).runtime?.available, true);
+  assert.equal(adaptNativeSnapshot(snapshotFixture([]), []).runtime?.available, false);
+
+  for (const available of [undefined, null, "true", 1]) {
+    const snapshot = adaptNativeSnapshot({
+      ...snapshotFixture([]),
+      runtime: { ...snapshotFixture([]).runtime, available },
+    }, []);
+    assert.equal(snapshot.runtime?.available, false);
+  }
 });
 
 test("native snapshot retains packaged scanner issues only as technical structured data", () => {
@@ -2381,6 +2510,43 @@ test("mixed terminal and queued engine work keeps the scan queued for downstream
   }
 });
 
+test("present catalog engine tasks preserve scanner completion and coverage", () => {
+  const known = adaptNativeCase(platformCaseFixture({
+    scan_runs: [{
+      id: "run-catalog-task",
+      case_id: "case-platforms-1",
+      sequence: 1,
+      created_at: "2026-08-26T00:00:00Z",
+      completed_at: "2026-08-26T00:01:00Z",
+      knowledge_cutoff: "2026-08-24T00:00:00Z",
+      engine_runs: [{
+        ...engineRunFixture("catalog-task", "completed"),
+        task_kind: { kind: "catalog_engine" },
+      }],
+    }],
+  }));
+  assert.deepEqual(known.runs[0]?.engineRuns[0]?.taskKind, { kind: "catalog_engine" });
+  assert.equal(known.runs[0]?.engineRuns[0]?.status, "completed");
+  assert.equal(known.runs[0]?.coveredAssetCount, 1);
+});
+
+test("legacy engine tasks without provenance preserve catalog completion and coverage", () => {
+  const legacy = adaptNativeCase(platformCaseFixture({
+    scan_runs: [{
+      id: "run-legacy-catalog-task",
+      case_id: "case-platforms-1",
+      sequence: 1,
+      created_at: "2026-08-26T00:00:00Z",
+      completed_at: "2026-08-26T00:01:00Z",
+      knowledge_cutoff: "2026-08-24T00:00:00Z",
+      engine_runs: [engineRunFixture("legacy-catalog-task", "completed")],
+    }],
+  }));
+  assert.deepEqual(legacy.runs[0]?.engineRuns[0]?.taskKind, { kind: "catalog_engine" });
+  assert.equal(legacy.runs[0]?.engineRuns[0]?.status, "completed");
+  assert.equal(legacy.runs[0]?.coveredAssetCount, 1);
+});
+
 test("unknown or malformed native tasks never claim scanner completion or coverage", () => {
   for (const task_kind of [
     { kind: "future_task" },
@@ -2543,6 +2709,7 @@ const adaptGatewayFailure = (
       engine_runs: [{
         id: "engine-run-1",
         engine_id: "naabu",
+        task_kind: { kind: "catalog_engine" },
         asset_ids: ["private-asset-id"],
         status,
         progress_percent: 0,

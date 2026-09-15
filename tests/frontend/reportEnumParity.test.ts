@@ -115,7 +115,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["beginner_report.rs", "FindingGroupPresentationScope", "BeginnerFindingGroupPresentationScope"],
   ["beginner_report.rs", "ReportScanStage", "BeginnerReportStage"],
   ["beginner_report.rs", "DataAvailability", "BeginnerReportDataAvailability"],
-  ["beginner_report.rs", "CheckResultKind", "BeginnerCheckResultKind"],
+  ["beginner_report.rs", "CheckResultKind", "BeginnerCheckResultKindWire"],
   ["beginner_report.rs", "RequestedLimitSource", "BeginnerRequestedLimitSource"],
   ["beginner_report.rs", "FindingSnapshotSource", "BeginnerFindingSnapshotSource"],
   ["domain.rs", "AssessmentActivity", "AssessmentActivity"],
