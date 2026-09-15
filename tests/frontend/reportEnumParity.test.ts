@@ -61,7 +61,7 @@ const rustTaggedVariants = (source: string, name: string): string[] => {
   const end = body.indexOf("\n}");
   assert.ok(end > 0, `Rust enum ${name} has no closing brace`);
   return [...body.slice(0, end).matchAll(
-    /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*)[ \t]*(?:\{|,)[ \t]*$/gmu,
+    /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*)[ \t]*(?:\{(?:[^\r\n]*\}[ \t]*,?)?|,)[ \t]*$/gmu,
   )].map((match) => match[1] ?? serdeSnakeCase(match[2]!));
 };
 
@@ -134,6 +134,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
 const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
   ["beginner_report.rs", "BeginnerInventoryItemKind", "BeginnerInventoryItem"],
   ["beginner_report.rs", "TechnicalExecution", "BeginnerTechnicalExecution"],
+  ["domain.rs", "CaseProductIdentity", "CaseProductIdentity"],
   ["domain.rs", "EngineTaskKind", "EngineTaskKindWire"],
 ];
 

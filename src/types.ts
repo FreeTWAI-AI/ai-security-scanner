@@ -73,6 +73,12 @@ export type CasePhase =
   | "complete"
   | "verification_due";
 
+/** Exact product identity derived and serialized by the native Rust domain. */
+export type CaseProductIdentity = {
+  kind: "localhost_quick_scan";
+  port: number;
+};
+
 export interface AssessmentCase {
   id: string;
   name: string;
@@ -94,11 +100,8 @@ export interface AssessmentCase {
   assetCount?: number;
   /** Canonical finding count across the case, not a selected-run count. */
   findingCount?: number;
-  /** Frontend-only identity derived from a canonical product-owned execution contract. */
-  productIdentity?: {
-    kind: "localhost_quick_scan";
-    port: number;
-  };
+  /** Identity derived from a canonical product-owned native execution contract. */
+  productIdentity?: CaseProductIdentity;
 }
 
 export interface CreateCaseInput {

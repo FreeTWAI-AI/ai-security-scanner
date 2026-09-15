@@ -13,6 +13,7 @@ import type {
   BeginnerMasterReport,
   BeginnerTechnicalExecution,
   CaseExport,
+  CaseProductIdentity,
   ContextFactor,
   ExportPreview,
   ReportLocale,
@@ -98,11 +99,6 @@ const localizedList = (values: string[]): string =>
   values.join(getActiveLocale() === "en" ? ", " : "、");
 
 /** Snake-case DTOs emitted by src-tauri/src/domain.rs. */
-type NativeCaseProductIdentity = {
-  kind: "localhost_quick_scan";
-  port: number;
-};
-
 export interface NativeCaseSummary {
   id: string;
   title: string;
@@ -123,7 +119,7 @@ export interface NativeCaseSummary {
   asset_count: number;
   finding_count: number;
   latest_run_id: string | null;
-  product_identity?: NativeCaseProductIdentity | null;
+  product_identity?: CaseProductIdentity | null;
 }
 
 interface NativeDataSource {
@@ -2074,7 +2070,7 @@ export const adaptNativeManifest = (manifest: NativeEngineManifest): EngineManif
 };
 
 const adaptCaseProductIdentity = (
-  identity: NativeCaseProductIdentity | null | undefined,
+  identity: CaseProductIdentity | null | undefined,
 ): AssessmentCase["productIdentity"] => {
   if (
     identity?.kind !== "localhost_quick_scan" ||
