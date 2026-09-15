@@ -1116,6 +1116,9 @@ export const adaptLocalNetworkCandidateInventory = (
 
 const unique = <T,>(values: T[]): T[] => [...new Set(values)];
 
+const uniquePlatforms = (values: Array<CloudPlatform | undefined>): CloudPlatform[] =>
+  unique(values.filter((value): value is CloudPlatform => value !== undefined));
+
 const assessmentIntents: readonly UseCaseId[] = [
   "deployed_website",
   "external_ip_or_domain",
@@ -1186,30 +1189,59 @@ const mapDataClasses = (values: string[]): DataClass[] => {
   return concrete.length > 0 ? concrete : ["none"];
 };
 
-const platformFromSource = (kind: string): CloudPlatform => {
-  if (kind === "aws_organization") return "aws";
-  if (kind === "azure_tenant") return "azure";
-  if (kind === "gcp_organization") return "gcp";
-  if (kind === "microsoft365_tenant") return "m365";
-  if (kind === "git_repository" || kind === "terraform_state" || kind === "file_system") return "code";
-  if (kind === "container_registry") return "container";
-  if (kind === "kubernetes_cluster") return "kubernetes";
-  return "external";
+const SOURCE_KIND_PLATFORMS: Record<SourceKind, CloudPlatform> = {
+  aws_organization: "aws",
+  azure_tenant: "azure",
+  gcp_organization: "gcp",
+  microsoft365_tenant: "m365",
+  dns: "external",
+  certificate_transparency: "external",
+  billing: "external",
+  git_repository: "code",
+  terraform_state: "code",
+  kubernetes_cluster: "kubernetes",
+  container_registry: "container",
+  file_system: "code",
+  user_declared: "external",
 };
 
-const platformFromAsset = (asset: NativeAsset): CloudPlatform => {
+const ASSET_KIND_PLATFORMS: Record<AssetKind, CloudPlatform> = {
+  cloud_organization: "external",
+  cloud_account: "external",
+  subscription: "azure",
+  project: "gcp",
+  tenant: "m365",
+  domain: "external",
+  ip_address: "external",
+  host: "external",
+  web_service: "external",
+  cloud_resource: "external",
+  identity: "external",
+  repository: "code",
+  file_system: "code",
+  iac_project: "code",
+  container_image: "container",
+  container_registry: "container",
+  kubernetes_cluster: "kubernetes",
+  ai_model_endpoint: "external",
+  other: "external",
+};
+
+// Known kinds may group as external. An unrecognized kind cannot establish a scan platform.
+const platformFromSource = (kind: string): CloudPlatform | undefined =>
+  Object.prototype.hasOwnProperty.call(SOURCE_KIND_PLATFORMS, kind)
+    ? SOURCE_KIND_PLATFORMS[kind as SourceKind]
+    : undefined;
+
+const platformFromAsset = (asset: NativeAsset): CloudPlatform | undefined => {
   const provider = asset.provider?.toLowerCase() ?? "";
   if (provider.includes("aws") || provider.includes("amazon")) return "aws";
   if (provider.includes("azure")) return "azure";
   if (provider.includes("gcp") || provider.includes("google")) return "gcp";
   if (provider.includes("m365") || provider.includes("microsoft 365")) return "m365";
-  if (asset.kind === "subscription") return "azure";
-  if (asset.kind === "project") return "gcp";
-  if (asset.kind === "tenant") return "m365";
-  if (["repository", "file_system", "iac_project"].includes(asset.kind)) return "code";
-  if (["container_image", "container_registry"].includes(asset.kind)) return "container";
-  if (asset.kind === "kubernetes_cluster") return "kubernetes";
-  return "external";
+  return Object.prototype.hasOwnProperty.call(ASSET_KIND_PLATFORMS, asset.kind)
+    ? ASSET_KIND_PLATFORMS[asset.kind as AssetKind]
+    : undefined;
 };
 
 const mapAssetType = (kind: string): AssetType => {
@@ -2061,7 +2093,7 @@ export const adaptNativeManifest = (manifest: NativeEngineManifest): EngineManif
   const supportedProviders = manifest.supported_providers
     .map((provider): CloudPlatform | undefined => provider === "microsoft365" ? "m365" : ["aws", "azure", "gcp"].includes(provider) ? provider as CloudPlatform : undefined)
     .filter((provider): provider is CloudPlatform => Boolean(provider));
-  const platforms = supportedProviders.length > 0 ? supportedProviders : unique(manifest.supported_asset_kinds.map((kind) =>
+  const platforms = supportedProviders.length > 0 ? supportedProviders : uniquePlatforms(manifest.supported_asset_kinds.map((kind) =>
     platformFromAsset({ id: "", kind, name: "", provider: null, region: null, identifiers: [], discovered_from: [], candidate: false, owner_confirmed: false }),
   ));
   const distributionMode = mapDistributionMode(manifest.distribution_mode);
@@ -2169,7 +2201,7 @@ const adaptSummary = (summary: NativeCaseSummary): AssessmentCase => {
   const assessmentIntent = mapAssessmentIntent(summary.assessment_intent);
   const sourceKinds = summary.applicable_source_kinds ?? summary.source_kinds;
   const platforms = withDraftIntentFallback(
-    unique(sourceKinds.map(platformFromSource)),
+    uniquePlatforms(sourceKinds.map(platformFromSource)),
     assessmentIntent,
     summary.status,
     summary.asset_count,
@@ -2232,20 +2264,24 @@ export const adaptNativeCase = (
         : [];
     })),
   );
-  const coverage: CoverageRecord[] = nativeCase.coverage.map((entry) => ({
-    id: entry.id,
-    label: entry.label,
-    platform: platformFromSource(entry.source_kind),
-    sourceKind: mapSourceKind(entry.source_kind),
-    state: mapCoverageState(entry.status),
-    assetId: entry.asset_id ?? undefined,
-    assetCount: entry.asset_id ? 1 : 0,
-    detail: entry.explanation,
-    lastCheckedAt: entry.observed_at ?? undefined,
-    scanAttempted: entry.asset_id
-      ? exactNonEmptyString(entry.last_run_id) || scanAttemptedAssetIds.has(entry.asset_id)
-      : undefined,
-  }));
+  const coverage: CoverageRecord[] = nativeCase.coverage.flatMap((entry) => {
+    const platform = platformFromSource(entry.source_kind);
+    if (platform === undefined) return [];
+    return [{
+      id: entry.id,
+      label: entry.label,
+      platform,
+      sourceKind: mapSourceKind(entry.source_kind),
+      state: mapCoverageState(entry.status),
+      assetId: entry.asset_id ?? undefined,
+      assetCount: entry.asset_id ? 1 : 0,
+      detail: entry.explanation,
+      lastCheckedAt: entry.observed_at ?? undefined,
+      scanAttempted: entry.asset_id
+        ? exactNonEmptyString(entry.last_run_id) || scanAttemptedAssetIds.has(entry.asset_id)
+        : undefined,
+    }];
+  });
   const coverageByAsset = new Map(nativeCase.coverage.filter((entry) => entry.asset_id).map((entry) => [entry.asset_id, entry]));
   const grantsByAsset = new Map<string, NativeScopeGrant[]>();
   for (const grant of nativeCase.scope_grants) {
@@ -2255,7 +2291,9 @@ export const adaptNativeCase = (
   for (const finding of nativeCase.findings) {
     for (const assetId of finding.asset_ids) findingCount.set(assetId, (findingCount.get(assetId) ?? 0) + 1);
   }
-  const assets: Asset[] = nativeCase.assets.map((asset) => {
+  const assets: Asset[] = nativeCase.assets.flatMap((asset) => {
+    const platform = platformFromAsset(asset);
+    if (platform === undefined) return [];
     const entry = coverageByAsset.get(asset.id);
     const grants = grantsByAsset.get(asset.id) ?? [];
     const allowedModes = unique(grants.flatMap((grant) => {
@@ -2269,11 +2307,11 @@ export const adaptNativeCase = (
     const internetExposed = explicitTargetRequiresSensitiveNetworkAllowance(asset.name)
       ? false
       : asset.internet_exposed ?? undefined;
-    return {
+    return [{
       id: asset.id,
       name: asset.name,
       type: mapAssetType(asset.kind),
-      platform: platformFromAsset(asset),
+      platform,
       locator: asset.identifiers[0]?.value ?? asset.name,
       identifiers: asset.identifiers,
       discoveredFromSourceIds: [...asset.discovered_from],
@@ -2295,7 +2333,7 @@ export const adaptNativeCase = (
       declaredWebService: adaptDeclaredWebServiceMetadata(asset.metadata),
       declaredNetworkService: adaptDeclaredNetworkServiceMetadata(asset.metadata),
       declaredHostScan: adaptDeclaredHostScanMetadata(asset.metadata),
-    };
+    }];
   });
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const manifestById = new Map(manifests.map((manifest) => [manifest.id, manifest]));
@@ -2649,7 +2687,7 @@ export const adaptNativeCase = (
   }
   const assessmentIntent = mapAssessmentIntent(nativeCase.assessment_intent);
   const platforms = withDraftIntentFallback(
-    unique([
+    uniquePlatforms([
       ...assets.map((asset) => asset.platform),
       ...nativeCase.data_sources
         .filter((source) => source.status !== "not_applicable")

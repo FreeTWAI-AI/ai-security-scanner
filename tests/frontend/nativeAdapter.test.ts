@@ -2190,6 +2190,275 @@ test("a native SSH host remains an external service with its exact declared port
   });
 });
 
+test("known network-facing kinds still group as the external platform", () => {
+  const snapshot = adaptNativeSnapshot(snapshotFixture([summaryFixture({
+    applicable_source_kinds: ["dns", "certificate_transparency", "billing", "user_declared"],
+    status: "scope_review",
+    asset_count: 1,
+  })]), []);
+  assert.deepEqual(snapshot.cases[0]?.platforms, ["external"]);
+
+  const workspace = adaptNativeCase(platformCaseFixture({
+    data_sources: [{
+      id: "declared",
+      kind: "user_declared",
+      label: "Added websites",
+      status: "connected",
+      connected_at: "2026-08-26T00:00:00Z",
+      last_discovered_at: "2026-08-26T00:00:00Z",
+      read_only: true,
+    }],
+    assets: [{
+      id: "host-asset",
+      kind: "host",
+      name: "server.example.test",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }],
+    coverage: [{
+      id: "coverage-declared",
+      label: "Added websites",
+      source_kind: "user_declared",
+      asset_id: "host-asset",
+      status: "authorized_scan_incomplete",
+      explanation: "Authorized.",
+      observed_at: "2026-08-26T00:00:00Z",
+    }],
+  }));
+  assert.equal(workspace.assets[0]?.platform, "external");
+  assert.equal(workspace.assets[0]?.type, "service");
+  assert.equal(workspace.coverage[0]?.platform, "external");
+  assert.deepEqual(workspace.case.platforms, ["external"]);
+
+  const manifest = adaptNativeManifest(nativeManifestFixture({
+    supported_providers: [],
+    supported_asset_kinds: ["host", "web_service"],
+  }));
+  assert.deepEqual(manifest.platforms, ["external"]);
+});
+
+test("unrecognized source and asset kinds cannot establish the external platform", () => {
+  const snapshot = adaptNativeSnapshot(snapshotFixture([summaryFixture({
+    applicable_source_kinds: ["future_source_kind"],
+    status: "scope_review",
+    asset_count: 1,
+  })]), []);
+  assert.deepEqual(snapshot.cases[0]?.platforms, []);
+
+  const workspace = adaptNativeCase(platformCaseFixture({
+    data_sources: [{
+      id: "future-source",
+      kind: "future_source_kind",
+      label: "Future source",
+      status: "connected",
+      connected_at: "2026-08-26T00:00:00Z",
+      last_discovered_at: "2026-08-26T00:00:00Z",
+      read_only: true,
+    }, {
+      id: "declared",
+      kind: "user_declared",
+      label: "Added websites",
+      status: "connected",
+      connected_at: "2026-08-26T00:00:00Z",
+      last_discovered_at: "2026-08-26T00:00:00Z",
+      read_only: true,
+    }],
+    assets: [{
+      id: "future-asset",
+      kind: "future_asset_kind",
+      name: "Unknown asset",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }, {
+      id: "host-asset",
+      kind: "host",
+      name: "server.example.test",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }],
+    coverage: [{
+      id: "coverage-future",
+      label: "Future coverage",
+      source_kind: "future_source_kind",
+      asset_id: "future-asset",
+      status: "discovered_authorized_scanned",
+      explanation: "A newer backend value must not imply external coverage.",
+      observed_at: "2026-08-26T00:00:00Z",
+    }, {
+      id: "coverage-declared",
+      label: "Added websites",
+      source_kind: "user_declared",
+      asset_id: "host-asset",
+      status: "authorized_scan_incomplete",
+      explanation: "Authorized.",
+      observed_at: "2026-08-26T00:00:00Z",
+    }],
+  }));
+  assert.deepEqual(workspace.assets.map((asset) => asset.id), ["host-asset"]);
+  assert.equal(workspace.assets[0]?.platform, "external");
+  assert.deepEqual(workspace.coverage.map((entry) => entry.id), ["coverage-declared"]);
+  assert.equal(workspace.coverage[0]?.platform, "external");
+  assert.deepEqual(workspace.case.platforms, ["external"]);
+
+  const manifest = adaptNativeManifest(nativeManifestFixture({
+    supported_providers: [],
+    supported_asset_kinds: ["future_asset_kind", "host"],
+  }));
+  assert.deepEqual(manifest.platforms, ["external"]);
+
+  const unknownOnly = adaptNativeManifest(nativeManifestFixture({
+    supported_providers: [],
+    supported_asset_kinds: ["future_asset_kind"],
+  }));
+  assert.deepEqual(unknownOnly.platforms, []);
+
+  const unknownOnlyCase = adaptNativeCase(platformCaseFixture({
+    data_sources: [{
+      id: "future-source",
+      kind: "future_source_kind",
+      label: "Future source",
+      status: "connected",
+      connected_at: "2026-08-26T00:00:00Z",
+      last_discovered_at: "2026-08-26T00:00:00Z",
+      read_only: true,
+    }],
+    assets: [{
+      id: "future-asset",
+      kind: "future_asset_kind",
+      name: "Unknown asset",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }],
+    coverage: [{
+      id: "coverage-future",
+      label: "Future coverage",
+      source_kind: "future_source_kind",
+      asset_id: "future-asset",
+      status: "discovered_authorized_scanned",
+      explanation: "A newer backend value must not imply external coverage.",
+      observed_at: "2026-08-26T00:00:00Z",
+    }],
+  }));
+  assert.deepEqual(unknownOnlyCase.assets, []);
+  assert.deepEqual(unknownOnlyCase.coverage, []);
+  assert.deepEqual(unknownOnlyCase.case.platforms, []);
+});
+
+test("dropping an unrecognized asset preserves its findings and known sibling results", () => {
+  const finding = (id: string, assetId: string) => ({
+    id,
+    case_id: "case-platforms-1",
+    first_seen_run_id: "run-1",
+    last_seen_run_id: "run-1",
+    fingerprint: `fingerprint-${id}`,
+    title: id,
+    plain_language_summary: "Review this scanner observation.",
+    possible_impact: "Impact",
+    severity: "medium",
+    confidence: "medium",
+    priority: 30,
+    priority_reasons: [],
+    asset_ids: [assetId],
+    evidence: [],
+    control_references: [],
+    recommendation: "Review the source evidence.",
+    verification_guidance: "Run the check again.",
+    rollback_considerations: null,
+    official_references: [],
+    recommended_expert_type: "Security reviewer",
+    status: "unreviewed",
+    tags: [],
+  });
+  const workspace = adaptNativeCase(platformCaseFixture({
+    assets: [{
+      id: "future-asset",
+      kind: "future_asset_kind",
+      name: "Future backend asset",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }, {
+      id: "host-asset",
+      kind: "host",
+      name: "server.example.test",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }],
+    findings: [
+      finding("finding-on-dropped-asset", "future-asset"),
+      finding("finding-on-known-asset", "host-asset"),
+    ],
+  }));
+
+  assert.deepEqual(
+    workspace.findings.map(({ id }) => id),
+    ["finding-on-dropped-asset", "finding-on-known-asset"],
+  );
+  assert.deepEqual(workspace.findings[0] && {
+    assetId: workspace.findings[0].assetId,
+    assetIds: workspace.findings[0].assetIds,
+    assetName: workspace.findings[0].assetName,
+  }, {
+    assetId: "future-asset",
+    assetIds: ["future-asset"],
+    assetName: "未知資產",
+  });
+  assert.equal(workspace.findings[1]?.assetName, "server.example.test");
+  assert.equal(workspace.case.findingCount, 2);
+});
+
+test("an omitted unrecognized coverage row still informs its known asset", () => {
+  const workspace = adaptNativeCase(platformCaseFixture({
+    assets: [{
+      id: "host-asset",
+      kind: "host",
+      name: "server.example.test",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: true,
+      owner_confirmed: false,
+    }],
+    coverage: [{
+      id: "coverage-future-source",
+      label: "Future source coverage",
+      source_kind: "future_source_kind",
+      asset_id: "host-asset",
+      status: "discovered_authorized_scanned",
+      explanation: "The known asset retains this coverage state.",
+      observed_at: "2026-08-26T01:02:03Z",
+    }],
+  }));
+
+  assert.deepEqual(workspace.coverage, []);
+  assert.equal(workspace.assets[0]?.coverageState, "discovered_authorized_scanned");
+  assert.equal(workspace.assets[0]?.lastObservedAt, "2026-08-26T01:02:03Z");
+});
+
 test("a native generic host remains one external asset with its exact Greenbone profile", () => {
   const workspace = adaptNativeCase(platformCaseFixture({
     assets: [{
