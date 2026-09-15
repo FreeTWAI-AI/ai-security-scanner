@@ -8,6 +8,7 @@ import type {
   AssetKind,
   AssetType,
   BeginnerCheckResultKind,
+  BeginnerFindingGroupPresentationScope,
   BeginnerInventoryItem,
   BeginnerMasterReport,
   BeginnerTechnicalExecution,
@@ -22,6 +23,7 @@ import type {
   Confidence,
   ConfidenceBasisCode,
   ConnectedSource,
+  ControlMappingProvenance,
   CoverageRecord,
   CoverageState,
   DataClass,
@@ -505,6 +507,7 @@ export interface NativeBeginnerMasterReport {
       artifact_sha256: string;
       observed_at: string;
       location?: string | null;
+      pointer?: string | null;
     }>;
     official_references?: string[] | null;
     framework_references: Array<{
@@ -515,6 +518,19 @@ export interface NativeBeginnerMasterReport {
       relationship: string;
       rationale: string;
       mapping_version: string;
+      mapping_provenance?: NativeControlMappingProvenance | null;
+    }>;
+  }>;
+  finding_groups?: Array<{
+    group_id: string;
+    presentation_scope: BeginnerFindingGroupPresentationScope;
+    title: string;
+    rationale: string;
+    actor: string;
+    created_at: string;
+    members: Array<{
+      finding_id: string;
+      observed_in_selected_run: boolean;
     }>;
   }>;
   next_steps: Array<{
@@ -525,6 +541,13 @@ export interface NativeBeginnerMasterReport {
     finding_id: string | null;
     task_id: string | null;
     recommended_expert_type: string | null;
+    family?: string | null;
+    unattributed?: {
+      provider?: unknown;
+      identifier?: unknown;
+      discarded_results?: unknown;
+    } | null;
+    also_resolves?: string[];
   }>;
   technical_details: {
     collapsed_by_default: true;
@@ -538,7 +561,22 @@ export interface NativeBeginnerMasterReport {
       finished_at: string | null;
       exit_code: number | null;
       cleanup_removed: boolean | null;
+      cleanup_detail: {
+        availability: BeginnerMasterReport["technicalDetails"]["tasks"][number]["cleanupDetail"]["availability"];
+        value: string | null;
+        explanation: string;
+      };
       error_code: string | null;
+      redacted_scanner_message: {
+        availability: BeginnerMasterReport["technicalDetails"]["tasks"][number]["redactedScannerMessage"]["availability"];
+        value: string | null;
+        explanation: string;
+      };
+      redacted_diagnostic_log: {
+        availability: BeginnerMasterReport["technicalDetails"]["tasks"][number]["redactedDiagnosticLog"]["availability"];
+        value: string | null;
+        explanation: string;
+      };
       evidence_sha256: string[];
       execution: NativeBeginnerTechnicalExecution;
     }>;
@@ -588,6 +626,13 @@ interface NativeScannerFindingDetails {
   } | null;
 }
 
+interface NativeControlMappingProvenance {
+  mapping_version: string;
+  reviewed_at: string;
+  review_process: string;
+  catalog_sha256: string;
+}
+
 interface NativeControlReference {
   framework: string;
   framework_version: string;
@@ -596,12 +641,7 @@ interface NativeControlReference {
   relationship: string;
   rationale: string;
   mapping_version: string;
-  mapping_provenance?: {
-    mapping_version: string;
-    reviewed_at: string;
-    review_process: string;
-    catalog_sha256: string;
-  } | null;
+  mapping_provenance?: NativeControlMappingProvenance | null;
 }
 
 interface NativeFinding {
@@ -1496,6 +1536,15 @@ const mapScannerFindingDetails = (
   return awsIamPolicy ? { ...mapped, awsIamPolicy } : mapped;
 };
 
+const mapControlMappingProvenance = (
+  provenance: NativeControlMappingProvenance | null | undefined,
+): ControlMappingProvenance | undefined => provenance ? {
+  mappingVersion: provenance.mapping_version,
+  reviewedAt: provenance.reviewed_at,
+  reviewProcess: provenance.review_process,
+  catalogSha256: provenance.catalog_sha256,
+} : undefined;
+
 const CONTEXT_FACTORS: readonly ContextFactor[] = ["internet_exposed_asset", "sensitive_data_asset"];
 
 /**
@@ -2108,14 +2157,7 @@ export const adaptNativeCase = (
         title: control.title,
         rationale: control.rationale,
         mappingVersion: control.mapping_version,
-        mappingProvenance: control.mapping_provenance
-          ? {
-              mappingVersion: control.mapping_provenance.mapping_version,
-              reviewedAt: control.mapping_provenance.reviewed_at,
-              reviewProcess: control.mapping_provenance.review_process,
-              catalogSha256: control.mapping_provenance.catalog_sha256,
-            }
-          : undefined,
+        mappingProvenance: mapControlMappingProvenance(control.mapping_provenance),
         note: [control.title, control.rationale, `mapping ${control.mapping_version}`].filter(Boolean).join("；"),
       })),
       officialReferences: finding.official_references,
@@ -2762,6 +2804,7 @@ export const adaptBeginnerMasterReport = (
       artifactSha256: evidence.artifact_sha256,
       observedAt: evidence.observed_at,
       location: evidence.location ?? undefined,
+      pointer: evidence.pointer ?? undefined,
     })),
     officialReferences: finding.official_references
       ? [...finding.official_references]
@@ -2774,6 +2817,19 @@ export const adaptBeginnerMasterReport = (
       relationship: reference.relationship,
       rationale: reference.rationale,
       mappingVersion: reference.mapping_version,
+      mappingProvenance: mapControlMappingProvenance(reference.mapping_provenance),
+    })),
+  })),
+  findingGroups: (report.finding_groups ?? []).map((group) => ({
+    groupId: group.group_id,
+    presentationScope: group.presentation_scope,
+    title: group.title,
+    rationale: group.rationale,
+    actor: group.actor,
+    createdAt: group.created_at,
+    members: group.members.map((member) => ({
+      findingId: member.finding_id,
+      observedInSelectedRun: member.observed_in_selected_run,
     })),
   })),
   nextSteps: report.next_steps.map((step) => ({
@@ -2784,6 +2840,9 @@ export const adaptBeginnerMasterReport = (
     findingId: step.finding_id ?? undefined,
     taskId: step.task_id ?? undefined,
     recommendedExpertType: step.recommended_expert_type ?? undefined,
+    family: mapFindingFamily(step.family),
+    unattributed: mapUnattributed(step.unattributed),
+    alsoResolves: step.also_resolves ? [...step.also_resolves] : undefined,
   })),
   technicalDetails: {
     collapsedByDefault: true,
@@ -2797,7 +2856,22 @@ export const adaptBeginnerMasterReport = (
       finishedAt: task.finished_at ?? undefined,
       exitCode: task.exit_code ?? undefined,
       cleanupRemoved: task.cleanup_removed ?? undefined,
+      cleanupDetail: {
+        availability: task.cleanup_detail.availability,
+        value: task.cleanup_detail.value ?? undefined,
+        explanation: task.cleanup_detail.explanation,
+      },
       errorCode: task.error_code ?? undefined,
+      redactedScannerMessage: {
+        availability: task.redacted_scanner_message.availability,
+        value: task.redacted_scanner_message.value ?? undefined,
+        explanation: task.redacted_scanner_message.explanation,
+      },
+      redactedDiagnosticLog: {
+        availability: task.redacted_diagnostic_log.availability,
+        value: task.redacted_diagnostic_log.value ?? undefined,
+        explanation: task.redacted_diagnostic_log.explanation,
+      },
       evidenceSha256: [...task.evidence_sha256],
       execution: adaptBeginnerTechnicalExecution(task.execution),
     })),

@@ -339,6 +339,7 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
         artifact_sha256: "a".repeat(64),
         observed_at: "2026-08-30T12:00:03Z",
         location: "src/config.ts:42",
+        pointer: "/records/0",
       }, {
         evidence_id: "evidence-malformed-iam",
         engine_id: "cloudsplaining",
@@ -363,7 +364,36 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
         observed_at: "2026-08-30T12:00:03Z",
       }],
       official_references: ["https://example.test/frozen-rule"],
-      framework_references: [],
+      framework_references: [{
+        framework: "AIDEFEND",
+        framework_version: "1.0",
+        control_id: "AIDEFEND-01",
+        title: "Reviewed control",
+        relationship: "related",
+        rationale: "Reviewed mapping rationale.",
+        mapping_version: "2026-09-15.1",
+        mapping_provenance: {
+          mapping_version: "2026-09-15.1",
+          reviewed_at: "2026-09-15",
+          review_process: "two-person review",
+          catalog_sha256: "d".repeat(64),
+        },
+      }],
+    }],
+    finding_groups: [{
+      group_id: "group-1",
+      presentation_scope: "current_case_presentation",
+      title: "Related observations",
+      rationale: "Review the shared path together.",
+      actor: "Human reviewer",
+      created_at: "2026-08-30T12:00:04Z",
+      members: [{
+        finding_id: "finding-1",
+        observed_in_selected_run: true,
+      }, {
+        finding_id: "finding-history",
+        observed_in_selected_run: false,
+      }],
     }],
     next_steps: [{
       priority: 1,
@@ -373,6 +403,20 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
       finding_id: null,
       task_id: "task-1",
       recommended_expert_type: "IT administrator",
+      family: null,
+      unattributed: null,
+      also_resolves: [],
+    }, {
+      priority: 2,
+      code: "review_finding",
+      action: "Review the shared finding evidence.",
+      reason: "The same action covers two findings.",
+      finding_id: "finding-1",
+      task_id: null,
+      recommended_expert_type: "Security reviewer",
+      family: "network_exposure",
+      unattributed: null,
+      also_resolves: ["finding-history"],
     }],
     technical_details: {
       collapsed_by_default: true,
@@ -386,7 +430,22 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
         finished_at: "2026-08-30T12:00:03Z",
         exit_code: 0,
         cleanup_removed: true,
+        cleanup_detail: {
+          availability: "recorded",
+          value: "Disposable runtime removed.",
+          explanation: "Cleanup outcome was recorded.",
+        },
         error_code: null,
+        redacted_scanner_message: {
+          availability: "recorded",
+          value: "The bounded connection timed out.",
+          explanation: "Redacted scanner message was recorded.",
+        },
+        redacted_diagnostic_log: {
+          availability: "unavailable",
+          value: null,
+          explanation: "No diagnostic log was retained.",
+        },
         evidence_sha256: ["a".repeat(64)],
         execution: {
           kind: "built_in_localhost_tcp",
@@ -423,6 +482,21 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
       observedAt: "2026-08-30T12:00:03Z",
     },
     contract: "connect_only_no_payload",
+  });
+  assert.deepEqual(report.technicalDetails.tasks[0]?.cleanupDetail, {
+    availability: "recorded",
+    value: "Disposable runtime removed.",
+    explanation: "Cleanup outcome was recorded.",
+  });
+  assert.deepEqual(report.technicalDetails.tasks[0]?.redactedScannerMessage, {
+    availability: "recorded",
+    value: "The bounded connection timed out.",
+    explanation: "Redacted scanner message was recorded.",
+  });
+  assert.deepEqual(report.technicalDetails.tasks[0]?.redactedDiagnosticLog, {
+    availability: "unavailable",
+    value: undefined,
+    explanation: "No diagnostic log was retained.",
   });
   assert.deepEqual(report.inventory?.counts, {
     services: 1,
@@ -519,6 +593,7 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
     artifactSha256: "a".repeat(64),
     observedAt: "2026-08-30T12:00:03Z",
     location: "src/config.ts:42",
+    pointer: "/records/0",
   });
   assert.deepEqual(report.findings[0]?.officialReferences, ["https://example.test/frozen-rule"]);
   assert.equal(
@@ -530,6 +605,39 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
     undefined,
   );
   assert.equal(report.nextSteps[0]?.taskId, "task-1");
+  assert.deepEqual(report.nextSteps[1], {
+    priority: 2,
+    code: "review_finding",
+    action: "Review the shared finding evidence.",
+    reason: "The same action covers two findings.",
+    findingId: "finding-1",
+    taskId: undefined,
+    recommendedExpertType: "Security reviewer",
+    family: "network_exposure",
+    unattributed: undefined,
+    alsoResolves: ["finding-history"],
+  });
+  assert.deepEqual(report.findingGroups, [{
+    groupId: "group-1",
+    presentationScope: "current_case_presentation",
+    title: "Related observations",
+    rationale: "Review the shared path together.",
+    actor: "Human reviewer",
+    createdAt: "2026-08-30T12:00:04Z",
+    members: [{
+      findingId: "finding-1",
+      observedInSelectedRun: true,
+    }, {
+      findingId: "finding-history",
+      observedInSelectedRun: false,
+    }],
+  }]);
+  assert.deepEqual(report.findings[0]?.frameworkReferences[0]?.mappingProvenance, {
+    mappingVersion: "2026-09-15.1",
+    reviewedAt: "2026-09-15",
+    reviewProcess: "two-person review",
+    catalogSha256: "d".repeat(64),
+  });
 });
 
 // Exactly the keys of `severityMeta` in src/lib.ts, which every severity

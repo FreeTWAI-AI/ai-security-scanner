@@ -1032,7 +1032,30 @@ export interface BeginnerReportFinding {
     relationship: string;
     rationale: string;
     mappingVersion: string;
+    /** Exact reviewed mapping-catalog identity frozen with this report row. */
+    mappingProvenance?: ControlMappingProvenance;
   }>;
+}
+
+export type BeginnerFindingGroupPresentationScope = "current_case_presentation";
+
+export interface BeginnerReportFindingGroup {
+  groupId: string;
+  presentationScope: BeginnerFindingGroupPresentationScope;
+  title: string;
+  rationale: string;
+  actor: string;
+  createdAt: string;
+  members: Array<{
+    findingId: string;
+    observedInSelectedRun: boolean;
+  }>;
+}
+
+export interface BeginnerUnavailableTechnicalValue {
+  availability: BeginnerReportDataAvailability;
+  value?: string;
+  explanation: string;
 }
 
 export type BeginnerTechnicalExecution =
@@ -1073,9 +1096,26 @@ export interface BeginnerTechnicalTaskDetails {
   finishedAt?: string;
   exitCode?: number;
   cleanupRemoved?: boolean;
+  cleanupDetail: BeginnerUnavailableTechnicalValue;
   errorCode?: string;
+  redactedScannerMessage: BeginnerUnavailableTechnicalValue;
+  redactedDiagnosticLog: BeginnerUnavailableTechnicalValue;
   evidenceSha256: string[];
   execution: BeginnerTechnicalExecution;
+}
+
+export interface BeginnerNextStep {
+  priority: number;
+  code: BeginnerNextActionCode;
+  action: string;
+  reason: string;
+  findingId?: string;
+  taskId?: string;
+  recommendedExpertType?: string;
+  family?: FindingFamily;
+  unattributed?: UnattributedResults;
+  /** Other findings that are resolved by the same single instruction. */
+  alsoResolves?: string[];
 }
 
 export interface BeginnerInventorySource {
@@ -1176,21 +1216,9 @@ export interface BeginnerMasterReport {
   /** Absent only for reports created before typed inventory was projected. */
   inventory?: BeginnerInventory;
   findings: BeginnerReportFinding[];
-  nextSteps: Array<{
-    priority: number;
-    code: BeginnerNextActionCode;
-    action: string;
-    reason: string;
-    findingId?: string;
-    taskId?: string;
-    recommendedExpertType?: string;
-    /**
-     * The other findings that name this same step as their fix, beyond
-     * `findingId`. One instruction is listed once; the count tells the reader
-     * how many problems it covers.
-     */
-    alsoResolves?: string[];
-  }>;
+  /** Current-case presentation groups projected onto this selected run. */
+  findingGroups: BeginnerReportFindingGroup[];
+  nextSteps: BeginnerNextStep[];
   /** Expert-only, redacted execution records. The Results page keeps these collapsed. */
   technicalDetails: {
     collapsedByDefault: true;
