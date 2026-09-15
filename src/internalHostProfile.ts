@@ -1,6 +1,16 @@
 export type InternalHostScanProfile = "internal_host_greenbone_remote_safe";
 
 export const INTERNAL_HOST_PROFILE_ID = "greenbone_remote_safe_v1" as const;
+
+/**
+ * Wire `DeclaredHostScanProfile` values the adapter translates into UI names.
+ * The names differ on purpose: the wire keeps the upstream profile id, the UI
+ * type uses the internal-host scan-profile vocabulary.
+ */
+export const declaredHostScanProfileByWire = {
+  [INTERNAL_HOST_PROFILE_ID]: "internal_host_greenbone_remote_safe",
+} as const satisfies Record<string, InternalHostScanProfile>;
+
 export const INTERNAL_HOST_GREENBONE_REVISION =
   "greenbone-community-feed@b26d7237d56b7cf85e6ace2b9351e7851461b3a8" as const;
 

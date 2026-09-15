@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { build } from "esbuild";
+
+import { declaredHostScanProfileByWire } from "../../src/internalHostProfile.ts";
+
 // The report's closed vocabularies are declared twice: once as a Rust enum the
 // backend serializes, once as a TypeScript union the app narrows on. A variant
 // added on one side and missed on the other compiles, passes every existing
@@ -15,7 +19,8 @@ import test from "node:test";
 const rust = (file: string) =>
   readFileSync(new URL(`../../src-tauri/src/${file}`, import.meta.url), "utf8");
 
-const typescript = readFileSync(new URL("../../src/types.ts", import.meta.url), "utf8");
+const typescriptFile = (file: string) =>
+  readFileSync(new URL(`../../src/${file}`, import.meta.url), "utf8");
 
 const beginnerReport = rust("beginner_report.rs");
 const domain = rust("domain.rs");
@@ -36,6 +41,48 @@ const rustSource = (file: string): string => {
   assert.ok(source, `Rust source ${file} was not loaded`);
   return source;
 };
+
+const typescriptSources: Readonly<Record<string, string>> = {
+  "types.ts": typescriptFile("types.ts"),
+  "internalDeviceProfile.ts": typescriptFile("internalDeviceProfile.ts"),
+  "internalEndpointProfile.ts": typescriptFile("internalEndpointProfile.ts"),
+  "internalHostProfile.ts": typescriptFile("internalHostProfile.ts"),
+};
+
+const typescriptSource = (file: string): string => {
+  const source = typescriptSources[file];
+  assert.ok(source, `TypeScript source ${file} was not loaded`);
+  return source;
+};
+
+const typescript = typescriptSource("types.ts");
+
+const bundledAdapter = await build({
+  stdin: {
+    contents: 'export { adaptDeclaredHostScanMetadata, localQuestionnaireKinds } from "./src/services/nativeAdapter.ts";',
+    loader: "ts",
+    resolveDir: process.cwd(),
+    sourcefile: "report-enum-parity-adapter-entry.ts",
+  },
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  target: "node22",
+  write: false,
+});
+const bundledAdapterSource = bundledAdapter.outputFiles[0]?.text;
+assert.ok(bundledAdapterSource, "the declared-input adapter bundle should contain JavaScript");
+const {
+  adaptDeclaredHostScanMetadata,
+  localQuestionnaireKinds,
+}: {
+  adaptDeclaredHostScanMetadata: (metadata: Record<string, unknown> | undefined) => {
+    scanProfile: string;
+  } | undefined;
+  localQuestionnaireKinds: ReadonlySet<string>;
+} = await import(
+  `data:text/javascript;base64,${Buffer.from(bundledAdapterSource).toString("base64")}`
+);
 
 /** Serde's `rename_all = "snake_case"`: lower-case, `_` before each capital. */
 const serdeSnakeCase = (variant: string): string =>
@@ -87,10 +134,10 @@ const rustTaggedVariants = (source: string, name: string): string[] => {
 };
 
 /** The string members of one exported TypeScript string-union type. */
-const unionMembers = (name: string): string[] => {
-  const declaration = typescript.indexOf(`export type ${name} =`);
-  assert.ok(declaration > 0, `TypeScript type ${name} was not found`);
-  const body = typescript.slice(declaration);
+const unionMembers = (name: string, source = typescript): string[] => {
+  const declaration = source.indexOf(`export type ${name} =`);
+  assert.ok(declaration >= 0, `TypeScript type ${name} was not found`);
+  const body = source.slice(declaration);
   const end = body.indexOf(";");
   assert.ok(end > 0, `TypeScript type ${name} is not terminated`);
   return [...body.slice(0, end).matchAll(/"([^"]+)"/gu)].map((match) => match[1]!);
@@ -244,4 +291,78 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
     "built_in_localhost_tcp",
     "invalid_built_in_task",
   ]);
+  assert.throws(
+    () => typescriptSource("missing.ts"),
+    /TypeScript source missing\.ts was not loaded/u,
+  );
+  assert.deepEqual(
+    unionMembers("InternalDeviceScanProfile", typescriptSource("internalDeviceProfile.ts")),
+    ["internal_device_https"],
+  );
+});
+
+const DECLARED_PROFILE_PAIRS: ReadonlyArray<
+  readonly [rustName: string, typescriptFile: string, typescriptName: string]
+> = [
+  ["DeclaredWebServiceScanProfile", "internalDeviceProfile.ts", "InternalDeviceScanProfile"],
+  ["DeclaredNetworkServiceScanProfile", "internalEndpointProfile.ts", "InternalEndpointScanProfile"],
+];
+
+for (const [rustName, typescriptFile, typescriptName] of DECLARED_PROFILE_PAIRS) {
+  test(`${rustName} and ${typescriptName} describe the same set of values`, () => {
+    const fromRust = rustVariants(rustSource("domain.rs"), rustName);
+    const fromTypescript = unionMembers(typescriptName, typescriptSource(typescriptFile));
+
+    assert.ok(fromRust.length > 0, `${rustName} extracted no variants`);
+    assert.deepEqual(
+      [...fromRust].sort(),
+      [...fromTypescript].sort(),
+      `${rustName} and ${typescriptName} disagree`,
+    );
+  });
+}
+
+test("DeclaredHostScanProfile maps exhaustively onto InternalHostScanProfile", () => {
+  const fromRust = rustVariants(rustSource("domain.rs"), "DeclaredHostScanProfile");
+  const fromTypescript = unionMembers(
+    "InternalHostScanProfile",
+    typescriptSource("internalHostProfile.ts"),
+  );
+  const mapping = declaredHostScanProfileByWire;
+
+  assert.ok(fromRust.length > 0, "DeclaredHostScanProfile extracted no variants");
+  assert.deepEqual(
+    [...fromRust].sort(),
+    [...Object.keys(mapping)].sort(),
+    "DeclaredHostScanProfile has a variant the adapter does not translate",
+  );
+  assert.deepEqual(
+    [...new Set(Object.values(mapping))].sort(),
+    [...fromTypescript].sort(),
+    "InternalHostScanProfile members must each be a mapped adapter result",
+  );
+
+  for (const [wire, ui] of Object.entries(mapping)) {
+    const adapted = adaptDeclaredHostScanMetadata({
+      declared_host_scan: { protocol: "tcp", ports: [22], profile: wire },
+    });
+    assert.equal(
+      adapted?.scanProfile,
+      ui,
+      `adaptDeclaredHostScanMetadata did not translate ${wire} to ${ui}`,
+    );
+  }
+});
+
+test("localQuestionnaireKinds plus external_target matches DeclaredAssetKind", () => {
+  // A new DeclaredAssetKind is not automatically a local questionnaire
+  // placeholder. Classify it in localQuestionnaireKinds or leave it out
+  // (like external_target). Do not derive that set from the Rust enum.
+  const fromRust = rustVariants(rustSource("domain.rs"), "DeclaredAssetKind");
+  assert.ok(fromRust.length > 0, "DeclaredAssetKind extracted no variants");
+  assert.deepEqual(
+    [...localQuestionnaireKinds, "external_target"].sort(),
+    [...fromRust].sort(),
+    "a new DeclaredAssetKind must be classified as a local placeholder or not",
+  );
 });

@@ -88,6 +88,7 @@ import type {
 } from "../types";
 import { getActiveLocale } from "../i18n/core";
 import { explicitTargetRequiresSensitiveNetworkAllowance } from "../caseForm";
+import { declaredHostScanProfileByWire } from "../internalHostProfile";
 import {
   isExactBuiltInLocalhostQuickScanEngine,
   isExactBuiltInLocalhostQuickScanRun,
@@ -1303,7 +1304,9 @@ const mcpConfigurationsFromAsset = (asset: NativeAsset): NonNullable<Asset["mcpC
   });
 };
 
-const localQuestionnaireKinds = new Set(["repository", "iac_project", "container_image", "kubernetes_cluster"]);
+// A new DeclaredAssetKind must be classified here or left out (like
+// external_target). Do not derive this set from the Rust enum.
+export const localQuestionnaireKinds = new Set(["repository", "iac_project", "container_image", "kubernetes_cluster"]);
 
 export const adaptDeclaredWebServiceMetadata = (
   metadata: Record<string, unknown> | undefined,
@@ -1374,9 +1377,13 @@ export const adaptDeclaredHostScanMetadata = (
   const candidate = raw as Record<string, unknown>;
   const { protocol, ports } = candidate;
   const profile = candidate.profile;
+  const scanProfile = typeof profile === "string"
+    && Object.prototype.hasOwnProperty.call(declaredHostScanProfileByWire, profile)
+    ? declaredHostScanProfileByWire[profile as keyof typeof declaredHostScanProfileByWire]
+    : undefined;
   if (
     protocol !== "tcp"
-    || profile !== "greenbone_remote_safe_v1"
+    || scanProfile === undefined
     || !Array.isArray(ports)
     || ports.length === 0
     || ports.length > 64
@@ -1384,7 +1391,7 @@ export const adaptDeclaredHostScanMetadata = (
   ) return undefined;
   const normalizedPorts = [...new Set(ports.map(Number))].sort((left, right) => left - right);
   if (normalizedPorts.length !== ports.length) return undefined;
-  return { protocol, ports: normalizedPorts, scanProfile: "internal_host_greenbone_remote_safe" };
+  return { protocol, ports: normalizedPorts, scanProfile };
 };
 
 const mapCoverageState = (status: string): CoverageState => {
