@@ -26,7 +26,7 @@ const serdeSnakeCase = (variant: string): string =>
 
 /**
  * The variants of one `#[serde(rename_all = "snake_case")]` enum, as the wire
- * spells them.
+ * spells them, including any per-variant `serde(rename)` override.
  *
  * The attribute is required rather than assumed: an enum without it serializes
  * its variants verbatim, and comparing those against a snake_case union would
@@ -43,12 +43,9 @@ const rustVariants = (source: string, name: string): string[] => {
   const body = source.slice(declaration + `pub enum ${name} {`.length);
   const end = body.indexOf("\n}");
   assert.ok(end > 0, `Rust enum ${name} has no closing brace`);
-  return body
-    .slice(0, end)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => /^[A-Z][A-Za-z0-9]*,$/u.test(line))
-    .map((line) => serdeSnakeCase(line.slice(0, -1)));
+  return [...body.slice(0, end).matchAll(
+    /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*),[ \t]*$/gmu,
+  )].map((match) => match[1] ?? serdeSnakeCase(match[2]!));
 };
 
 /** The string members of one exported TypeScript string-union type. */
@@ -75,6 +72,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "ConfidenceBasisCode", "ConfidenceBasisCode"],
   ["domain.rs", "ContextFactor", "ContextFactor"],
   ["domain.rs", "FindingFamily", "FindingFamily"],
+  ["domain.rs", "ScanRequestOutcomeCode", "ScanRequestOutcomeCode"],
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
 ];
 
@@ -110,5 +108,11 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
   ]);
   // Digits stay attached to the word they belong to.
   assert.ok(rustVariants(domain, "FindingFamily").includes("microsoft365"));
+  // Per-variant serde names win over the enum's rename_all convention.
+  assert.deepEqual(rustVariants(domain, "ScanRequestOutcomeCode"), [
+    "no_effective_scope_grants",
+    "no_ownership_confirmed_targets",
+    "no_applicable_checks",
+  ]);
   assert.deepEqual(unionMembers("BeginnerReportLifecycle"), ["final"]);
 });
