@@ -2066,6 +2066,22 @@ test("draft full cases with no assets or applicable sources use the assessment r
   assert.deepEqual(workspace.case.platforms, ["code"]);
 });
 
+test("an unknown source connection status never claims that the source is connected", () => {
+  const workspace = adaptNativeCase(platformCaseFixture({
+    data_sources: [{
+      id: "future-source",
+      kind: "aws_organization",
+      label: "Future source",
+      status: "connected_by_future_build",
+      connected_at: "2026-08-26T00:00:00Z",
+      last_discovered_at: "2026-08-26T00:00:00Z",
+      read_only: true,
+    }],
+  }));
+
+  assert.equal(workspace.sources[0]?.status, "not_connected");
+});
+
 test("questionnaire-only local names stay distinct from attached workspace snapshots", () => {
   assert.ok(adapterSource.includes("localQuestionnaireKinds"));
   assert.ok(adapterSource.includes("questionnairePlaceholder:"));

@@ -68,6 +68,7 @@ import type {
   Severity,
   SeverityWire,
   SourceKind,
+  SourceConnectionStatus,
   SourceCapabilityProvider,
   TransportProtocol,
   VerificationSummary,
@@ -1340,6 +1341,20 @@ const mapSourceKind = (kind: string): SourceKind => {
   return sourceKinds.includes(kind as SourceKind) ? kind as SourceKind : "user_declared";
 };
 
+const mapSourceConnectionStatus = (status: string): SourceConnectionStatus => {
+  const statuses: SourceConnectionStatus[] = [
+    "not_connected",
+    "connecting",
+    "connected",
+    "needs_reauthorization",
+    "failed",
+    "not_applicable",
+  ];
+  return statuses.includes(status as SourceConnectionStatus)
+    ? status as SourceConnectionStatus
+    : "not_connected";
+};
+
 const providerBindingContracts: Partial<Record<SourceKind, {
   profile: ProviderSourceProfile;
   resourceScope: RegExp;
@@ -2025,7 +2040,7 @@ export const adaptNativeCase = (
       id: source.id,
       kind,
       label: source.label,
-      status: source.status as ConnectedSource["status"],
+      status: mapSourceConnectionStatus(source.status),
       readOnly: source.read_only,
       connectedAt: source.connected_at ?? undefined,
       lastDiscoveredAt: source.last_discovered_at ?? undefined,

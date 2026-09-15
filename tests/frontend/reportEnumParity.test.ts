@@ -61,7 +61,7 @@ const rustTaggedVariants = (source: string, name: string): string[] => {
   const end = body.indexOf("\n}");
   assert.ok(end > 0, `Rust enum ${name} has no closing brace`);
   return [...body.slice(0, end).matchAll(
-    /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*)[ \t]*\{[ \t]*$/gmu,
+    /^(?:[ \t]*#\[serde\(rename = "([^"]+)"\)\][ \t]*\r?\n)?[ \t]*([A-Z][A-Za-z0-9]*)[ \t]*(?:\{|,)[ \t]*$/gmu,
   )].map((match) => match[1] ?? serdeSnakeCase(match[2]!));
 };
 
@@ -99,6 +99,8 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["beginner_report.rs", "CheckResultKind", "BeginnerCheckResultKind"],
   ["beginner_report.rs", "RequestedLimitSource", "BeginnerRequestedLimitSource"],
   ["beginner_report.rs", "FindingSnapshotSource", "BeginnerFindingSnapshotSource"],
+  ["domain.rs", "AssessmentActivity", "AssessmentActivity"],
+  ["domain.rs", "AiGeneratedArtifactAnswer", "AiGeneratedArtifactAnswer"],
   ["domain.rs", "AssetKind", "AssetKind"],
   ["domain.rs", "AwsIamPolicySource", "AwsIamPolicySource"],
   ["domain.rs", "Confidence", "Confidence"],
@@ -112,14 +114,19 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "FindingFamily", "FindingFamily"],
   ["domain.rs", "FindingGroupAction", "FindingGroupAction"],
   ["domain.rs", "FindingStatus", "FindingStatusWire"],
+  ["domain.rs", "LocalInputProfile", "LocalInputProfile"],
+  ["domain.rs", "LocalhostTcpOutcome", "LocalhostTcpOutcome"],
   ["domain.rs", "ScanRequestOutcomeCode", "ScanRequestOutcomeCode"],
   ["domain.rs", "Severity", "SeverityWire"],
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
+  ["domain.rs", "SourceConnectionStatus", "SourceConnectionStatus"],
+  ["domain.rs", "SourceKind", "SourceKind"],
 ];
 
 const TAGGED_PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
   ["beginner_report.rs", "BeginnerInventoryItemKind", "BeginnerInventoryItem"],
   ["beginner_report.rs", "TechnicalExecution", "BeginnerTechnicalExecution"],
+  ["domain.rs", "EngineTaskKind", "EngineTaskKind"],
 ];
 
 for (const [file, rustName, typescriptName] of PAIRS) {

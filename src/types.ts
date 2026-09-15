@@ -418,11 +418,19 @@ export interface CoverageRecord {
   scanAttempted?: boolean;
 }
 
+export type SourceConnectionStatus =
+  | "not_connected"
+  | "connecting"
+  | "connected"
+  | "needs_reauthorization"
+  | "failed"
+  | "not_applicable";
+
 export interface ConnectedSource {
   id: string;
   kind: SourceKind;
   label: string;
-  status: "not_connected" | "connecting" | "connected" | "needs_reauthorization" | "failed" | "not_applicable";
+  status: SourceConnectionStatus;
   readOnly: boolean;
   connectedAt?: string;
   lastDiscoveredAt?: string;
