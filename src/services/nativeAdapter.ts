@@ -2214,7 +2214,7 @@ export const adaptNativeCase = (
       kind,
       label: source.label,
       status: mapSourceConnectionStatus(source.status),
-      readOnly: source.read_only,
+      readOnly: exactBoolean(source.read_only) ?? false,
       connectedAt: source.connected_at ?? undefined,
       lastDiscoveredAt: source.last_discovered_at ?? undefined,
       providerBinding: adaptNativeProviderBinding(kind, source.metadata),
@@ -2480,7 +2480,7 @@ export const adaptNativeCase = (
         runtimeVersion: isBuiltInLocalhostTcp ? undefined : engineRun.runtime_version ?? undefined,
         runtimeSecurityOptions: isBuiltInLocalhostTcp ? undefined : engineRun.runtime_security_options ?? undefined,
         exitCode: isBuiltInLocalhostTcp ? undefined : engineRun.exit_code ?? undefined,
-        cleanupRemoved: isBuiltInLocalhostTcp ? undefined : engineRun.cleanup_removed ?? undefined,
+        cleanupRemoved: isBuiltInLocalhostTcp ? undefined : exactBoolean(engineRun.cleanup_removed),
         cleanupDetail: isBuiltInLocalhostTcp || staticFailure ? undefined : engineRun.cleanup_detail ?? undefined,
         warnings: staticFailure ? [] : engineRun.warnings ?? [],
         status,
@@ -2749,7 +2749,7 @@ export const adaptNativeSnapshot = (
       documentBytes: diagnostic.document_bytes,
       code: diagnostic.code,
       message: diagnostic.message,
-      preserved: diagnostic.preserved,
+      preserved: exactBoolean(diagnostic.preserved) ?? false,
     })),
     engineAdmissionIssues: (snapshot.engine_admission_issues ?? []).map((issue) => ({
       engineId: issue.engine_id ?? undefined,
@@ -2799,7 +2799,7 @@ const adaptBeginnerInventoryItem = (
     componentType: item.component_type,
     name: item.name,
     model: item.model ?? undefined,
-    isGuardrail: item.is_guardrail ?? undefined,
+    isGuardrail: exactBoolean(item.is_guardrail),
   };
   if (item.kind === "workflow_relationship") return {
     ...common,
@@ -3109,7 +3109,7 @@ export const adaptBeginnerMasterReport = (
       startedAt: task.started_at ?? undefined,
       finishedAt: task.finished_at ?? undefined,
       exitCode: task.exit_code ?? undefined,
-      cleanupRemoved: task.cleanup_removed ?? undefined,
+      cleanupRemoved: exactBoolean(task.cleanup_removed),
       cleanupDetail: {
         availability: task.cleanup_detail.availability,
         value: task.cleanup_detail.value ?? undefined,

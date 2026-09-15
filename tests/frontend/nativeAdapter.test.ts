@@ -869,6 +869,96 @@ test("unknown beginner inventory kinds cannot become named cloud resources", () 
   assert.doesNotMatch(JSON.stringify(report.inventory), /Misleading cloud resource/u);
 });
 
+test("workflow component guardrail claims require exact booleans and preserve absence", () => {
+  const isGuardrailFor = (is_guardrail: unknown) => {
+    const fixture = beginnerStatusReportFixture();
+    const item = {
+      kind: "workflow_component",
+      asset_id: "asset-status",
+      component_type: "agent",
+      name: "Assistant",
+      model: null,
+      is_guardrail,
+      sources: [],
+    };
+    return adaptBeginnerMasterReport({
+      ...fixture,
+      inventory: {
+        total: 1,
+        counts: {
+          services: 0,
+          software_components: 0,
+          cloud_resources: 0,
+          workflow_components: 1,
+          workflow_relationships: 0,
+        },
+        asset_ids: ["asset-status"],
+        representative_sample: [item],
+        items: [item],
+        by_asset: [],
+      },
+    }).inventory?.items[0]?.isGuardrail;
+  };
+
+  assert.equal(isGuardrailFor(true), true);
+  assert.equal(isGuardrailFor(false), false);
+  assert.equal(isGuardrailFor(null), undefined);
+  for (const isGuardrail of ["true", 1, {}, []]) {
+    assert.equal(isGuardrailFor(isGuardrail), undefined);
+  }
+});
+
+test("beginner report cleanup claims require exact booleans and preserve absence", () => {
+  const cleanupRemovedFor = (cleanup_removed: unknown) => {
+    const fixture = beginnerStatusReportFixture();
+    return adaptBeginnerMasterReport({
+      ...fixture,
+      technical_details: {
+        collapsed_by_default: true,
+        tasks: [{
+          task_id: "task-status",
+          target_asset_ids: ["asset-status"],
+          status: "completed",
+          phase: "completed",
+          progress_percent: 100,
+          started_at: "2026-09-15T11:59:00Z",
+          finished_at: "2026-09-15T12:00:00Z",
+          exit_code: 0,
+          cleanup_removed,
+          cleanup_detail: {
+            availability: "recorded",
+            value: "Cleanup outcome recorded.",
+            explanation: "Cleanup outcome was recorded.",
+          },
+          error_code: null,
+          redacted_scanner_message: {
+            availability: "unavailable",
+            value: null,
+            explanation: "No scanner message was retained.",
+          },
+          redacted_diagnostic_log: {
+            availability: "unavailable",
+            value: null,
+            explanation: "No diagnostic log was retained.",
+          },
+          evidence_sha256: [],
+          execution: {
+            kind: "invalid_built_in_task",
+            explanation: "Test-only invalid task.",
+          },
+        }],
+      },
+    }).technicalDetails.tasks[0]?.cleanupRemoved;
+  };
+
+  assert.equal(cleanupRemovedFor(true), true);
+  assert.equal(cleanupRemovedFor(false), false);
+  assert.equal(cleanupRemovedFor(null), undefined);
+  for (const cleanupRemoved of ["true", 1, {}, []]) {
+    assert.equal(cleanupRemovedFor(cleanupRemoved), undefined);
+  }
+});
+
 test("beginner coverage gap kinds preserve known values and fail closed to unavailable", () => {
   const known = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapKind: "failed" }));
   assert.equal(known.coverageGaps[0]?.kind, "failed");
@@ -1655,6 +1745,28 @@ test("native snapshot preserves beginner-safe diagnostics for unreadable saved p
     preserved: true,
   }]);
   assert.equal(snapshot.provenance, "native");
+});
+
+test("case recovery preservation claims require exact booleans", () => {
+  const preservedFor = (preserved: unknown) => adaptNativeSnapshot({
+    ...snapshotFixture([summaryFixture()]),
+    case_recovery_diagnostics: [{
+      case_id: "damaged-case",
+      title: "Older scan project",
+      updated_at: "2026-08-26T00:00:00Z",
+      revision: 7,
+      document_bytes: 2048,
+      code: "case_document_unreadable",
+      message: "Recovery status recorded.",
+      preserved,
+    }],
+  }, []).caseRecoveryDiagnostics?.[0]?.preserved;
+
+  assert.equal(preservedFor(true), true);
+  assert.equal(preservedFor(false), false);
+  for (const preserved of [undefined, null, "true", 1, {}, []]) {
+    assert.equal(preservedFor(preserved), false);
+  }
 });
 
 test("native runtime availability preserves booleans and fails closed on malformed values", () => {
@@ -2491,6 +2603,26 @@ test("an unknown source connection status never claims that the source is connec
   assert.equal(workspace.sources[0]?.status, "not_connected");
 });
 
+test("native source read-only claims require exact booleans", () => {
+  const readOnlyFor = (read_only: unknown) => adaptNativeCase(platformCaseFixture({
+    data_sources: [{
+      id: "source-read-only-boundary",
+      kind: "aws_organization",
+      label: "AWS source",
+      status: "connected",
+      connected_at: "2026-08-26T00:00:00Z",
+      last_discovered_at: "2026-08-26T00:00:00Z",
+      read_only,
+    }],
+  })).sources[0]?.readOnly;
+
+  assert.equal(readOnlyFor(true), true);
+  assert.equal(readOnlyFor(false), false);
+  for (const readOnly of [undefined, null, "true", 1, {}, []]) {
+    assert.equal(readOnlyFor(readOnly), false);
+  }
+});
+
 test("questionnaire-only local names stay distinct from attached workspace snapshots", () => {
   assert.ok(adapterSource.includes("localQuestionnaireKinds"));
   assert.ok(adapterSource.includes("questionnairePlaceholder:"));
@@ -3085,6 +3217,46 @@ test("run-bound packaged scanner issues remain available to technical diagnostic
     code: "engine_contract_invalid",
     detail: "test-only catalog detail",
   }]);
+});
+
+test("native engine cleanup claims require exact booleans and preserve absence", () => {
+  const cleanupRemovedFor = (cleanup_removed: unknown) => adaptNativeCase(platformCaseFixture({
+    scan_runs: [{
+      id: "run-cleanup-boundary",
+      case_id: "case-platforms-1",
+      sequence: 1,
+      created_at: "2026-08-26T00:00:00Z",
+      completed_at: "2026-08-26T00:00:01Z",
+      knowledge_cutoff: "2026-08-24T00:00:00Z",
+      engine_runs: [{
+        id: "task-cleanup-boundary",
+        engine_id: "gitleaks",
+        task_kind: { kind: "catalog_engine" },
+        asset_ids: ["repository-asset"],
+        status: "completed",
+        progress_percent: 100,
+        phase: "completed",
+        started_at: "2026-08-26T00:00:00Z",
+        finished_at: "2026-08-26T00:00:01Z",
+        resume_token: null,
+        engine_version: "8.27.2",
+        image_digest: "sha256:test",
+        rule_version: null,
+        adapter_version: "test",
+        raw_artifact_ids: [],
+        error_code: null,
+        error_message: null,
+        cleanup_removed,
+      }],
+    }],
+  })).runs[0]?.engineRuns[0]?.cleanupRemoved;
+
+  assert.equal(cleanupRemovedFor(true), true);
+  assert.equal(cleanupRemovedFor(false), false);
+  assert.equal(cleanupRemovedFor(null), undefined);
+  for (const cleanupRemoved of ["true", 1, {}, []]) {
+    assert.equal(cleanupRemovedFor(cleanupRemoved), undefined);
+  }
 });
 
 const adaptGatewayFailure = (
