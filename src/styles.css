@@ -994,6 +994,17 @@ button.update-control:hover:not(:disabled) {
   line-height: 1.45;
 }
 
+.asset-result-row__outcome .button {
+  justify-self: start;
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.report-terminal-outcome {
+  display: flex;
+  flex-wrap: wrap;
+}
+
 .coverage-card {
   min-width: 0;
   padding: 18px;

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, within } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { FindingsPage } from "../../src/pages/FindingsPage";
 import { I18nProvider, localeStorageKey } from "../../src/i18n";
@@ -182,6 +182,10 @@ const renderReport = (
   value: BeginnerMasterReport,
   canonical: Finding[] = [],
   runs: ScanRun[] = [],
+  handlers: {
+    onOpenProgress?: () => void;
+    onOpenCoverage?: () => void;
+  } = {},
 ) =>
   render(
     <I18nProvider>
@@ -198,8 +202,8 @@ const renderReport = (
         onUpdateWorkflow={() => Promise.resolve(true)}
         onGroupFindings={() => Promise.resolve(true)}
         onUngroupFindings={() => Promise.resolve()}
-        onOpenCoverage={() => {}}
-        onOpenProgress={() => {}}
+        onOpenCoverage={handlers.onOpenCoverage ?? (() => {})}
+        onOpenProgress={handlers.onOpenProgress ?? (() => {})}
         onOpenExport={() => {}}
       />
     </I18nProvider>,
@@ -534,18 +538,35 @@ test("the first layer gives every requested asset one evidence-derived result st
   expect(row("team-a/api").dataset.assetResult).toBe("problems_found");
   expect(row("team-a/api").textContent).toContain("1 problem was found.");
   expect(row("team-a/api").textContent).toContain("Some checks are incomplete");
+  expect(row("team-a/api").querySelector(".asset-result-row__outcome span")?.textContent)
+    .toContain("Some checks are incomplete. Finish or retry them from Progress.");
+  expect(row("team-a/api").querySelector("button")?.textContent)
+    .toContain("Review scanner status");
   // One frozen finding can apply to more than one target; each target must get credit for it.
   expect(row("team-b/api").dataset.assetResult).toBe("problems_found");
   expect(row("https://portal.example").dataset.assetResult).toBe("no_problems_completed");
   expect(row("https://portal.example").textContent).toContain("1 completed security check reported no problems");
   expect(row("https://portal.example").textContent).toContain("Open the completed-check scope");
+  expect(row("https://portal.example").querySelector("button")).toBeNull();
   expect(row("Branch gateway").dataset.assetResult).toBe("incomplete_failed");
   expect(row("Branch gateway").textContent).toContain("Retry this check");
+  expect(row("Branch gateway").querySelector(".asset-result-row__outcome span")?.textContent)
+    .toContain("Retry this check");
+  expect(row("Branch gateway").querySelector("button")?.textContent)
+    .toContain("Review scanner status");
   expect(row("Branch gateway").textContent).not.toContain("Keep this limitation visible");
+  expect(board.textContent).not.toContain(
+    "A no-problem result applies only to the security checks that completed.",
+  );
+  expect(row("https://portal.example").textContent).toContain("No problems in completed checks");
   // A completed inventory tool is not promoted into a completed security check.
   expect(row("workstation-12").dataset.assetResult).toBe("not_tested");
   expect(row("workstation-12").textContent).toContain("Choose an available check for this target");
   expect(row("workstation-12").textContent).not.toContain("Retry this check");
+  expect(row("workstation-12").querySelector(".asset-result-row__outcome span")?.textContent)
+    .toContain("Choose an available check for this target");
+  expect(row("workstation-12").querySelector("button")?.textContent)
+    .toContain("Open scan setup");
 
   const technicalDisclosure = container.querySelector<HTMLElement>(".report-scope-disclosure");
   expect(board.compareDocumentPosition(technicalDisclosure!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -825,7 +846,120 @@ test("the asset result board gives a Traditional Chinese beginner the same bound
   expect(board?.textContent).toContain("未測試");
   expect(board?.textContent).toContain("這個資產沒有已完成的資安檢查紀錄");
   expect(board?.textContent).toContain("為這個目標選擇可用的檢查");
+  expect(board?.querySelector(".asset-result-row__outcome span")?.textContent)
+    .toContain("為這個目標選擇可用的檢查");
+  expect(board?.querySelector("button")?.textContent).toContain("開啟掃描設定");
   expect(board?.textContent).not.toContain("No compatible check ran");
+  expect(board?.textContent).not.toContain("「未發現問題」只適用於已完成的資安檢查");
+});
+
+const cleanCompletedReport = (): BeginnerMasterReport => {
+  const base = report("complete");
+  return report("complete", {
+    actual: {
+      checks: [{
+        taskId: "trivy-task",
+        checkId: "trivy",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    requested: { ...base.requested, requestedCheckIds: ["trivy"] },
+    coverageCounts: counts({ testedComplete: 1 }),
+  });
+};
+
+test("a clean terminal run states its bounded outcome before the coverage detail", () => {
+  const { container, unmount } = renderReport(cleanCompletedReport(), [], [catalogRun("trivy")]);
+
+  const header = container.querySelector<HTMLElement>(".page-header");
+  const outcome = container.querySelector<HTMLElement>("[data-report-outcome='no_problems_completed']");
+  const coverage = container.querySelector<HTMLElement>(
+    "section[aria-labelledby='beginner-master-report-title']",
+  );
+  if (!header || !outcome || !coverage) {
+    throw new Error("clean terminal outcome, header, or coverage detail did not render");
+  }
+
+  expect(header.textContent).toContain("No problems were observed in the work that completed");
+  expect(header.textContent).toContain("in their tested scope");
+  expect(header.textContent).toContain("Sources included: 0.");
+  expect(header.textContent).not.toContain("Open Scan setup to review exactly what was included");
+  expect(container.textContent).toContain("No problems in completed checks");
+  expect(header.compareDocumentPosition(coverage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(outcome.compareDocumentPosition(coverage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(coverage.textContent).toContain("What was checked—and what was not");
+
+  unmount();
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const { container: zh } = renderReport(cleanCompletedReport(), [], [catalogRun("trivy")]);
+  const zhHeader = zh.querySelector<HTMLElement>(".page-header");
+  expect(zhHeader?.textContent).toContain("已完成的檢查在實際測試範圍內沒有記錄問題");
+  expect(zhHeader?.textContent).toContain("包含的來源：0 個");
+  expect(zhHeader?.textContent).not.toContain("打開掃描設定");
+});
+
+test("a clean terminal run is not an empty state, while incomplete and failed runs stay distinguished", () => {
+  const { container: clean } = renderReport(cleanCompletedReport(), [], [catalogRun("trivy")]);
+  expect(clean.querySelector(".empty-state")).toBeNull();
+  expect(clean.querySelector("[data-report-outcome='no_problems_completed']")).not.toBeNull();
+  expect(clean.querySelector(".empty-state__icon")).toBeNull();
+
+  const failedRun = catalogRun("trivy");
+  failedRun.status = "failed";
+  const { container: failed } = renderReport(cleanCompletedReport(), [], [failedRun]);
+  expect(failed.querySelector(".empty-state")).not.toBeNull();
+  expect(failed.querySelector("[data-report-outcome='no_problems_completed']")).toBeNull();
+  expect(failed.querySelector(".empty-state h2")?.textContent).toContain("Scan needs attention");
+  expect(failed.querySelector(".empty-state")?.textContent).toContain("Retry unfinished checks");
+
+  const { container: connection } = renderReport(report("complete"), [], [localhostRun()]);
+  expect(connection.querySelector(".empty-state")).not.toBeNull();
+  expect(connection.querySelector("[data-report-outcome='no_problems_completed']")).toBeNull();
+  expect(connection.querySelector(".page-header")?.textContent).toContain(
+    "Connection test only — no vulnerability scan ran",
+  );
+});
+
+test("an incomplete asset row exposes a direct action control, not only prose", () => {
+  const onOpenProgress = vi.fn();
+  const { container } = renderReport(report("partial", {
+    actual: {
+      checks: [{
+        taskId: "task-failed",
+        checkId: "greenbone",
+        targetAssetIds: ["asset-1"],
+        status: "failed",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageGaps: [{
+      kind: "failed",
+      taskId: "task-failed",
+      targetAssetIds: ["asset-1"],
+      dimension: "vulnerability checks",
+      reason: "The check failed.",
+      nextActionCode: "retry_check",
+      nextAction: "Retry this check.",
+    }],
+    coverageCounts: counts({ failed: 1 }),
+  }), [], [], { onOpenProgress });
+
+  const row = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(row?.dataset.assetResult).toBe("incomplete_failed");
+  const action = row?.querySelector("button");
+  expect(action).not.toBeNull();
+  expect(action?.textContent).toContain("Review scanner status");
+  expect(row?.querySelector(".asset-result-row__outcome span")?.textContent)
+    .toContain("Retry this check");
+  fireEvent.click(action!);
+  expect(onOpenProgress).toHaveBeenCalledTimes(1);
 });
 
 test("the first layer names the requested target, tested work, top gap, and next action", () => {

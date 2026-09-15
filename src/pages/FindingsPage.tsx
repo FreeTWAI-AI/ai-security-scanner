@@ -249,8 +249,8 @@ const copy = {
     zhTW: "沒有可用資訊的來源：{count} 個。打開掃描設定即可連接或確認。",
   },
   emptyCompletedDescription: {
-    en: "The completed checks recorded no issues in their tested scope. Sources included: {count}. Open Scan setup to review exactly what was included.",
-    zhTW: "已完成的檢查在實際測試範圍內沒有記錄問題。打開掃描設定，即可查看這 {count} 個來源實際包含了什麼。",
+    en: "The completed checks recorded no issues in their tested scope. Sources included: {count}.",
+    zhTW: "已完成的檢查在實際測試範圍內沒有記錄問題。包含的來源：{count} 個。",
   },
   openCoverage: { en: "Open scan setup", zhTW: "開啟掃描設定" },
   openProgress: { en: "Review scanner status", zhTW: "查看掃描器狀態" },
@@ -374,8 +374,8 @@ const copy = {
   assetResultEyebrow: { en: "BY ASSET", zhTW: "逐項資產" },
   assetResultTitle: { en: "Which assets need attention", zhTW: "哪些資產需要處理" },
   assetResultDescription: {
-    en: "Every selected asset appears once. A no-problem result applies only to the security checks that completed.",
-    zhTW: "每個已選資產都會列出一次；「未發現問題」只適用於已完成的資安檢查。",
+    en: "Every selected asset appears once.",
+    zhTW: "每個已選資產都會列出一次。",
   },
   assetStatusProblems: { en: "Problems found", zhTW: "發現問題" },
   assetStatusNoProblems: {
@@ -836,6 +836,28 @@ const incompleteGapKinds = new Set<BeginnerMasterReport["coverageGaps"][number][
   "unattributed",
 ]);
 
+const progressNextActions = new Set<BeginnerNextActionCode>([
+  "retry_check",
+  "review_scope_and_retry",
+  "wait_or_cancel",
+]);
+const coverageNextActions = new Set<BeginnerNextActionCode>([
+  "choose_compatible_check",
+  "review_coverage",
+]);
+
+const assetActionDestination = (
+  nextActionCode: BeginnerNextActionCode | undefined,
+  status: AssetResultStatus,
+): "progress" | "coverage" | undefined => {
+  if (nextActionCode && progressNextActions.has(nextActionCode)) return "progress";
+  if (nextActionCode && coverageNextActions.has(nextActionCode)) return "coverage";
+  if (nextActionCode) return undefined;
+  if (status === "incomplete_failed") return "progress";
+  if (status === "not_tested") return "coverage";
+  return undefined;
+};
+
 /** Conservative fallback for reports saved before `resultKind` was frozen. */
 const legacyCheckResultKind = (
   checkId: string,
@@ -859,7 +881,15 @@ const assetResultRank: Record<AssetResultStatus, number> = {
   no_problems_completed: 3,
 };
 
-function AssetResultBoard({ report }: { report: BeginnerMasterReport }) {
+function AssetResultBoard({
+  report,
+  onOpenProgress,
+  onOpenCoverage,
+}: {
+  report: BeginnerMasterReport;
+  onOpenProgress: () => void;
+  onOpenCoverage: () => void;
+}) {
   const { locale, text, formatNumber } = useI18n();
   if (report.requested.targets.length === 0) return null;
 
@@ -915,10 +945,13 @@ function AssetResultBoard({ report }: { report: BeginnerMasterReport }) {
               findingCount === 1 ? copy.assetProblemCountOne : copy.assetProblemCountMany,
               { count: formatNumber(findingCount) },
             ),
-            action: [
+            prose: [
               text(copy.assetProblemAction),
               hasIncompleteEvidence ? text(copy.assetProblemIncomplete) : undefined,
             ].filter((value): value is string => Boolean(value)).join(" "),
+            control: hasIncompleteEvidence
+              ? { destination: "progress" as const }
+              : undefined,
           };
         case "no_problems_completed":
           return {
@@ -930,22 +963,31 @@ function AssetResultBoard({ report }: { report: BeginnerMasterReport }) {
                 : copy.assetNoProblemSummaryMany,
               { count: formatNumber(completedSecurityChecks.length) },
             ),
-            action: recordedNextAction ?? text(copy.assetNoProblemAction),
+            prose: recordedNextAction ?? text(copy.assetNoProblemAction),
+            control: undefined,
           };
-        case "incomplete_failed":
+        case "incomplete_failed": {
+          const action = recordedNextAction ?? text(copy.assetIncompleteAction);
+          const destination = assetActionDestination(actionGap?.nextActionCode, status);
           return {
             label: text(copy.assetStatusIncomplete),
             tone: "warning",
             summary: text(copy.assetIncompleteSummary),
-            action: recordedNextAction ?? text(copy.assetIncompleteAction),
+            prose: action,
+            control: destination ? { destination } : undefined,
           };
-        case "not_tested":
+        }
+        case "not_tested": {
+          const action = recordedNextAction ?? text(copy.assetNotTestedAction);
+          const destination = assetActionDestination(actionGap?.nextActionCode, status);
           return {
             label: text(copy.assetStatusNotTested),
             tone: "neutral",
             summary: text(copy.assetNotTestedSummary),
-            action: recordedNextAction ?? text(copy.assetNotTestedAction),
+            prose: action,
+            control: destination ? { destination } : undefined,
           };
+        }
       }
     })();
 
@@ -987,7 +1029,22 @@ function AssetResultBoard({ report }: { report: BeginnerMasterReport }) {
             <StatusPill label={presentation.label} tone={presentation.tone} />
             <div className="asset-result-row__outcome">
               <strong>{presentation.summary}</strong>
-              <span>{presentation.action}</span>
+              {presentation.prose ? <span>{presentation.prose}</span> : null}
+              {presentation.control ? (
+                <button
+                  type="button"
+                  className="button button--secondary button--small"
+                  onClick={presentation.control.destination === "progress" ? onOpenProgress : onOpenCoverage}
+                >
+                  <Icon
+                    name={presentation.control.destination === "progress" ? "progress" : "coverage"}
+                    size={16}
+                  />
+                  {text(presentation.control.destination === "progress"
+                    ? copy.openProgress
+                    : copy.openCoverage)}
+                </button>
+              ) : null}
             </div>
           </li>
         ))}
@@ -2178,6 +2235,21 @@ export function FindingsPage({
               : unknownSources > 0
                 ? text(copy.emptyUnknownDescription, { count: formatNumber(unknownSources) })
                 : text(copy.emptyCompletedDescription, { count: formatNumber(connectedWithoutAssets) });
+    const hasCompletedSecurityCheck = Boolean(report?.actual.checks.some((check) =>
+      check.status === "tested_complete" && checkResultKind(check) === "security_check"));
+    const cleanCompletedOutcome = Boolean(latestRun)
+      && !incompleteRun
+      && !requestOutcomeSummary
+      && !localhostSummary
+      && !nonSecurityOnly
+      && unknownSources === 0
+      && hasCompletedSecurityCheck;
+    const terminalActions = (
+      <div className="button-group">
+        <button className="button button--secondary" type="button" onClick={onOpenCoverage}><Icon name="coverage" size={16} />{text(copy.openCoverage)}</button>
+        {latestRun && <button className="button button--primary" type="button" onClick={onOpenProgress}><Icon name="progress" size={16} />{text(copy.openProgress)}</button>}
+      </div>
+    );
     return (
       <div className="page">
         <PageHeader
@@ -2186,40 +2258,52 @@ export function FindingsPage({
             : nonSecurityOnly
               ? copy.nonSecurityHeaderEyebrow
               : copy.eyebrow)}
-          title={text(localhostSummary
-            ? copy.connectionHeaderTitle
-            : nonSecurityOnly
-              ? copy.nonSecurityHeaderTitle
-              : copy.emptyHeaderTitle)}
-          description={text(localhostSummary
-            ? copy.connectionHeaderDescription
-            : nonSecurityOnly
-              ? copy.nonSecurityHeaderDescription
-              : copy.emptyHeaderDescription)}
+          title={cleanCompletedOutcome
+            ? title
+            : text(localhostSummary
+              ? copy.connectionHeaderTitle
+              : nonSecurityOnly
+                ? copy.nonSecurityHeaderTitle
+                : copy.emptyHeaderTitle)}
+          description={cleanCompletedOutcome
+            ? description
+            : text(localhostSummary
+              ? copy.connectionHeaderDescription
+              : nonSecurityOnly
+                ? copy.nonSecurityHeaderDescription
+                : copy.emptyHeaderDescription)}
           actions={reportActions}
         />
-        {report && <AssetResultBoard report={report} />}
+        {cleanCompletedOutcome && (
+          <div className="report-terminal-outcome" data-report-outcome="no_problems_completed">
+            {terminalActions}
+          </div>
+        )}
+        {report && (
+          <AssetResultBoard
+            report={report}
+            onOpenProgress={onOpenProgress}
+            onOpenCoverage={onOpenCoverage}
+          />
+        )}
+        {!cleanCompletedOutcome && (
+          <EmptyState
+            icon={incompleteRun
+              || unknownSources > 0
+              || Boolean(requestOutcomeSummary)
+              || ["closed", "timed_out", "failed", "cancelled", "missing", "inconsistent"]
+                .includes(localhostSummary?.outcome ?? "")
+              ? "warning"
+              : "findings"}
+            title={title}
+            description={description}
+            action={terminalActions}
+          />
+        )}
         {report && <BeginnerReportOverview report={report} run={latestRun} />}
         {reportUnavailable && <InlineNotice tone="warning" title={text(unavailableReportNotice.title)}><p>{text(unavailableReportNotice.body)}</p></InlineNotice>}
         {typedInventorySection}
         {observationSection}
-        <EmptyState
-          icon={incompleteRun
-            || unknownSources > 0
-            || Boolean(requestOutcomeSummary)
-            || ["closed", "timed_out", "failed", "cancelled", "missing", "inconsistent"]
-              .includes(localhostSummary?.outcome ?? "")
-            ? "warning"
-            : "findings"}
-          title={title}
-          description={description}
-          action={
-            <div className="button-group">
-              <button className="button button--secondary" type="button" onClick={onOpenCoverage}><Icon name="coverage" size={16} />{text(copy.openCoverage)}</button>
-              {latestRun && <button className="button button--primary" type="button" onClick={onOpenProgress}><Icon name="progress" size={16} />{text(copy.openProgress)}</button>}
-            </div>
-          }
-        />
         {report && <ReportEndMatter report={report} run={latestRun} />}
       </div>
     );
@@ -2295,7 +2379,13 @@ export function FindingsPage({
         </InlineNotice>
       )}
 
-      {report && <AssetResultBoard report={report} />}
+      {report && (
+        <AssetResultBoard
+          report={report}
+          onOpenProgress={onOpenProgress}
+          onOpenCoverage={onOpenCoverage}
+        />
+      )}
 
       {topFindings.length > 0 && (
         <section className="section-block priority-section">
