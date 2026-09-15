@@ -1737,6 +1737,10 @@ const mapLocalhostTcpObservation = (
   };
 };
 
+/** Untrusted IPC may send a truthy stand-in; only an exact boolean may stand as a claim. */
+const exactBoolean = (value: unknown): boolean | undefined =>
+  typeof value === "boolean" ? value : undefined;
+
 const exactCompletedLocalhostBinding = (
   engineRun: EngineRun,
   assetId: string,
@@ -1748,7 +1752,7 @@ const exactCompletedLocalhostBinding = (
   const asset = nativeAssets.find((candidate) => candidate.id === assetId);
   const exactLoopbackAsset = asset?.kind === "web_service"
     && !asset.candidate
-    && asset.owner_confirmed
+    && exactBoolean(asset.owner_confirmed) === true
     && asset.internet_exposed === false
     && asset.name === endpoint
     && asset.identifiers.length === 1
@@ -1906,6 +1910,11 @@ const storedExportFormat = (format?: string | null): ExportFormat | undefined =>
     ? format as ExportFormat
     : undefined;
 
+// STANDARD base64 of a 64-byte Ed25519 signature; anything else cannot claim local integrity.
+const LOCAL_INTEGRITY_SIGNATURE = /^[A-Za-z0-9+/]{86}==$/u;
+const hasLocalIntegritySignature = (signature: unknown): boolean =>
+  typeof signature === "string" && LOCAL_INTEGRITY_SIGNATURE.test(signature);
+
 export const adaptNativeExport = (item: NativeCaseExport): CaseExport => ({
   id: item.id,
   caseId: item.case_id,
@@ -1916,7 +1925,7 @@ export const adaptNativeExport = (item: NativeCaseExport): CaseExport => ({
   sha256: item.sha256,
   coverageManifestPath: item.coverage_manifest_path ?? undefined,
   coverageManifestSha256: item.coverage_manifest_sha256 ?? undefined,
-  signatureState: item.signature ? "local_integrity" : "unsigned",
+  signatureState: hasLocalIntegritySignature(item.signature) ? "local_integrity" : "unsigned",
   includesRawEvidence: item.raw_artifacts_included == null
     ? undefined
     : item.raw_artifacts_included > 0,
@@ -2213,7 +2222,7 @@ export const adaptNativeCase = (
     }));
     const coverageState = entry
       ? mapCoverageState(entry.status)
-      : asset.candidate ? "discovered_not_authorized" : asset.owner_confirmed ? "authorized_incomplete" : "source_unavailable_unknown";
+      : asset.candidate ? "discovered_not_authorized" : exactBoolean(asset.owner_confirmed) === true ? "authorized_incomplete" : "source_unavailable_unknown";
     const localInputProfile = localInputProfileFromAsset(asset);
     const internetExposed = explicitTargetRequiresSensitiveNetworkAllowance(asset.name)
       ? false
@@ -2297,7 +2306,7 @@ export const adaptNativeCase = (
         runId: evidence.run_id,
         engineRunId: evidence.engine_run_id ?? undefined,
         artifactId: evidence.artifact_id,
-        redacted: evidence.redacted,
+        redacted: exactBoolean(evidence.redacted),
       })),
       controls: finding.control_references.map((control) => ({
         framework: control.framework,
@@ -2985,7 +2994,7 @@ export const adaptBeginnerMasterReport = (
       kind: evidence.kind ?? undefined,
       engineRunId: evidence.engine_run_id ?? undefined,
       artifactId: evidence.artifact_id ?? undefined,
-      redacted: evidence.redacted ?? undefined,
+      redacted: exactBoolean(evidence.redacted),
       artifactSha256: evidence.artifact_sha256,
       observedAt: evidence.observed_at,
       location: evidence.location ?? undefined,

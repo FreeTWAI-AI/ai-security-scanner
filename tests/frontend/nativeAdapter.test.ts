@@ -86,22 +86,33 @@ test("native export previews preserve only the closed report locale coordinate",
   );
 });
 
+const nativeExport = (signature: unknown) => adaptNativeExport({
+  id: "export-1",
+  case_id: "case-1",
+  run_id: "run-history-2",
+  created_at: "2026-09-01T01:02:03Z",
+  format: "html",
+  path: "C:\\reports\\report.html",
+  sha256: "abc123",
+  signature,
+  redaction_profile: "standard",
+});
+
 test("native exports preserve their immutable scan-run coordinate", () => {
-  const adapted = adaptNativeExport({
-    id: "export-1",
-    case_id: "case-1",
-    run_id: "run-history-2",
-    created_at: "2026-09-01T01:02:03Z",
-    format: "html",
-    path: "C:\\reports\\report.html",
-    sha256: "abc123",
-    signature: null,
-    redaction_profile: "standard",
-  });
+  const adapted = nativeExport(null);
 
   assert.equal(adapted.caseId, "case-1");
   assert.equal(adapted.runId, "run-history-2");
   assert.equal(adapted.fileName, "report.html");
+});
+
+test("export signatures claim local integrity only for the stored Ed25519 encoding", () => {
+  const stored = `${"A".repeat(86)}==`;
+  assert.equal(nativeExport(stored).signatureState, "local_integrity");
+  assert.equal(nativeExport(null).signatureState, "unsigned");
+  for (const signature of ["", " ", "signed", "true", 1, stored.slice(0, -1), ` ${stored}`]) {
+    assert.equal(nativeExport(signature).signatureState, "unsigned", String(signature));
+  }
 });
 
 test("suggested export filenames use a stable readable sequence and opaque short identity", () => {
@@ -710,6 +721,43 @@ const beginnerStatusReportFixture = (overrides: {
   technical_details: { collapsed_by_default: true, tasks: [] },
   framework_notice: { non_certification: "Not certification.", aidefend_mapping_status: "Not mapped." },
   data_quality_warnings: [],
+});
+
+test("frozen evidence redaction claims only the exact boolean and preserves absence", () => {
+  const redactedFor = (redacted: unknown, omit = false) => adaptBeginnerMasterReport({
+    ...beginnerStatusReportFixture(),
+    findings: [{
+      finding_id: "finding-redaction",
+      fingerprint: "fp-redaction",
+      snapshot_source: "frozen_selected_run",
+      title: "Redaction claim",
+      plain_language_risk: "Risk",
+      possible_impact: "Impact",
+      severity: "low",
+      confidence: "low",
+      priority: null,
+      priority_reasons: [],
+      target_asset_ids: ["asset-status"],
+      next_step: "Review it.",
+      recommended_expert_type: "IT administrator",
+      evidence_references: [{
+        evidence_id: "evidence-redaction",
+        engine_id: "gitleaks",
+        artifact_sha256: "a".repeat(64),
+        observed_at: "2026-09-15T12:00:00Z",
+        ...(omit ? {} : { redacted }),
+      }],
+      framework_references: [],
+    }],
+  }).findings[0]?.evidenceReferences[0]?.redacted;
+
+  assert.equal(redactedFor(true), true);
+  assert.equal(redactedFor(false), false);
+  assert.equal(redactedFor(undefined, true), undefined);
+  assert.equal(redactedFor(null), undefined);
+  for (const redacted of [1, "false", {}, "true"]) {
+    assert.equal(redactedFor(redacted), undefined);
+  }
 });
 
 test("beginner check result kinds preserve known values, legacy absence, and fail closed on unknown values", () => {
@@ -2156,6 +2204,49 @@ test("canonical evidence retains scanner-authored detail and typed AWS IAM conte
   assert.equal(workspace.findings[0]?.recommendation, "Use the product recommendation.");
 });
 
+test("canonical evidence redaction claims only the exact boolean and preserves absence", () => {
+  const redactedFor = (redacted: unknown, omit = false) => adaptNativeCase(platformCaseFixture({
+    findings: [{
+      id: "finding-redaction",
+      case_id: "case-platforms-1",
+      first_seen_run_id: "run-1",
+      last_seen_run_id: "run-1",
+      fingerprint: "fingerprint-redaction",
+      title: "Redaction claim",
+      plain_language_summary: "Review this scanner observation.",
+      possible_impact: "Impact",
+      severity: "low",
+      confidence: "medium",
+      priority: 20,
+      priority_reasons: [],
+      asset_ids: ["repository-asset"],
+      evidence: [{
+        id: "evidence-redaction",
+        finding_id: "finding-redaction",
+        run_id: "run-1",
+        engine_id: "gitleaks",
+        observed_at: "2026-09-04T12:00:00Z",
+        summary: "Evidence summary",
+        artifact_sha256: "a".repeat(64),
+        pointer: null,
+        ...(omit ? {} : { redacted }),
+      }],
+      control_references: [],
+      recommendation: "Ask a qualified reviewer.",
+      official_references: [],
+      recommended_expert_type: "Security reviewer",
+      status: "unreviewed",
+    }],
+  })).findings[0]?.evidence[0]?.redacted;
+
+  assert.equal(redactedFor(true), true);
+  assert.equal(redactedFor(false), false);
+  assert.equal(redactedFor(undefined, true), undefined);
+  for (const redacted of [1, "false", {}, "true"]) {
+    assert.equal(redactedFor(redacted), undefined);
+  }
+});
+
 test("native AWS IAM detail mapping drops malformed context without dropping sibling evidence", () => {
   const workspace = adaptNativeCase(platformCaseFixture({
     findings: [{
@@ -2398,6 +2489,31 @@ test("native adapter repairs stale public display for an explicit private CIDR",
   }));
 
   assert.equal(workspace.assets[0]?.internetExposed, false);
+});
+
+test("owner confirmation becomes an authorized coverage state only as an exact boolean", () => {
+  const coverageFor = (owner_confirmed: unknown) => adaptNativeCase(platformCaseFixture({
+    assets: [{
+      id: "repository-asset",
+      kind: "repository",
+      name: "Repository",
+      provider: null,
+      region: null,
+      identifiers: [],
+      discovered_from: [],
+      candidate: false,
+      owner_confirmed,
+      metadata: {},
+    }],
+    coverage: [],
+  })).assets[0]?.coverageState;
+
+  assert.equal(coverageFor(true), "authorized_incomplete");
+  assert.equal(coverageFor(false), "source_unavailable_unknown");
+  assert.equal(coverageFor(undefined), "source_unavailable_unknown");
+  for (const owner_confirmed of [1, "false", {}, "true"]) {
+    assert.equal(coverageFor(owner_confirmed), "source_unavailable_unknown");
+  }
 });
 
 test("authorized coverage distinguishes a saved permission from an attempted scan", () => {
@@ -2946,6 +3062,23 @@ const adaptLocalhostCoverageFixture = (
     }],
   }],
 }), manifests);
+
+test("a non-boolean owner confirmation cannot complete a localhost coverage binding", () => {
+  const observation = {
+    localhost_tcp_observation: {
+      outcome: "reachable",
+      observed_at: "2026-08-30T12:00:01Z",
+    },
+  };
+  assert.equal(adaptLocalhostCoverageFixture(observation).runs[0]?.coveredAssetCount, 1);
+  assert.equal(adaptLocalhostCoverageFixture(observation, { owner_confirmed: false }).runs[0]?.coveredAssetCount, 0);
+  for (const owner_confirmed of [1, "false", "true"]) {
+    assert.equal(
+      adaptLocalhostCoverageFixture(observation, { owner_confirmed }).runs[0]?.coveredAssetCount,
+      0,
+    );
+  }
+});
 
 test("completed status alone never gives a built-in localhost task covered-target credit", () => {
   assert.equal(adaptLocalhostCoverageFixture({}).runs[0]?.coveredAssetCount, 0);
