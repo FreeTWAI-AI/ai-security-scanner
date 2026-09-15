@@ -124,6 +124,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "KnowledgeInputKind", "KnowledgeInputKind"],
   ["domain.rs", "KnowledgePinState", "KnowledgePinState"],
   ["domain.rs", "ScanRequestOutcomeCode", "ScanRequestOutcomeCode"],
+  ["domain.rs", "ScanPermission", "ScanPermissionWire"],
   ["domain.rs", "Severity", "SeverityWire"],
   ["domain.rs", "SeverityBasisCode", "SeverityBasisCode"],
   ["domain.rs", "SourceConnectionStatus", "SourceConnectionStatus"],

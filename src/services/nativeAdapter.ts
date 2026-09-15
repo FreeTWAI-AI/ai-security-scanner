@@ -68,6 +68,7 @@ import type {
   ProviderSourceProfile,
   RunStatus,
   ScanRequestOutcome,
+  ScanPermissionWire,
   ScopeGrant,
   ScopeMode,
   ScannerFindingDetails,
@@ -1405,8 +1406,8 @@ export const adaptNativeProviderBinding = (
   return { profile: contract.profile, resourceScope };
 };
 
-const mapScopeMode = (permission: string): ScopeMode => {
-  const modes: Record<string, ScopeMode> = {
+const mapScopeMode = (permission: string): ScopeMode | undefined => {
+  const modes: Record<ScanPermissionWire, ScopeMode> = {
     inventory_read: "inventory",
     configuration_read: "configuration",
     local_artifact_read: "local_artifact",
@@ -1414,7 +1415,9 @@ const mapScopeMode = (permission: string): ScopeMode => {
     low_impact_external_connection: "low_impact_external",
     active_external_testing: "active_external",
   };
-  return modes[permission] ?? "inventory";
+  return Object.prototype.hasOwnProperty.call(modes, permission)
+    ? modes[permission as ScanPermissionWire]
+    : undefined;
 };
 
 const adaptExternalScope = (scope: NativeExternalScope): FrozenExternalScope => ({
@@ -2163,6 +2166,10 @@ export const adaptNativeCase = (
   const assets: Asset[] = nativeCase.assets.map((asset) => {
     const entry = coverageByAsset.get(asset.id);
     const grants = grantsByAsset.get(asset.id) ?? [];
+    const allowedModes = unique(grants.flatMap((grant) => {
+      const mode = mapScopeMode(grant.permission);
+      return mode ? [mode] : [];
+    }));
     const coverageState = entry
       ? mapCoverageState(entry.status)
       : asset.candidate ? "discovered_not_authorized" : asset.owner_confirmed ? "authorized_incomplete" : "source_unavailable_unknown";
@@ -2182,8 +2189,8 @@ export const adaptNativeCase = (
       internetExposed,
       containsSensitiveData: asset.contains_sensitive_data ?? undefined,
       coverageState,
-      authorizationState: grants.length > 0 ? "authorized" : asset.candidate ? "pending" : "unknown",
-      allowedModes: unique(grants.map((grant) => mapScopeMode(grant.permission))),
+      authorizationState: allowedModes.length > 0 ? "authorized" : asset.candidate ? "pending" : "unknown",
+      allowedModes,
       findingCount: findingCount.get(asset.id) ?? 0,
       lastObservedAt: entry?.observed_at ?? undefined,
       scanAttempted: Boolean(entry?.last_run_id) || scanAttemptedAssetIds.has(asset.id),
@@ -2468,16 +2475,19 @@ export const adaptNativeCase = (
       totalAssetCount: allAssetIds.length,
     };
   });
-  const scopeGrants: ScopeGrant[] = nativeCase.scope_grants.map((grant) => ({
-    id: grant.id,
-    assetId: grant.asset_id,
-    modes: [mapScopeMode(grant.permission)],
-    state: "authorized",
-    confirmedAt: grant.confirmed_at,
-    confirmedBy: grant.confirmed_by,
-    note: grant.notes ?? undefined,
-    externalScope: grant.external_scope ? adaptExternalScope(grant.external_scope) : undefined,
-  }));
+  const scopeGrants: ScopeGrant[] = nativeCase.scope_grants.flatMap((grant) => {
+    const mode = mapScopeMode(grant.permission);
+    return mode ? [{
+      id: grant.id,
+      assetId: grant.asset_id,
+      modes: [mode],
+      state: "authorized" as const,
+      confirmedAt: grant.confirmed_at,
+      confirmedBy: grant.confirmed_by,
+      note: grant.notes ?? undefined,
+      externalScope: grant.external_scope ? adaptExternalScope(grant.external_scope) : undefined,
+    }] : [];
+  });
   const workflowEvents = (nativeCase.finding_workflow_events ?? []).map((event) => ({
     id: event.id,
     findingId: event.finding_id,

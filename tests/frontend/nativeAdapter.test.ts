@@ -2253,7 +2253,7 @@ test("authorized coverage distinguishes a saved permission from an attempted sca
     scope_grants: [{
       id: "scope-loopback",
       asset_id: "loopback-asset",
-      permission: "low_impact_external",
+      permission: "low_impact_external_connection",
       confirmed_by: "Owner",
       confirmed_at: "2026-08-26T00:00:00Z",
       notes: null,
@@ -2276,6 +2276,24 @@ test("authorized coverage distinguishes a saved permission from an attempted sca
   assert.equal(workspace.assets[0]?.scanAttempted, false);
   assert.equal(workspace.coverage[0]?.scanAttempted, false);
   assert.equal(workspace.coverage[0]?.assetId, "loopback-asset");
+});
+
+test("unknown native scope permissions cannot create authorization", () => {
+  const workspace = adaptNativeCase(platformCaseFixture({
+    scope_grants: [{
+      id: "scope-future",
+      asset_id: "repository-asset",
+      permission: "future_permission",
+      confirmed_by: "Owner",
+      confirmed_at: "2026-08-26T00:00:00Z",
+      notes: null,
+      external_scope: null,
+    }],
+  }));
+
+  assert.equal(workspace.assets[0]?.authorizationState, "unknown");
+  assert.deepEqual(workspace.assets[0]?.allowedModes, []);
+  assert.deepEqual(workspace.scopeGrants, []);
 });
 
 const engineRunFixture = (id: string, status: string) => ({

@@ -188,6 +188,15 @@ export type CoverageStatusWire =
   | "source_not_connected_unknown"
   | "not_applicable";
 
+/** Exact `ScanPermission` values serialized by the native Rust domain. */
+export type ScanPermissionWire =
+  | "inventory_read"
+  | "configuration_read"
+  | "local_artifact_read"
+  | "passive_external_discovery"
+  | "low_impact_external_connection"
+  | "active_external_testing";
+
 export type SourceKind =
   | "aws_organization"
   | "azure_tenant"
