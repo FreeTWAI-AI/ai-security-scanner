@@ -1,6 +1,6 @@
 # Development status
 
-_Updated 2026-09-15._
+_Updated 2026-09-17._
 
 This page summarizes current engineering status for contributors. It is not a product specification
 or release declaration. [The product specification](product-spec.md) remains the source of truth for
@@ -35,9 +35,9 @@ substitutes for a published digest or an authorized runtime path.
 The latest recorded local baseline for these lanes completed successfully:
 
 - Rust core and CLI: 1,691 tests.
-- Frontend unit tests: 645 tests.
-- Component rendering: 262 tests across 18 files.
-- CI document and contract tests: 61 tests.
+- Frontend unit tests: 685 tests.
+- Component rendering: 300 tests across 18 files.
+- CI document and contract tests: 66 tests.
 - Engine catalog validation: 8 tests.
 - TypeScript type checking, Rust formatting, and Clippy: passed.
 

@@ -6,10 +6,11 @@ import { pathToFileURL } from "node:url";
 import { refreshEngines } from "./upstream-refresh-lib.mjs";
 
 export function parseRefreshArguments(argv) {
-  const options = { engineIds: [], providerId: "mechanical", cliArgs: [] };
+  const options = { engineIds: [], providerId: "mechanical", refreshKind: "revision", cliArgs: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--engine") options.engineIds.push(argv[++index]);
+    else if (argument === "--kind") options.refreshKind = argv[++index];
     else if (argument === "--provider") options.providerId = argv[++index];
     else if (argument === "--ai-cli") options.cliCommand = argv[++index];
     else if (argument === "--ai-cli-arg") options.cliArgs.push(argv[++index]);

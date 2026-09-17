@@ -32,6 +32,14 @@ function safeAdapterPath(path, engineId) {
     && !path.split("/").includes("..");
 }
 
+function safeProposalPath(path, engineId, refreshKind) {
+  if (refreshKind === "provenance") {
+    return path === `engines/images/${engineId}/plan.json`
+      || path === "engines/image-input-hash-policy.json";
+  }
+  return safeAdapterPath(path, engineId);
+}
+
 export function evaluateBundleForPr({ bundlePath }) {
   const absolute = resolve(bundlePath);
   const proposalPath = lstatSync(absolute).isDirectory() ? resolve(absolute, "proposal.json") : absolute;
@@ -43,8 +51,16 @@ export function evaluateBundleForPr({ bundlePath }) {
     reasons.push("The bundle contains no proposed adapter change.");
   }
   const engineId = proposal?.engine?.id;
-  if (typeof engineId !== "string" || !proposal?.changes?.files?.every?.((path) => safeAdapterPath(path, engineId))) {
-    reasons.push("The proposed file list is missing or escapes the selected engine adapter directory.");
+  const refreshKind = proposal?.refresh_kind ?? "revision";
+  if (typeof engineId !== "string" || !proposal?.changes?.files?.every?.((path) => safeProposalPath(path, engineId, refreshKind))) {
+    reasons.push("The proposed file list is missing or escapes the paths allowed for this refresh kind.");
+  }
+  if (refreshKind === "provenance" && proposal?.changes?.produced === true) {
+    const expected = ["engines/image-input-hash-policy.json", `engines/images/${engineId}/plan.json`].sort();
+    const actual = [...new Set(proposal?.changes?.files ?? [])].sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      reasons.push("A provenance bundle must change exactly the selected engine plan and the shared input-hash policy.");
+    }
   }
   for (const name of REQUIRED_VERIFICATIONS) {
     const checks = proposal?.verification?.filter?.((entry) => entry?.name === name) ?? [];

@@ -20,6 +20,7 @@ import {
   refreshEngine,
   refreshEngines,
 } from "../../scripts/upstream-refresh-lib.mjs";
+import { validateEngineInputHashes } from "../../scripts/validate-engine-input-hashes.mjs";
 import { main as proposeMain } from "../../scripts/upstream-propose.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
@@ -59,11 +60,12 @@ function passedVerification(overrides = {}) {
   }));
 }
 
-function createFixture({ engineIds = ["sample"], absentCheckout = false } = {}) {
+function createFixture({ engineIds = ["sample"], absentCheckout = false, baselineFilesByEngine = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), "upstream-refresh-test-"));
   mkdirSync(join(root, "engines", "images"), { recursive: true });
   const repositories = [];
   const revisions = new Map();
+  const uncoveredBaseline = [];
   for (const engineId of engineIds) {
     const checkoutRelative = `.upstreams/example/${engineId}`;
     const checkout = join(root, ...checkoutRelative.split("/"));
@@ -108,7 +110,18 @@ function createFixture({ engineIds = ["sample"], absentCheckout = false } = {}) 
           sha256: sha256("pinned adapter\n"),
         },
       },
+      dockerfile: {
+        path: `engines/images/${engineId}/Dockerfile`,
+        sha256: sha256("FROM scratch\n"),
+      },
     };
+    for (const file of baselineFilesByEngine[engineId] ?? []) {
+      const relative = `engines/images/${engineId}/${file.path}`;
+      const absolute = join(root, ...relative.split("/"));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, file.content);
+      uncoveredBaseline.push({ path: relative, reason: file.reason });
+    }
     writeFileSync(join(engineDirectory, "plan.json"), `${JSON.stringify(plan, null, 2)}\n`);
     repositories.push({
       id: `example/${engineId}`,
@@ -119,6 +132,17 @@ function createFixture({ engineIds = ["sample"], absentCheckout = false } = {}) 
     revisions.set(engineId, { pinned, candidate });
   }
   writeFileSync(join(root, "engines", "upstreams.lock.json"), `${JSON.stringify({ repositories }, null, 2)}\n`);
+  writeFileSync(join(root, "engines", "image-input-hash-policy.json"), `${JSON.stringify({
+    schema_version: 1,
+    exclusions: [{
+      id: "provenance-record",
+      match: "exact",
+      value: "plan.json",
+      reason: "The plan cannot record its own digest.",
+    }],
+    directories_without_plans: [],
+    uncovered_baseline: uncoveredBaseline,
+  }, null, 2)}\n`);
   return {
     root,
     revisions,
@@ -373,13 +397,264 @@ test("a failing verification check forces PR ineligibility and names the check",
       eligible: result.proposal.pr_eligible,
       status: result.proposal.verification.find(({ name }) => name === "validate:engine-catalog").status,
       reasons: result.proposal.pr_ineligibility_reasons,
+      reportKeepsRawEvidence: result.report.includes("fixture completed"),
+      reportExplainsRequiredWork: result.report.includes("a re-pinned source archive with a new SHA-256 checksum, a Dockerfile revision update, and a rebuilt image"),
     }, {
       eligible: false,
       status: "failed",
-      reasons: ["Verification check validate:engine-catalog failed."],
+      reasons: [
+        "Verification check validate:engine-catalog failed.",
+        "Completing an upstream revision refresh requires a re-pinned source archive with a new SHA-256 checksum, a Dockerfile revision update, and a rebuilt image; those network, registry, and owner-authorized publication steps are outside this offline pipeline.",
+      ],
+      reportKeepsRawEvidence: true,
+      reportExplainsRequiredWork: true,
     });
   } finally {
     setup.cleanup();
+  }
+});
+
+test("a provenance refresh with baselined gaps becomes PR-eligible and upstream:propose prints commands", async () => {
+  const setup = createFixture({
+    baselineFilesByEngine: {
+      sample: [{
+        path: "build-helper.sh",
+        content: "#!/bin/sh\nexit 0\n",
+        reason: "Runs a deterministic build preparation step but has no digest in the plan.",
+      }],
+    },
+  });
+  try {
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "sample",
+      refreshKind: "provenance",
+      policy: policy([["sample", "eligible"]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+      verificationRunner: () => passedVerification(),
+    });
+    let stdout = "";
+    const proposeStatus = proposeMain(["--bundle", result.bundlePath], { write(value) { stdout += value; } });
+    assert.deepEqual({
+      kind: result.proposal.refresh_kind,
+      outcome: result.proposal.outcome,
+      eligible: result.proposal.pr_eligible,
+      reasons: result.proposal.pr_ineligibility_reasons,
+      files: result.proposal.changes.files,
+      checks: result.proposal.verification.map(({ status }) => status),
+      proposeStatus,
+      proposeEligible: stdout.startsWith("PR eligible: yes\n"),
+      printsPush: stdout.includes("git push -u origin"),
+      printsPr: stdout.includes("gh pr create --fill --head"),
+    }, {
+      kind: "provenance",
+      outcome: "ready",
+      eligible: true,
+      reasons: [],
+      files: ["engines/image-input-hash-policy.json", "engines/images/sample/plan.json"],
+      checks: ["passed", "passed", "passed"],
+      proposeStatus: 0,
+      proposeEligible: true,
+      printsPush: true,
+      printsPr: true,
+    });
+  } finally {
+    setup.cleanup();
+  }
+});
+
+test("a provenance refresh with passing verification remains refused for an experimental engine", async () => {
+  const experimentalReason = "The adapter is experimental and cannot reach a release.";
+  const setup = createFixture({
+    engineIds: ["experimental-one"],
+    baselineFilesByEngine: {
+      "experimental-one": [{
+        path: "launcher/go.mod",
+        content: "module example.invalid/launcher\n",
+        reason: "Defines the launcher module but has no digest in the plan.",
+      }],
+    },
+  });
+  try {
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "experimental-one",
+      refreshKind: "provenance",
+      policy: policy([["experimental-one", "experimental", experimentalReason]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+      verificationRunner: () => passedVerification(),
+    });
+    assert.deepEqual({
+      outcome: result.proposal.outcome,
+      eligible: result.proposal.pr_eligible,
+      produced: result.proposal.changes.produced,
+      checks: result.proposal.verification.map(({ status }) => status),
+      reasons: result.proposal.pr_ineligibility_reasons,
+      reportNamesExperimental: result.report.includes(`Policy status is experimental: ${experimentalReason}`),
+    }, {
+      outcome: "experimental",
+      eligible: false,
+      produced: true,
+      checks: ["passed", "passed", "passed"],
+      reasons: [`Policy status is experimental: ${experimentalReason}`],
+      reportNamesExperimental: true,
+    });
+  } finally {
+    setup.cleanup();
+  }
+});
+
+test("a provenance refresh remains refused for a frozen engine and names frozen", async () => {
+  const frozenReason = "Deliberately frozen at the last public upstream.";
+  const setup = createFixture({ engineIds: ["frozen-one"] });
+  try {
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "frozen-one",
+      refreshKind: "provenance",
+      policy: policy([["frozen-one", "frozen", frozenReason]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+    });
+    assert.deepEqual({
+      outcome: result.proposal.outcome,
+      eligible: result.proposal.pr_eligible,
+      reasons: result.proposal.pr_ineligibility_reasons,
+      reportNamesFrozen: result.report.includes(`Policy status is frozen: ${frozenReason}`),
+    }, {
+      outcome: "frozen",
+      eligible: false,
+      reasons: [
+        `Policy status is frozen: ${frozenReason}`,
+        "No adapter change was produced.",
+        `Verification check validate:engine-input-hashes was not run: ${frozenReason}`,
+        `Verification check validate:engine-catalog was not run: ${frozenReason}`,
+        `Verification check validate:engine-line-endings was not run: ${frozenReason}`,
+      ],
+      reportNamesFrozen: true,
+    });
+  } finally {
+    setup.cleanup();
+  }
+});
+
+test("a provenance refresh with no baselined gaps produces no change and states why", async () => {
+  const setup = createFixture();
+  try {
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "sample",
+      refreshKind: "provenance",
+      policy: policy([["sample", "eligible"]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+    });
+    assert.deepEqual({
+      outcome: result.proposal.outcome,
+      eligible: result.proposal.pr_eligible,
+      produced: result.proposal.changes.produced,
+      patch: result.patch,
+      reason: result.proposal.pr_ineligibility_reasons[0],
+    }, {
+      outcome: "no_change",
+      eligible: false,
+      produced: false,
+      patch: "",
+      reason: "No baselined build-input gaps exist for engine sample; provenance is already recorded.",
+    });
+  } finally {
+    setup.cleanup();
+  }
+});
+
+test("a provenance patch changes only the selected baseline entries, applies, and reduces the passing gap count", async () => {
+  const setup = createFixture({
+    engineIds: ["selected", "untouched"],
+    baselineFilesByEngine: {
+      selected: [{
+        path: "build.patch",
+        content: "selected bytes\n",
+        reason: "Applied during the selected image build but absent from the plan.",
+      }],
+      untouched: [{
+        path: "build.patch",
+        content: "untouched bytes\n",
+        reason: "Applied during the untouched image build but absent from the plan.",
+      }],
+    },
+  });
+  const target = mkdtempSync(join(tmpdir(), "upstream-refresh-provenance-apply-"));
+  try {
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "selected",
+      refreshKind: "provenance",
+      policy: policy([["selected", "eligible"], ["untouched", "eligible"]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+      verificationRunner: () => passedVerification(),
+    });
+    cpSync(join(setup.root, "engines"), join(target, "engines"), { recursive: true });
+    commit(target, "target baseline");
+    const trackedBefore = run("git", ["ls-files", "engines/images"], { cwd: target }).split("\n").filter(Boolean);
+    const policyBefore = JSON.parse(readFileSync(join(target, "engines", "image-input-hash-policy.json"), "utf8"));
+    const selectedPlanBefore = JSON.parse(readFileSync(join(target, "engines", "images", "selected", "plan.json"), "utf8"));
+    const before = validateEngineInputHashes({ root: target, trackedPaths: trackedBefore, policy: policyBefore });
+    const check = spawnSync("git", ["apply", "--check", join(result.bundlePath, "changes.patch")], { cwd: target, encoding: "utf8" });
+    const apply = spawnSync("git", ["apply", join(result.bundlePath, "changes.patch")], { cwd: target, encoding: "utf8" });
+    const policyAfter = JSON.parse(readFileSync(join(target, "engines", "image-input-hash-policy.json"), "utf8"));
+    const after = validateEngineInputHashes({ root: target, trackedPaths: trackedBefore, policy: policyAfter });
+    const selectedPlan = JSON.parse(readFileSync(join(target, "engines", "images", "selected", "plan.json"), "utf8"));
+    const untouchedPlan = JSON.parse(readFileSync(join(target, "engines", "images", "untouched", "plan.json"), "utf8"));
+    const selectedPlanWithoutBuildInputs = structuredClone(selectedPlan);
+    delete selectedPlanWithoutBuildInputs.build_inputs;
+    const policyBeforeWithoutBaseline = structuredClone(policyBefore);
+    const policyAfterWithoutBaseline = structuredClone(policyAfter);
+    delete policyBeforeWithoutBaseline.uncovered_baseline;
+    delete policyAfterWithoutBaseline.uncovered_baseline;
+    assert.deepEqual({
+      files: result.proposal.changes.files,
+      checkStatus: check.status,
+      checkError: check.stderr,
+      applyStatus: apply.status,
+      applyError: apply.stderr,
+      beforeErrors: before.errors,
+      afterErrors: after.errors,
+      beforeGaps: before.records.filter(({ baseline }) => baseline).length,
+      afterGaps: after.records.filter(({ baseline }) => baseline).length,
+      remainingBaseline: policyAfter.uncovered_baseline,
+      selectedInputs: selectedPlan.build_inputs,
+      untouchedInputs: untouchedPlan.build_inputs,
+      selectedOtherFieldsUnchanged: selectedPlanWithoutBuildInputs,
+      policyOtherFieldsUnchanged: policyAfterWithoutBaseline,
+    }, {
+      files: ["engines/image-input-hash-policy.json", "engines/images/selected/plan.json"],
+      checkStatus: 0,
+      checkError: "",
+      applyStatus: 0,
+      applyError: "",
+      beforeErrors: [],
+      afterErrors: [],
+      beforeGaps: 2,
+      afterGaps: 1,
+      remainingBaseline: [{
+        path: "engines/images/untouched/build.patch",
+        reason: "Applied during the untouched image build but absent from the plan.",
+      }],
+      selectedInputs: [{
+        path: "engines/images/selected/build.patch",
+        sha256: sha256("selected bytes\n"),
+        purpose: "Applied during the selected image build.",
+      }],
+      untouchedInputs: undefined,
+      selectedOtherFieldsUnchanged: selectedPlanBefore,
+      policyOtherFieldsUnchanged: policyBeforeWithoutBaseline,
+    });
+  } finally {
+    setup.cleanup();
+    rmSync(target, { recursive: true, force: true });
   }
 });
 

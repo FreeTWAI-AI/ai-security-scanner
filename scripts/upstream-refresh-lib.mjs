@@ -26,9 +26,12 @@ export const REQUIRED_VERIFICATIONS = Object.freeze([
 ]);
 
 const POLICY_STATUSES = new Set(["eligible", "frozen", "experimental"]);
+const REFRESH_KINDS = new Set(["revision", "provenance"]);
 const ENGINE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const INPUT_HASH_POLICY_PATH = "engines/image-input-hash-policy.json";
+const REVISION_CATALOG_INTERPRETATION = "Completing an upstream revision refresh requires a re-pinned source archive with a new SHA-256 checksum, a Dockerfile revision update, and a rebuilt image; those network, registry, and owner-authorized publication steps are outside this offline pipeline.";
 
 function sha256(bytes) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -383,6 +386,96 @@ export function mechanicalProvider({ root, resolved }) {
     status: "completed",
     rationale: "Deterministic offline updates only: exact revision metadata, maintenance dates, and recorded file digests.",
     changes,
+    attributions,
+  };
+}
+
+function buildInputPurpose(reason) {
+  return reason
+    .replace(/; only .* is recorded\.$/u, ".")
+    .replace(/,? but (?:has no digest in the plan|is absent from the plan|is not itself recorded in the plan|its own bytes are not recorded|absent from the plan)\.$/u, ".")
+    .replace(/ but has no plan digest\.$/u, ".");
+}
+
+export function provenanceProvider({ root, engineId, resolved }) {
+  const policyPath = resolve(root, INPUT_HASH_POLICY_PATH);
+  const policyText = readFileSync(policyPath, "utf8");
+  const hashPolicy = JSON.parse(policyText);
+  if (!Array.isArray(hashPolicy?.uncovered_baseline)) {
+    throw new Error(`${INPUT_HASH_POLICY_PATH} does not contain an uncovered_baseline array.`);
+  }
+
+  const enginePrefix = `engines/images/${engineId}/`;
+  const baselineEntries = hashPolicy.uncovered_baseline.filter(({ path }) =>
+    typeof path === "string" && path.startsWith(enginePrefix)
+  );
+  if (baselineEntries.length === 0) {
+    return {
+      id: "mechanical",
+      status: "completed",
+      rationale: `No baselined build-input gaps exist for engine ${engineId}; provenance is already recorded.`,
+      noChangeReason: `No baselined build-input gaps exist for engine ${engineId}; provenance is already recorded.`,
+      changes: new Map(),
+      attributions: [],
+    };
+  }
+
+  const proposedPlan = clone(resolved.plan);
+  if (proposedPlan.build_inputs !== undefined && !Array.isArray(proposedPlan.build_inputs)) {
+    throw new Error(`${resolved.planRelative}.build_inputs must be an array when present.`);
+  }
+  const recordsByPath = new Map((proposedPlan.build_inputs ?? []).map((entry) => [entry?.path, clone(entry)]));
+  const attributions = [];
+  for (const entry of baselineEntries) {
+    if (!isSafeRelativePath(entry.path) || !entry.path.startsWith(enginePrefix)) {
+      throw new Error(`Unsafe or cross-engine baseline path: ${entry.path}`);
+    }
+    const absolute = resolve(root, entry.path);
+    if (!inside(root, absolute) || !existsSync(absolute) || !lstatSync(absolute).isFile()) {
+      throw new Error(`Baselined build input is not an available regular file: ${entry.path}`);
+    }
+    const record = {
+      path: entry.path,
+      sha256: sha256(readFileSync(absolute)),
+      purpose: buildInputPurpose(entry.reason),
+    };
+    recordsByPath.set(entry.path, record);
+    attributions.push({
+      provider: "mechanical",
+      file: resolved.planRelative,
+      field: `build_inputs[${entry.path}]`,
+      input_file: entry.path,
+      input_source: "repository_worktree",
+      before: null,
+      after: record.sha256,
+      reason: `Recorded the exact build-input bytes: ${record.purpose}`,
+    });
+  }
+  proposedPlan.build_inputs = [...recordsByPath.values()].sort((left, right) => left.path.localeCompare(right.path));
+
+  const proposedPolicy = clone(hashPolicy);
+  proposedPolicy.uncovered_baseline = proposedPolicy.uncovered_baseline.filter(({ path }) =>
+    !baselineEntries.some((entry) => entry.path === path)
+  );
+  attributions.push({
+    provider: "mechanical",
+    file: INPUT_HASH_POLICY_PATH,
+    field: "uncovered_baseline",
+    before: baselineEntries.map(({ path }) => path),
+    after: [],
+    reason: `Removed only ${engineId}'s ${baselineEntries.length} now-recorded build-input gap${baselineEntries.length === 1 ? "" : "s"} from the uncovered baseline.`,
+  });
+
+  const planText = `${JSON.stringify(proposedPlan, null, 2)}\n`;
+  const proposedPolicyText = `${JSON.stringify(proposedPolicy, null, 2)}\n`;
+  return {
+    id: "mechanical",
+    status: "completed",
+    rationale: `Recorded ${baselineEntries.length} deterministic SHA-256 build-input digest${baselineEntries.length === 1 ? "" : "s"} and removed only ${engineId}'s corresponding uncovered-baseline entries.`,
+    changes: new Map([
+      [resolved.planRelative, { before: resolved.planText, after: planText }],
+      [INPUT_HASH_POLICY_PATH, { before: policyText, after: proposedPolicyText }],
+    ]),
     attributions,
   };
 }
@@ -770,14 +863,18 @@ function allocateBundle(root, engineId, generatedAt, explicitBundleRoot) {
   throw new Error("Could not allocate a unique refresh bundle path.");
 }
 
-export function prReasons({ policy, changes, verifications, providerError }) {
+export function prReasons({ policy, changes, verifications, providerError, refreshKind = "revision", noChangeReason }) {
   const reasons = [];
   if (policy.status !== "eligible") reasons.push(`Policy status is ${policy.status}: ${policy.reason}`);
-  if (changes.size === 0) reasons.push("No adapter change was produced.");
+  if (changes.size === 0) reasons.push(noChangeReason ?? "No adapter change was produced.");
   if (providerError) reasons.push(`The selected provider failed: ${providerError}`);
   for (const check of verifications) {
-    if (check.status === "failed") reasons.push(`Verification check ${check.name} failed.`);
-    else if (check.status === "not_run") reasons.push(`Verification check ${check.name} was not run: ${check.reason}`);
+    if (check.status === "failed") {
+      reasons.push(`Verification check ${check.name} failed.`);
+      if (refreshKind === "revision" && check.name === "validate:engine-catalog") {
+        reasons.push(REVISION_CATALOG_INTERPRETATION);
+      }
+    } else if (check.status === "not_run") reasons.push(`Verification check ${check.name} was not run: ${check.reason}`);
     else if (check.status !== "passed") reasons.push(`Verification check ${check.name} has unsupported status ${check.status}.`);
   }
   for (const name of REQUIRED_VERIFICATIONS) {
@@ -830,6 +927,7 @@ export function renderReport(proposal) {
   const lock = proposal.inputs.upstream_lock;
   return `# Upstream refresh proposal: ${proposal.engine.id}\n\n`
     + `Generated: ${proposal.generated_at}\n\n`
+    + `Refresh kind: **${proposal.refresh_kind ?? "revision"}**\n\n`
     + `Outcome: **${proposal.outcome}**\n\n`
     + `Policy: **${proposal.policy.status}** — ${proposal.policy.reason}\n\n`
     + `Provider: **${proposal.provider.selected}** (${proposal.provider.status}) — ${proposal.provider.rationale}\n\n`
@@ -852,15 +950,16 @@ export function renderReport(proposal) {
     + "\n";
 }
 
-function proposalForUnavailable({ engineId, resolved, providerId, bundlePath }) {
+function proposalForUnavailable({ engineId, resolved, providerId, refreshKind, bundlePath }) {
   const reason = resolved.error ?? resolved.policy.reason;
   const verification = notRunVerifications(reason);
   const changes = new Map();
   const patch = "";
-  const reasons = prReasons({ policy: resolved.policy, changes, verifications: verification, providerError: resolved.error });
+  const reasons = prReasons({ policy: resolved.policy, changes, verifications: verification, providerError: resolved.error, refreshKind });
   return {
     proposal: {
       schema_version: 1,
+      refresh_kind: refreshKind,
       generated_at: resolved.generatedAt,
       outcome: resolved.policy.status === "frozen" ? "frozen" : "unsupported",
       engine: { id: engineId, adapter_plan: resolved.planRelative },
@@ -901,6 +1000,7 @@ export async function refreshEngine({
   root,
   engineId,
   providerId = "mechanical",
+  refreshKind = "revision",
   now = new Date(),
   policy: suppliedPolicy,
   cliRunner,
@@ -910,7 +1010,11 @@ export async function refreshEngine({
   bundleRoot: explicitBundleRoot,
 }) {
   if (!ENGINE_ID_PATTERN.test(engineId ?? "")) throw new Error(`Invalid engine id: ${engineId}`);
+  if (!REFRESH_KINDS.has(refreshKind)) throw new Error(`Unsupported refresh kind: ${refreshKind}`);
   if (!["mechanical", "cli"].includes(providerId)) throw new Error(`Unsupported provider: ${providerId}`);
+  if (refreshKind === "provenance" && providerId !== "mechanical") {
+    throw new Error("The provenance refresh kind supports only the deterministic mechanical provider.");
+  }
   const policy = suppliedPolicy ?? readJson(resolve(root, "engines/upstream-refresh-policy.json"));
   const policyErrors = validateRefreshPolicy(policy);
   if (policyErrors.length > 0) throw new Error(policyErrors.join("\n"));
@@ -918,26 +1022,29 @@ export async function refreshEngine({
   const { bundleRoot, bundlePath } = allocateBundle(root, engineId, resolved.generatedAt, explicitBundleRoot);
 
   if (!resolved.plan || resolved.policy.status === "frozen" || resolved.policy.status === "unsupported") {
-    const { proposal, patch } = proposalForUnavailable({ engineId, resolved, providerId, bundlePath });
+    const { proposal, patch } = proposalForUnavailable({ engineId, resolved, providerId, refreshKind, bundlePath });
     const report = writeBundle(bundlePath, proposal, patch);
     return { proposal, patch, report, bundlePath };
   }
 
   let provider;
+  let baseProvider;
   let providerError = null;
-  const mechanical = mechanicalProvider({ root, resolved });
   try {
+    baseProvider = refreshKind === "provenance"
+      ? provenanceProvider({ root, engineId, resolved })
+      : mechanicalProvider({ root, resolved });
     provider = providerId === "mechanical"
-      ? mechanical
-      : await cliProvider({ root, engineId, resolved, base: mechanical, cliRunner: cliRunner ?? defaultCliRunner, cliCommand, cliArgs });
+      ? baseProvider
+      : await cliProvider({ root, engineId, resolved, base: baseProvider, cliRunner: cliRunner ?? defaultCliRunner, cliCommand, cliArgs });
   } catch (error) {
     providerError = error.message;
     provider = {
       id: providerId,
       status: "failed",
       rationale: error.message,
-      changes: mechanical.changes,
-      attributions: mechanical.attributions,
+      changes: baseProvider?.changes ?? new Map(),
+      attributions: baseProvider?.attributions ?? [],
     };
   }
 
@@ -952,7 +1059,14 @@ export async function refreshEngine({
       verification = notRunVerifications(`The scratch verification tree could not be prepared: ${error.message}`);
     }
   }
-  const reasons = prReasons({ policy: resolved.policy, changes: provider.changes, verifications: verification, providerError });
+  const reasons = prReasons({
+    policy: resolved.policy,
+    changes: provider.changes,
+    verifications: verification,
+    providerError,
+    refreshKind,
+    noChangeReason: provider.noChangeReason,
+  });
   const prEligible = reasons.length === 0;
   const outcome = resolved.policy.status === "experimental"
     ? "experimental"
@@ -962,6 +1076,7 @@ export async function refreshEngine({
   const files = [...provider.changes.keys()].sort();
   const proposal = {
     schema_version: 1,
+    refresh_kind: refreshKind,
     generated_at: resolved.generatedAt,
     outcome,
     engine: { id: engineId, adapter_plan: resolved.planRelative },
