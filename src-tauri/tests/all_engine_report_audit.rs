@@ -1696,14 +1696,13 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // from that string at all. Merging on the stored text alone would collapse
             // both of these into one wrong sentence.
             let same_text_different_expert = report
-            .next_steps
-            .iter()
-            .filter(|step| {
-                step.action
-                    == "Correct the service or configuration named by this check."
-            })
-            .map(|step| step.recommended_expert_type.clone())
-            .collect::<Vec<_>>();
+                .next_steps
+                .iter()
+                .filter(|step| {
+                    step.action == "Correct the service or configuration named by this check."
+                })
+                .map(|step| step.recommended_expert_type.clone())
+                .collect::<Vec<_>>();
             assert_eq!(
                 same_text_different_expert,
                 [

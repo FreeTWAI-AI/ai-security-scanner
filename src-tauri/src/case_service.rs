@@ -15800,7 +15800,7 @@ fn html_scanner_remediation_block(
         else {
             continue;
         };
-        if !unique.iter().any(|seen: &&str| *seen == text) {
+        if !unique.contains(&text) {
             unique.push(text);
         }
     }
@@ -33206,7 +33206,9 @@ mod tests {
         }
         let article = html
             .split("<article id=\"")
-            .find(|chunk| chunk.contains("Run &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt; manually"))
+            .find(|chunk| {
+                chunk.contains("Run &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt; manually")
+            })
             .expect("finding article with scanner remediation");
         let (open_layer, _) = article
             .split_once("<details class=\"technical finding-technical\">")
@@ -33215,9 +33217,10 @@ mod tests {
             open_layer.contains("class=\"finding-scanner-remediation\""),
             "scanner-provided remediation was only inside collapsed technical details"
         );
-        assert!(open_layer.contains(
-            "Run &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt; manually"
-        ));
+        assert!(
+            open_layer
+                .contains("Run &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt; manually")
+        );
         // The window used to be a labelled sentence on every row. It is two
         // columns now, so the label is said once in the heading.
         assert!(html.contains(&format!(
