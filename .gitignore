@@ -26,6 +26,7 @@ src-tauri/binaries/
 
 # Downloaded third-party source trees and engine artifacts
 .upstreams/
+.upstream-refresh/
 .engine-cache/
 .runtime-cache/
 runtime/staged/managed-runtime/*

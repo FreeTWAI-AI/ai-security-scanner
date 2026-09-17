@@ -26,6 +26,8 @@
     "typecheck": "tsc -b --pretty false",
     "test:frontend": "node --experimental-strip-types --test tests/frontend/*.test.ts",
     "test:component": "vitest run --config vitest.config.ts",
+    "upstream:refresh": "node scripts/upstream-refresh.mjs",
+    "upstream:propose": "node scripts/upstream-propose.mjs",
     "test:release-evidence": "node --test tests/release/*.test.mjs",
     "test:usability-evidence": "node --test tests/usability/*.test.mjs",
     "validate:aidefend": "node scripts/validate-aidefend-snapshot.mjs",

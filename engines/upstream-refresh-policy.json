@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "engines": [
+    {
+      "id": "agentic-radar",
+      "status": "experimental",
+      "reason": "The adapter is experimental because its plan is managed_artifact_not_published. Refreshes may be reviewed independently, but cannot reach a release until a managed artifact is published and the catalog release blockers are cleared."
+    },
+    {
+      "id": "checkov",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "cloudquery",
+      "status": "frozen",
+      "reason": "CloudQuery is deliberately pinned to v2.0.31 (knowledge_date 2023-01-10), the last fully public CloudQuery CLI before the project stopped being fully open source. A refresh would move the product onto a non-open-source upstream."
+    },
+    {
+      "id": "cloudsplaining",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "garak",
+      "status": "experimental",
+      "reason": "The adapter is experimental because its plan is managed_artifact_not_published. Refreshes may be reviewed independently, but cannot reach a release until a managed artifact is published and the catalog release blockers are cleared."
+    },
+    {
+      "id": "gitleaks",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "greenbone",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "grype",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "httpx",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "kics",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "kube-bench",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "kubescape",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "maester",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "mcp-armor",
+      "status": "experimental",
+      "reason": "The adapter is experimental because its plan is publication_in_progress. Refreshes may be reviewed independently, but cannot reach a release until publication finishes and the catalog release blockers are cleared."
+    },
+    {
+      "id": "naabu",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "nuclei",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "prowler",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "scoutsuite",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "scubagear",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "semgrep",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "steampipe",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "syft",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "trivy",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    },
+    {
+      "id": "trufflehog",
+      "status": "eligible",
+      "reason": "The maintained adapter is eligible for an offline upstream refresh proposal."
+    }
+  ]
+}
