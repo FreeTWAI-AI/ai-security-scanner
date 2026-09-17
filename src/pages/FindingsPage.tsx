@@ -428,8 +428,12 @@ const copy = {
   nextActionNow: { en: "Next action", zhTW: "下一步" },
   verifyFix: { en: "Verify the fix", zhTW: "確認修復" },
   verifyFallback: {
-    en: "After the change, rerun the same check and confirm this problem is no longer reported.",
-    zhTW: "完成變更後，以相同範圍重跑同一項檢查，確認不再回報這個問題。",
+    en: "No verification step was retained for this result.",
+    zhTW: "這筆結果未保留驗證步驟。",
+  },
+  scannerRemediationMissing: {
+    en: "The scanner did not provide a specific fix for this finding.",
+    zhTW: "掃描器未提供這項問題的具體修復方式。",
   },
   reviewEvidence: { en: "Open evidence and details", zhTW: "開啟證據與詳細資料" },
   allProblems: { en: "EXPLORE RESULTS", zhTW: "查看所有結果" },
@@ -883,6 +887,20 @@ const checkResultKind = (
   check: BeginnerMasterReport["actual"]["checks"][number],
 ): BeginnerCheckResultKind =>
   check.resultKind ?? legacyCheckResultKind(check.checkId);
+
+const uniqueScannerRemediations = (
+  evidence: Array<{ scannerDetails?: { remediation?: string } | null }>,
+): string[] => {
+  const seen = new Set<string>();
+  const values: string[] = [];
+  for (const item of evidence) {
+    const text = item.scannerDetails?.remediation?.trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    values.push(text);
+  }
+  return values;
+};
 
 const checkRecordedTestedWork = (
   check: BeginnerMasterReport["actual"]["checks"][number],
@@ -1888,6 +1906,9 @@ export function FindingsPage({
   }, [collationLocale, control, expertType, ordered, query, selectedAssetId, severity, workflow]);
 
   const selected = findings.find((finding) => finding.id === selectedId);
+  const selectedScannerRemediations = selected
+    ? uniqueScannerRemediations(selected.evidence)
+    : [];
   const iamValuePreview = (values: string[]): string => {
     if (values.length === 0) return text(copy.notReported);
     const visible = values.slice(0, 6).join(" · ");
@@ -2423,7 +2444,9 @@ export function FindingsPage({
             <h2>{text(copy.priorityTitle)}</h2>
           </div>
           <div className="priority-grid">
-            {topFindings.map((finding, index) => (
+            {topFindings.map((finding, index) => {
+              const scannerRemediations = uniqueScannerRemediations(finding.evidence);
+              return (
               <button
                 key={finding.id}
                 type="button"
@@ -2461,6 +2484,19 @@ export function FindingsPage({
                       awsIamPolicy: finding.awsIamPolicy,
                     })}
                   </span>
+                  {scannerRemediations.length > 0
+                    ? scannerRemediations.map((remediation) => (
+                      <span key={remediation}>
+                        <strong>{text(copy.scannerRemediation)}</strong>
+                        {remediation}
+                      </span>
+                    ))
+                    : (
+                      <span>
+                        <strong>{text(copy.scannerRemediation)}</strong>
+                        {text(copy.scannerRemediationMissing)}
+                      </span>
+                    )}
                   <span>
                     <strong>{text(copy.verifyFix)}</strong>
                     {finding.verificationGuidance
@@ -2470,7 +2506,8 @@ export function FindingsPage({
                 </span>
                 <span className="priority-card__action">{text(copy.reviewEvidence)} <Icon name="arrow" size={15} /></span>
               </button>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -2998,6 +3035,19 @@ export function FindingsPage({
                   family: selected.family,
                   awsIamPolicy: selected.awsIamPolicy,
                 })}</p>
+                {selectedScannerRemediations.length > 0
+                  ? selectedScannerRemediations.map((remediation) => (
+                    <p key={remediation}>
+                      <strong>{text(copy.scannerRemediation)}</strong>{" "}
+                      {remediation}
+                    </p>
+                  ))
+                  : (
+                    <p>
+                      <strong>{text(copy.scannerRemediation)}</strong>{" "}
+                      {text(copy.scannerRemediationMissing)}
+                    </p>
+                  )}
                 {selected.rollbackConsiderations && (
                   <p>
                     <strong>{text(copy.beforeChanging)}</strong>{" "}
@@ -3006,12 +3056,12 @@ export function FindingsPage({
                 )}
               </section>
 
-              {selected.verificationGuidance && (
-                <section className="detail-section">
-                  <h3>{text(copy.verification)}</h3>
-                  <p>{findingVerificationSentence(locale, selected.verificationGuidance)}</p>
-                </section>
-              )}
+              <section className="detail-section">
+                <h3>{text(copy.verification)}</h3>
+                <p>{selected.verificationGuidance
+                  ? findingVerificationSentence(locale, selected.verificationGuidance)
+                  : text(copy.verifyFallback)}</p>
+              </section>
 
               <section className="detail-section">
                 <div className="detail-section__heading"><h3>{text(copy.scanEvidence)}</h3><span>{text(copy.evidenceCount, { count: formatNumber(selected.evidence.length) })}</span></div>

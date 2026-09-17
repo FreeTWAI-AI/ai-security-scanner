@@ -15778,6 +15778,54 @@ fn replace_target_ids(value: &str, labels: &BTreeMap<Id, String>) -> String {
 /// adapter that does not append it, is left exactly as stored.
 const UNTRUSTED_EVIDENCE_CAVEAT: &str = " Raw target text is retained only as untrusted evidence.";
 
+/// Scanner-authored fix text for the finding card's first layer.
+///
+/// Product next-action prose names the kind of change. The scanner's own
+/// remediation is the specific step when it supplied one, and a stated
+/// absence when it did not. Collapsed evidence still carries the same
+/// strings as provenance.
+fn html_scanner_remediation_block(
+    finding: &crate::beginner_report::BeginnerFinding,
+    catalog: HtmlReportCatalog,
+) -> String {
+    let label = catalog.text("Scanner-provided remediation", "掃描工具提供的修復資訊");
+    let mut unique = Vec::new();
+    for reference in &finding.evidence_references {
+        let Some(text) = reference
+            .scanner_details
+            .as_ref()
+            .and_then(|details| details.remediation.as_deref())
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        else {
+            continue;
+        };
+        if !unique.iter().any(|seen: &&str| *seen == text) {
+            unique.push(text);
+        }
+    }
+    if unique.is_empty() {
+        return format!(
+            "<p class=\"finding-scanner-remediation\"><strong>{}:</strong> {}</p>",
+            label,
+            catalog.text(
+                "The scanner did not provide a specific fix for this finding.",
+                "掃描工具未提供這項問題的具體修復方式。",
+            )
+        );
+    }
+    unique
+        .into_iter()
+        .map(|text| {
+            format!(
+                "<p class=\"finding-scanner-remediation\"><strong>{}:</strong> {}</p>",
+                label,
+                html_escape(text)
+            )
+        })
+        .collect()
+}
+
 fn html_evidence_reference(
     reference: &crate::beginner_report::FindingEvidenceReference,
     catalog: HtmlReportCatalog,
@@ -17426,7 +17474,17 @@ fn html_report_bytes(
                     html_escape(&text)
                 )
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                format!(
+                    "<p><strong>{}:</strong> {}</p>",
+                    catalog.text("How to confirm the fix", "如何確認已修正"),
+                    catalog.text(
+                        "No verification step was retained for this result.",
+                        "這筆結果未保留驗證步驟。",
+                    )
+                )
+            });
+        let scanner_remediation_block = html_scanner_remediation_block(finding, catalog);
         // The reasons are stored as English prose with no per-entry code, so
         // each is recognised by shape. One this build cannot identify stays in
         // English rather than being replaced by a confident guess about why
@@ -17694,6 +17752,7 @@ fn html_report_bytes(
                 // them per card, fifty-one cards.
                 "<p>{} <strong>{}:</strong> {}</p>",
                 "<p class=\"finding-action\"><strong>{}:</strong> {}</p>",
+                "{}",
                 "{}{}",
                 "<p class=\"finding-references\"><strong>{}:</strong> {}</p>",
                 "<details class=\"technical finding-technical\"><summary><strong>{}</strong></summary>",
@@ -17723,6 +17782,7 @@ fn html_report_bytes(
             html_escape(&possible_impact),
             catalog.text("What to do next", "下一步怎麼做"),
             next_step_inline,
+            scanner_remediation_block,
             safety_block,
             verification_block,
             // The upstream advisory stays in the open: it is where a reader
@@ -32561,6 +32621,147 @@ mod tests {
     }
 
     #[test]
+    fn html_finding_card_states_absent_scanner_remediation_instead_of_inventing_one() {
+        let catalog = HtmlReportCatalog {
+            locale: crate::export::ReportLocale::En,
+        };
+        let finding = crate::beginner_report::BeginnerFinding {
+            finding_id: "finding-1".into(),
+            fingerprint: "fp-1".into(),
+            snapshot_source: crate::beginner_report::FindingSnapshotSource::FrozenSelectedRun,
+            title: "Finding".into(),
+            plain_language_risk: "Risk".into(),
+            possible_impact: "Impact".into(),
+            severity: Severity::High,
+            confidence: Confidence::High,
+            priority: Some(80),
+            priority_reasons: vec![],
+            target_asset_ids: vec!["asset-1".into()],
+            next_step: "Correct the service or configuration named by this check.".into(),
+            recommended_expert_type: "Vulnerability manager".into(),
+            evidence_references: vec![],
+            official_references: Some(vec![]),
+            framework_references: vec![],
+            family: Some(crate::domain::FindingFamily::NetworkExposure),
+            severity_basis_code: None,
+            confidence_basis_code: None,
+            observation_details: vec![],
+            context_factors: vec![],
+            rollback_considerations: None,
+            verification_guidance: None,
+        };
+        let html = html_scanner_remediation_block(&finding, catalog);
+        assert!(html.contains("The scanner did not provide a specific fix for this finding."));
+        assert!(!html.contains("must remain reachable"));
+    }
+
+    #[test]
+    fn html_finding_card_states_absent_verification_instead_of_inventing_one() {
+        const ABSENT_VERIFICATION: &str = "No verification step was retained for this result.";
+        const FABRICATED_VERIFICATION: &str = "After the change, rerun the same check and confirm this problem is no longer reported.";
+        const RETAINED_VERIFICATION: &str =
+            "Confirm the exact scanner result from retained guidance.";
+
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (base_case, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let render = |verification_guidance: &str| {
+            let mut case = base_case.clone();
+            let now = Utc::now();
+            case.scan_runs.push(ScanRun {
+                id: "run-verification".into(),
+                case_id: case.id.clone(),
+                sequence: 1,
+                created_at: now,
+                completed_at: Some(now),
+                request_outcome: None,
+                report_asset_snapshots: Vec::new(),
+                knowledge_cutoff: now,
+                ai_system_applicable: false,
+                ai_system_applicability: Default::default(),
+                ai_generated_artifact: Default::default(),
+                verification_baseline_run_id: None,
+                scope_grant_ids: vec![],
+                scope_grant_snapshots: vec![],
+                engine_admission_issues: Vec::new(),
+                engine_runs: vec![],
+            });
+            case.findings.push(Finding {
+                family: None,
+                severity_basis_code: None,
+                confidence_basis_code: None,
+                context_factors: Vec::new(),
+                id: "finding-verification".into(),
+                case_id: case.id.clone(),
+                first_seen_run_id: "run-verification".into(),
+                last_seen_run_id: "run-verification".into(),
+                fingerprint: "finding-verification:rule".into(),
+                title: "Finding with verification state".into(),
+                plain_language_summary: "A retained finding needs review.".into(),
+                possible_impact: "The affected asset may remain exposed.".into(),
+                severity: Severity::High,
+                confidence: Confidence::High,
+                priority: 80,
+                priority_reasons: vec![],
+                asset_ids: vec![asset_id.clone()],
+                evidence: vec![Evidence {
+                    id: "evidence-verification".into(),
+                    finding_id: "finding-verification".into(),
+                    run_id: "run-verification".into(),
+                    engine_run_id: None,
+                    kind: EvidenceKind::Configuration,
+                    engine_id: "test-engine".into(),
+                    scanner_details: None,
+                    source_rule: None,
+                    result_pointer_sha256: None,
+                    observed_at: now,
+                    summary: "Retained evidence".into(),
+                    location: None,
+                    artifact_id: "artifact-verification".into(),
+                    artifact_sha256: "a".repeat(64),
+                    pointer: Some("/findings/verification".into()),
+                    redacted: false,
+                }],
+                control_references: vec![],
+                recommendation: "Apply the scanner-provided correction.".into(),
+                verification_guidance: verification_guidance.into(),
+                rollback_considerations: None,
+                official_references: vec![],
+                recommended_expert_type: "Security reviewer".into(),
+                status: FindingStatus::Unreviewed,
+                tags: vec![],
+            });
+            case.finding_observations.push(FindingObservation {
+                id: "observation-verification".into(),
+                run_id: "run-verification".into(),
+                finding_id: "finding-verification".into(),
+                fingerprint: "finding-verification:rule".into(),
+                asset_ids: vec![asset_id.clone()],
+                engine_ids: vec!["test-engine".into()],
+                severity: Severity::High,
+                confidence: Confidence::High,
+                evidence_hashes: vec!["a".repeat(64)],
+                observed_at: now,
+                finding_snapshot: None,
+            });
+            case.updated_at = now;
+
+            String::from_utf8(
+                html_report_bytes(&case, "run-verification", &ExportOptions::default()).unwrap(),
+            )
+            .unwrap()
+        };
+
+        let absent_html = render("");
+        assert!(absent_html.contains(ABSENT_VERIFICATION));
+        assert!(!absent_html.contains(FABRICATED_VERIFICATION));
+
+        let retained_html = render(RETAINED_VERIFICATION);
+        assert!(retained_html.contains(RETAINED_VERIFICATION));
+        assert!(!retained_html.contains(ABSENT_VERIFICATION));
+    }
+
+    #[test]
     fn html_report_projects_master_report_timing_findings_and_redacted_technical_details() {
         const RAW_SCANNER_SENTINEL: &str = "RAW_SCANNER_MESSAGE_MUST_NOT_APPEAR";
         const MUTABLE_CANONICAL_SENTINEL: &str = "MUTABLE_CANONICAL_TITLE_MUST_NOT_APPEAR";
@@ -33003,6 +33204,20 @@ mod tests {
         ] {
             assert!(html.contains(&expected), "HTML omitted {expected}");
         }
+        let article = html
+            .split("<article id=\"")
+            .find(|chunk| chunk.contains("Run &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt; manually"))
+            .expect("finding article with scanner remediation");
+        let (open_layer, _) = article
+            .split_once("<details class=\"technical finding-technical\">")
+            .expect("finding card technical details");
+        assert!(
+            open_layer.contains("class=\"finding-scanner-remediation\""),
+            "scanner-provided remediation was only inside collapsed technical details"
+        );
+        assert!(open_layer.contains(
+            "Run &lt;script&gt;alert(&#39;unsafe&#39;)&lt;/script&gt; manually"
+        ));
         // The window used to be a labelled sentence on every row. It is two
         // columns now, so the label is said once in the heading.
         assert!(html.contains(&format!(

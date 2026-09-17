@@ -108,6 +108,17 @@ test("every family a finding can carry has Chinese for both sentences it compose
   assert.equal(actions.size, FAMILIES.length, [...actions].join("\n"));
 });
 
+test("a network-exposure finding is told to correct the service, not to document reachability", () => {
+  // Nuclei and Greenbone compose from this family. Reachability inventory
+  // never does, so the inventory sentence would be the wrong instruction.
+  const action = findingActionSentence("en", {
+    englishFallback: ENGLISH_ACTION,
+    family: "network_exposure",
+  });
+  assert.equal(action, "Correct the service or configuration named by this check.");
+  assert.doesNotMatch(action, /must remain reachable/u);
+});
+
 test("a leaked credential is told to revoke first, not to adjust permissions", () => {
   // The whole reason `secret` splits from `source_code`: the key stays valid
   // until it is revoked, so anything else first leaves it valid that long.

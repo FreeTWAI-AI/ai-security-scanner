@@ -6021,6 +6021,30 @@ fn the_action_a_finding_asks_for_matches_the_kind_of_problem_it_reports() {
     // A permissive cloud policy is the one family least-privilege does describe.
     assert!(recommendation("prowler").contains("least privilege"));
 
+    // Nuclei and Greenbone report weaknesses on a service that was supposed
+    // to be reachable. The reachability-inventory sentence would send the
+    // reader to document why the port is open.
+    for engine_id in ["nuclei", "greenbone"] {
+        let finding = normalize_fixture(engine_id)
+            .findings
+            .into_iter()
+            .find(|finding| {
+                !finding
+                    .severity_basis_code
+                    .is_some_and(|code| code.is_exposure_observation())
+            })
+            .unwrap_or_else(|| panic!("{engine_id} fixture must produce a vulnerability finding"));
+        let text = finding.recommendation;
+        assert!(
+            text.contains("Correct the service or configuration named by this check"),
+            "{engine_id} must name a service or configuration change: {text}"
+        );
+        assert!(
+            !text.contains("must remain reachable"),
+            "{engine_id} uses the inventory-observation instruction: {text}"
+        );
+    }
+
     // Rewriting the running resource leaves the template that redeployed it.
     for engine_id in ["checkov", "kics"] {
         let text = recommendation(engine_id);

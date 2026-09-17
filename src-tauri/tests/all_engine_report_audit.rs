@@ -1700,7 +1700,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             .iter()
             .filter(|step| {
                 step.action
-                    == "Document why this service must remain reachable, or remove or restrict the exposure."
+                    == "Correct the service or configuration named by this check."
             })
             .map(|step| step.recommended_expert_type.clone())
             .collect::<Vec<_>>();

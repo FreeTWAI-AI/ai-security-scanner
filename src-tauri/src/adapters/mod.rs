@@ -7399,8 +7399,10 @@ fn remedy_for(profile: Profile, family: FindingFamily) -> &'static str {
         Profile::ScubaGear | Profile::Maester => {
             "Correct the Microsoft 365 tenant setting named by this control"
         }
+        // Nuclei and Greenbone are the findings that actually use this clause.
+        // Naabu/httpx observations take the exposure-observation path instead.
         Profile::Naabu | Profile::Httpx | Profile::Nuclei | Profile::Greenbone => {
-            "Document why this service must remain reachable, or remove or restrict the exposure"
+            "Correct the service or configuration named by this check"
         }
         Profile::Semgrep => "Change the code to remove the reported unsafe pattern",
         Profile::Gitleaks | Profile::Trufflehog => {

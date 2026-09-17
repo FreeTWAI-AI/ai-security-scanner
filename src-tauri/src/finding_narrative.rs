@@ -89,9 +89,10 @@ fn remedy(family: FindingFamily) -> &'static str {
         FindingFamily::CloudPosture => "將受影響資源的設定或政策改為最小權限",
         FindingFamily::CloudIdentity => "改用只授予該身分角色所需操作的較小範圍政策",
         FindingFamily::Microsoft365 => "調整這項控制項所檢查的 Microsoft 365 租用戶設定",
-        FindingFamily::NetworkExposure => {
-            "記錄這項服務為何需要對外開放，或調整設定以移除、限制這個對外暴露"
-        }
+        // Used by Nuclei and Greenbone vulnerability findings. Reachability
+        // inventory from Naabu/httpx takes the exposure-observation path and
+        // never reads this clause.
+        FindingFamily::NetworkExposure => "調整這項檢查所指出的服務或設定",
         FindingFamily::SourceCode => "修改程式碼以移除回報的不安全寫法",
         FindingFamily::Secret => {
             "先撤銷並輪替這組已外洩的憑證，再從原始碼以及仍保留它的歷史紀錄中移除"
@@ -127,7 +128,7 @@ fn remedy_english(family: FindingFamily) -> &'static str {
             "Correct the Microsoft 365 tenant setting named by this control"
         }
         FindingFamily::NetworkExposure => {
-            "Document why this service must remain reachable, or remove or restrict the exposure"
+            "Correct the service or configuration named by this check"
         }
         FindingFamily::SourceCode => "Change the code to remove the reported unsafe pattern",
         FindingFamily::Secret => {
@@ -3069,6 +3070,27 @@ mod tests {
                 &[],
             ),
             "Some other text."
+        );
+    }
+
+    #[test]
+    fn network_exposure_action_is_a_service_fix_not_reachability_inventory() {
+        // Nuclei and Greenbone are the findings that compose from this family.
+        // Telling the reader to document why the service is reachable is the
+        // inventory-observation instruction, and those observations never
+        // read this clause.
+        assert_eq!(
+            action_english("unused", Some(FindingFamily::NetworkExposure), None),
+            "Correct the service or configuration named by this check."
+        );
+        assert_eq!(
+            action_zh_hant(
+                "unused",
+                "Vulnerability manager",
+                Some(FindingFamily::NetworkExposure),
+                None,
+            ),
+            "調整這項檢查所指出的服務或設定。"
         );
     }
 

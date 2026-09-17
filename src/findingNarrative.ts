@@ -75,8 +75,10 @@ const REMEDY: Record<FindingFamily, string> = {
   cloud_posture: "將受影響資源的設定或政策改為最小權限",
   cloud_identity: "改用只授予該身分角色所需操作的較小範圍政策",
   microsoft365: "調整這項控制項所檢查的 Microsoft 365 租用戶設定",
-  network_exposure:
-    "記錄這項服務為何需要對外開放，或調整設定以移除、限制這個對外暴露",
+  // Used by Nuclei and Greenbone vulnerability findings. Reachability
+  // inventory from Naabu/httpx takes the exposure-observation path and
+  // never reads this clause.
+  network_exposure: "調整這項檢查所指出的服務或設定",
   source_code: "修改程式碼以移除回報的不安全寫法",
   secret:
     "先撤銷並輪替這組已外洩的憑證，再從原始碼以及仍保留它的歷史紀錄中移除",
@@ -97,7 +99,7 @@ const REMEDY_ENGLISH: Record<FindingFamily, string> = {
   cloud_posture: "Apply least privilege to the affected resource's configuration or policy",
   cloud_identity: "Replace the affected policy with a narrower policy that grants only the actions the identity's role requires",
   microsoft365: "Correct the Microsoft 365 tenant setting named by this control",
-  network_exposure: "Document why this service must remain reachable, or remove or restrict the exposure",
+  network_exposure: "Correct the service or configuration named by this check",
   source_code: "Change the code to remove the reported unsafe pattern",
   secret: "Revoke and rotate the exposed credential, then remove it from the source and every retained history entry",
   infrastructure_as_code: "Correct the infrastructure-as-code template so redeployment does not restore the insecure setting",

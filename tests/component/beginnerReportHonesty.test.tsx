@@ -2542,6 +2542,48 @@ test("target-controlled raw evidence text is never relabelled as remediation gui
     .toContain("Use the product-owned safe next step.");
 });
 
+test("a Nuclei-shaped finding keeps scanner remediation on the first layer and admits missing verification", () => {
+  const { container } = renderReport(report("partial", {
+    findings: [frozenFinding({
+      family: "network_exposure",
+      nextStep: "Document why this service must remain reachable, or remove or restrict the exposure.",
+      evidenceReferences: [{
+        evidenceId: "evidence-1",
+        engineId: "nuclei",
+        detailsFrozen: true,
+        scannerDetails: { remediation: "Restrict access to the phpMyAdmin panel." },
+        summary: "Nuclei reported the panel.",
+        artifactSha256: "a".repeat(64),
+        observedAt: "2026-09-04T12:00:00Z",
+      }],
+    })],
+  }));
+
+  const card = container.querySelector<HTMLElement>(".priority-card");
+  expect(card!.textContent).toContain("Correct the service or configuration named by this check.");
+  expect(card!.textContent).not.toContain("must remain reachable");
+  expect(card!.textContent).toContain("Restrict access to the phpMyAdmin panel.");
+  expect(card!.textContent).toContain("No verification step was retained for this result.");
+
+  openFirstFinding(container);
+  const advice = container.querySelector<HTMLElement>(".detail-section--advice");
+  expect(advice!.textContent).toContain("Restrict access to the phpMyAdmin panel.");
+  expect(container.textContent).toContain("No verification step was retained for this result.");
+});
+
+test("a finding without scanner remediation says the scanner did not provide a specific fix", () => {
+  const { container } = renderReport(report("partial", {
+    findings: [frozenFinding({
+      family: "source_code",
+      verificationGuidance: "Rerun Semgrep with the same scope after the change and confirm that source rule demo.rule is no longer reported.",
+    })],
+  }));
+
+  const card = container.querySelector<HTMLElement>(".priority-card");
+  expect(card!.textContent).toContain("The scanner did not provide a specific fix for this finding.");
+  expect(card!.textContent).not.toContain("After the change, rerun the same check");
+});
+
 test("scanner remediation keeps its source label concise in Traditional Chinese", () => {
   window.localStorage.setItem(localeStorageKey, "zh-TW");
   const { container } = renderReport(report("partial", {
