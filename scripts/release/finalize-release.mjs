@@ -165,6 +165,33 @@ const RELEASE_COPY = new Map([
       ],
     },
   ],
+  [
+    "0.2.0",
+    {
+      updaterNotes:
+        "Clearer honest reports, client-controlled upstream refresh proposals, hash-gated engine inputs, and new MCP Armor, agentic radar, and garak coverage.",
+      releaseNotes: [
+        "> **More honest reports, controlled refreshes, and broader evidence.**",
+        "",
+        "ai-security-scanner 0.2.0 rewrites the report layer for honesty and readability. Every",
+        "severity stays visible, including zeros, while zero and unmeasured values remain distinct.",
+        "A check without a verdict is no longer called untested, and a connection test is named as",
+        "not a scan in both languages.",
+        "",
+        "Tables are captioned and each header says what it heads. Evidence records carry what the",
+        "scanner actually reported, and the Chinese report uses complete Chinese sentences rather",
+        "than translated fragments.",
+        "",
+        "The product can now propose upstream adapter refreshes. The client decides whether a",
+        "refresh becomes a pull request back to main, and a refresh never claims more than was",
+        "actually checked. Every engine build input is gated on a recorded hash.",
+        "",
+        "New coverage includes MCP Armor static configuration results, agentic radar workflow",
+        "inventory, and garak probe results read without inventing a severity.",
+        "",
+      ],
+    },
+  ],
 ]);
 
 function releaseCopyFor(version) {

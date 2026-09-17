@@ -43,7 +43,7 @@ const ENGINE_SPECS = Object.freeze({
   },
   scubagear: { tag: "1.8.0-6", group: "m365", workflow: ".github/workflows/engine-images-m365.yml" },
   maester: { tag: "2.0.0-6", group: "m365", workflow: ".github/workflows/engine-images-m365.yml" },
-  "egress-gateway": { tag: "0.1.10-1", group: "gateway", workflow: ".github/workflows/managed-egress-gateway-image.yml" },
+  "egress-gateway": { tag: "0.2.0-1", group: "gateway", workflow: ".github/workflows/managed-egress-gateway-image.yml" },
 });
 
 const PLATFORMS = ["linux/amd64", "linux/arm64"];

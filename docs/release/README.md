@@ -16,8 +16,9 @@ This directory contains historical release records, exact delivery observations,
 - [v0.1.8](v0.1.8.md)
 - [v0.1.9](v0.1.9.md)
 - [v0.1.10](v0.1.10.md)
+- [v0.2.0](v0.2.0.md)
 
-The [v0.2.0 document](v0.2.0.md) is an archived product proposal, not a shipped-version record.
+The [v0.2.0 archived proposal](v0.2.0-archived-proposal.md) is retained as an unshipped product proposal.
 
 ## v0.1.9 delivery records
 
