@@ -37,7 +37,7 @@ The latest recorded local baseline for these lanes completed successfully:
 - Rust core and CLI: 1,691 tests.
 - Frontend unit tests: 645 tests.
 - Component rendering: 262 tests across 18 files.
-- CI document and contract tests: 46 tests.
+- CI document and contract tests: 50 tests.
 - Engine catalog validation: 8 tests.
 - TypeScript type checking, Rust formatting, and Clippy: passed.
 

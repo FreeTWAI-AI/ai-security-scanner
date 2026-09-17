@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "exclusions": [
+    {
+      "id": "provenance-record",
+      "match": "exact",
+      "value": "plan.json",
+      "reason": "The plan is the provenance record being searched, not an input whose digest can be recorded inside itself."
+    },
+    {
+      "id": "documentation",
+      "match": "suffix",
+      "value": ".md",
+      "reason": "Documentation, notices, and source-offer text are outside this executable-input gate even when a Dockerfile copies them into an image."
+    },
+    {
+      "id": "test-fixture",
+      "match": "path-segment",
+      "value": "testdata",
+      "reason": "Test fixtures may be copied into a build stage or used by build-time tests, but they are outside the production scanner and adapter input baseline."
+    },
+    {
+      "id": "go-test-source",
+      "match": "suffix",
+      "value": "_test.go",
+      "reason": "Go test source may run during an image build, but it is not compiled into the production launcher."
+    },
+    {
+      "id": "powershell-test-source",
+      "match": "suffix",
+      "value": ".Tests.ps1",
+      "reason": "PowerShell test source is outside the production scanner and adapter input baseline."
+    },
+    {
+      "id": "python-test-source",
+      "match": "basename-pattern",
+      "value": "test_*.py",
+      "reason": "Python test source may run during an image build, but it is outside the production scanner and adapter input baseline."
+    }
+  ],
+  "directories_without_plans": [
+    {
+      "directory": "cloud-launcher",
+      "reason": "Shared launcher source consumed by cloud engine images; it is not an independently packaged engine and has no plan of its own.",
+      "files": [
+        {
+          "path": "go.mod",
+          "reason": "Shared module definition consumed by the cloud engine builds; this support directory has no independent plan."
+        },
+        {
+          "path": "main.go",
+          "reason": "Shared launcher source whose digest is recorded by each current consuming cloud engine plan."
+        }
+      ]
+    },
+    {
+      "directory": "egress-gateway",
+      "reason": "Managed runtime infrastructure image, not a scanner engine adapter; its admission and evidence are owned by the managed-egress workflow.",
+      "files": [
+        {
+          "path": "Dockerfile",
+          "reason": "Managed runtime infrastructure Dockerfile owned by the separate managed-egress workflow, not an engine plan."
+        }
+      ]
+    },
+    {
+      "directory": "external-launcher",
+      "reason": "Shared launcher source consumed by external-target engine images; it is not an independently packaged engine and has no plan of its own.",
+      "files": [
+        {
+          "path": "go.mod",
+          "reason": "Shared module definition consumed by external-target engine builds; this support directory has no independent plan."
+        },
+        {
+          "path": "main.go",
+          "reason": "Shared launcher source whose digest is recorded by each current consuming external-target engine plan."
+        }
+      ]
+    },
+    {
+      "directory": "greenbone-launcher",
+      "reason": "Shared launcher source consumed by the Greenbone engine image; it is not an independently packaged engine and has no plan of its own.",
+      "files": [
+        {
+          "path": "go.mod",
+          "reason": "Shared module definition consumed by the Greenbone build; this support directory has no independent plan."
+        },
+        {
+          "path": "main.go",
+          "reason": "Shared launcher source whose digest is recorded by the Greenbone engine plan."
+        }
+      ]
+    },
+    {
+      "directory": "local-launcher",
+      "reason": "Shared launcher source consumed by local and Kubernetes engine images; it is not an independently packaged engine and has no plan of its own.",
+      "files": [
+        {
+          "path": "go.mod",
+          "reason": "Shared module definition consumed by local and Kubernetes engine builds; this support directory has no independent plan."
+        },
+        {
+          "path": "main.go",
+          "reason": "Shared launcher source whose digest is recorded by each current consuming local and Kubernetes engine plan."
+        }
+      ]
+    },
+    {
+      "directory": "m365-launcher",
+      "reason": "Shared launcher and source-preparation code consumed by Microsoft 365 engine images; it is not an independently packaged engine and has no plan of its own.",
+      "files": [
+        {
+          "path": "go.mod",
+          "reason": "Shared module definition consumed by Microsoft 365 engine builds; this support directory has no independent plan."
+        },
+        {
+          "path": "main.go",
+          "reason": "Shared launcher source whose digest is recorded by each current consuming Microsoft 365 engine plan."
+        },
+        {
+          "path": "prepare_source.py",
+          "reason": "Shared source preparer whose digest is recorded by each current consuming Microsoft 365 engine plan."
+        }
+      ]
+    }
+  ],
+  "uncovered_baseline": [
+    {
+      "path": "engines/images/cloudsplaining/Dockerfile.dockerignore",
+      "reason": "Controls the Cloudsplaining Docker build context allowlist but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/gitleaks/launcher/go.mod",
+      "reason": "Defines the Gitleaks launcher module and Go language version; only the launcher source digest is recorded."
+    },
+    {
+      "path": "engines/images/greenbone/managed-socks-smoke.sh",
+      "reason": "Runs the managed Greenbone SOCKS smoke verification but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/greenbone/openvasd-eregmatch-captures.patch",
+      "reason": "Applied to the OpenVAS daemon source during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/greenbone/openvasd-http-compat.patch",
+      "reason": "Applied to the OpenVAS daemon source during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/greenbone/openvasd-nasl-array-compat.patch",
+      "reason": "Applied to the OpenVAS daemon source during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/greenbone/openvasd-report-port.patch",
+      "reason": "Applied to the OpenVAS daemon source during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/greenbone/openvasd-rustls-provider.patch",
+      "reason": "Applied to the OpenVAS daemon source during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/greenbone/openvasd-service-port.patch",
+      "reason": "Applied to the OpenVAS daemon source during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/grype/import.json",
+      "reason": "Controls import of the pinned offline Grype database into the image but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/httpx/patch_live_dns.go",
+      "reason": "Compiled into the patched httpx source tree during the image build but absent from the plan."
+    },
+    {
+      "path": "engines/images/kube-bench/cfg/config.yaml",
+      "reason": "Installed as the product-owned kube-bench runtime configuration but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/maester/Dockerfile.dockerignore",
+      "reason": "Controls the Maester Docker build context allowlist but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/mcp-armor/launcher/go.mod",
+      "reason": "Defines the MCP Armor launcher module and Go language version; only the launcher source digest is recorded."
+    },
+    {
+      "path": "engines/images/prowler/Dockerfile.dockerignore",
+      "reason": "Controls the Prowler Docker build context allowlist but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/prowler/patches/verify-patches.sh",
+      "reason": "Verifies the recorded Prowler patch series against upstream source but is not itself recorded in the plan."
+    },
+    {
+      "path": "engines/images/scoutsuite/Dockerfile.dockerignore",
+      "reason": "Controls the ScoutSuite Docker build context allowlist but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/scoutsuite/prepare_source.py",
+      "reason": "Rewrites and normalizes the pinned ScoutSuite source during the image build but is absent from the plan."
+    },
+    {
+      "path": "engines/images/scoutsuite/requirements.in",
+      "reason": "Declares the direct ScoutSuite dependency surface used alongside the recorded lock, but its own bytes are not recorded."
+    },
+    {
+      "path": "engines/images/scoutsuite/scout_entry.py",
+      "reason": "Installed as the ScoutSuite runtime entry point but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/scubagear/Dockerfile.dockerignore",
+      "reason": "Controls the ScubaGear Docker build context allowlist but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/semgrep/build_rule_pack.py",
+      "reason": "Selects and builds the pinned Semgrep rule pack during the image build but is absent from the plan."
+    },
+    {
+      "path": "engines/images/semgrep/submodules.lock",
+      "reason": "Pins Semgrep parser and rule-source archives used by the build but the lock file itself has no plan digest."
+    },
+    {
+      "path": "engines/images/steampipe/Dockerfile.dockerignore",
+      "reason": "Controls the Steampipe Docker build context allowlist but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/steampipe/POSTGRESQL-COPYRIGHT",
+      "reason": "Copied into the Steampipe image's license payload but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/steampipe/group",
+      "reason": "Installed as the Steampipe image group database but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/steampipe/installprep/go.mod",
+      "reason": "Defines the Steampipe install-preparation helper module but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/steampipe/installprep/main.go",
+      "reason": "Compiled into the Steampipe install-preparation helper but has no digest in the plan."
+    },
+    {
+      "path": "engines/images/steampipe/passwd",
+      "reason": "Installed as the Steampipe image passwd database but has no digest in the plan."
+    }
+  ]
+}
