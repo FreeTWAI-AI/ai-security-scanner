@@ -37,7 +37,7 @@ substitutes for a published digest or an authorized runtime path.
 
 The latest recorded local baseline for these lanes completed successfully:
 
-- Rust core and CLI: 1,691 tests.
+- Rust core and CLI: 1,692 tests.
 - Frontend unit tests: 685 tests.
 - Component rendering: 300 tests across 18 files.
 - CI document and contract tests: 70 tests.

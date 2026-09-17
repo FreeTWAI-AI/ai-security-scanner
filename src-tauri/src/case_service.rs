@@ -33308,6 +33308,207 @@ mod tests {
     }
 
     #[test]
+    fn html_export_orders_actionable_content_before_framework_context_and_report_terms() {
+        let fixture = Fixture::new();
+        let case_id = repository_case_ready_for_execution(&fixture);
+        let plan = fixture
+            .service()
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap();
+        let run_id = plan.scan_run.id.clone();
+        let mut case = fixture.service().show_case(&case_id).unwrap();
+        let asset_id = case.assets[0].id.clone();
+        let finished = plan.scan_run.created_at + Duration::seconds(1);
+        {
+            let run = case
+                .scan_runs
+                .iter_mut()
+                .find(|run| run.id == run_id)
+                .unwrap();
+            run.completed_at = Some(finished);
+            let task = &mut run.engine_runs[0];
+            task.status = EngineRunStatus::Failed;
+            task.phase = "failed".into();
+            task.started_at = Some(plan.scan_run.created_at);
+            task.finished_at = Some(finished);
+            task.error_message = Some("fixture failure after a retained finding".into());
+        }
+        case.status = CaseStatus::ReadyForHandoff;
+        case.updated_at = finished;
+
+        let finding = Finding {
+            family: Some(crate::domain::FindingFamily::Secret),
+            severity_basis_code: Some(crate::domain::SeverityBasisCode::SecretPatternMatch),
+            confidence_basis_code: Some(
+                crate::domain::ConfidenceBasisCode::UnverifiedPatternOrDetectorMatch,
+            ),
+            context_factors: Vec::new(),
+            id: "finding-section-order".into(),
+            case_id: case.id.clone(),
+            first_seen_run_id: run_id.clone(),
+            last_seen_run_id: run_id.clone(),
+            fingerprint: "gitleaks:section-order".into(),
+            title: "Retained secret exposure".into(),
+            plain_language_summary: "A secret pattern was retained before the task failed.".into(),
+            possible_impact: "The exposed value may permit unauthorized access.".into(),
+            severity: Severity::High,
+            confidence: Confidence::Low,
+            priority: 73,
+            priority_reasons: vec![crate::finding_narrative::ENGLISH_EVIDENCE_REASON.into()],
+            asset_ids: vec![asset_id.clone()],
+            evidence: Vec::new(),
+            control_references: vec![crate::domain::ControlReference {
+                framework: "AIDEFEND".into(),
+                framework_version: "2026.1".into(),
+                control_id: "ADF-APP-01".into(),
+                title: "Application secret handling".into(),
+                relationship: "related".into(),
+                rationale: "The finding relates to application secret handling.".into(),
+                mapping_version: "map-2026-08".into(),
+                mapping_provenance: Some(crate::domain::ControlMappingProvenance {
+                    mapping_version: "map-2026-08".into(),
+                    reviewed_at: "2026-09-05".into(),
+                    review_process: "human-coordinate-review".into(),
+                    catalog_sha256: "e".repeat(64),
+                }),
+            }],
+            recommendation: "Revoke and rotate the exposed value, then remove it from source."
+                .into(),
+            verification_guidance: "Rerun Gitleaks and confirm the rule is no longer reported."
+                .into(),
+            rollback_considerations: None,
+            official_references: Vec::new(),
+            recommended_expert_type: "Secrets-response specialist".into(),
+            status: FindingStatus::Unreviewed,
+            tags: Vec::new(),
+        };
+        case.findings.push(finding.clone());
+        case.finding_observations.push(FindingObservation {
+            id: "observation-section-order".into(),
+            run_id: run_id.clone(),
+            finding_id: finding.id.clone(),
+            fingerprint: finding.fingerprint.clone(),
+            asset_ids: vec![asset_id],
+            engine_ids: vec!["gitleaks".into()],
+            severity: finding.severity.clone(),
+            confidence: finding.confidence.clone(),
+            evidence_hashes: Vec::new(),
+            observed_at: finished,
+            finding_snapshot: Some(finding),
+        });
+
+        let report = build_beginner_master_report(&case, &run_id).unwrap();
+        assert!(
+            !report.findings.is_empty(),
+            "section-order fixture must contain a finding"
+        );
+        assert!(
+            !report.coverage_gaps.is_empty(),
+            "section-order fixture must contain a coverage gap"
+        );
+
+        for (locale, problems_label, terms_label) in [
+            (
+                crate::export::ReportLocale::En,
+                "Problems found",
+                "Report terms",
+            ),
+            (
+                crate::export::ReportLocale::ZhHant,
+                "發現的問題",
+                "報告條款",
+            ),
+        ] {
+            let html = String::from_utf8(
+                html_report_bytes(
+                    &case,
+                    &run_id,
+                    &ExportOptions {
+                        locale,
+                        ..ExportOptions::default()
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let asset_results = html
+                .find("<section class=\"asset-results\"")
+                .unwrap_or_else(|| panic!("§6.3 asset-results marker is missing in {locale:?}"));
+            let framework = html
+                .find("<section class=\"framework-coverage\"")
+                .unwrap_or_else(|| {
+                    panic!("§6.3 framework-coverage marker is missing in {locale:?}")
+                });
+            assert!(
+                asset_results < framework,
+                "§6.3 optional framework context must follow actionable asset results in {locale:?}"
+            );
+
+            let kpi_row = html
+                .find("<section class=\"kpi-row\"")
+                .unwrap_or_else(|| panic!("§6.1 kpi-row marker is missing in {locale:?}"));
+            assert!(
+                kpi_row < asset_results,
+                "§6.1 the KPI row must precede the asset-results section in {locale:?}"
+            );
+            let kpi_end = html[kpi_row..]
+                .find("</section>")
+                .map(|offset| kpi_row + offset)
+                .unwrap_or_else(|| panic!("§6.1 the KPI row is not closed in {locale:?}"));
+            let kpi_html = &html[kpi_row..kpi_end];
+            let first_tile = kpi_html
+                .find("<div class=\"kpi ")
+                .unwrap_or_else(|| panic!("§6.1 the KPI row has no first KPI tile in {locale:?}"));
+            let first_tile_end = kpi_html[first_tile..]
+                .find("</div>")
+                .map(|offset| first_tile + offset)
+                .unwrap_or_else(|| panic!("§6.1 the first KPI tile is not closed in {locale:?}"));
+            assert!(
+                kpi_html[first_tile..first_tile_end].contains(&format!(
+                    "<span class=\"kpi__label\">{problems_label}</span>"
+                )),
+                "§6.1 the first KPI tile must be {problems_label:?} in {locale:?}"
+            );
+
+            let executive_summary = html
+                .find("<section class=\"executive-summary\"")
+                .unwrap_or_else(|| {
+                    panic!("§6.1 executive-summary marker is missing in {locale:?}")
+                });
+            assert!(
+                executive_summary < asset_results,
+                "§6.1 the executive summary must precede the asset-results section in {locale:?}"
+            );
+
+            let footer_marker = format!("<footer><h2>{terms_label}</h2>");
+            let report_terms = html.find(&footer_marker).unwrap_or_else(|| {
+                panic!("§6.2 the {terms_label:?} footer is missing in {locale:?}")
+            });
+            assert!(
+                !html[report_terms..].contains("<section"),
+                "§6.2 no section may follow the report-terms footer in {locale:?}"
+            );
+            let report_terms_end = html[report_terms..]
+                .find("</footer>")
+                .map(|offset| report_terms + offset)
+                .unwrap_or_else(|| {
+                    panic!("§6.2 the report-terms footer is not closed in {locale:?}")
+                });
+            assert_eq!(
+                &html[report_terms_end..],
+                "</footer></body></html>",
+                "§6.2 the report-terms footer must be the last element before </body></html> in {locale:?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_target_identity_breaks_on_its_separators_and_nowhere_else() {
         let broken = html_escape_breakable_identity("https://portal.example.test:443");
         assert_eq!(
