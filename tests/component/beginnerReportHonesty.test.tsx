@@ -1405,7 +1405,8 @@ test("the first layer names the requested target, tested work, top gap, and next
   expect(strip!.textContent).toContain("naabu-tcp");
   expect(strip!.textContent).toContain("TLS configuration");
   expect(strip!.textContent).toContain("The TLS check did not start.");
-  expect(strip!.textContent).toContain("Review the requested scope, then retry.");
+  expect(strip!.textContent).toContain("Review the target and retry.");
+  expect(strip!.textContent).not.toContain("Review the requested scope, then retry.");
 
   const firstLayerScope = container.querySelector<HTMLElement>(".report-first-layer-scope");
   expect(firstLayerScope).not.toBeNull();
@@ -3031,9 +3032,10 @@ test("one instruction several findings share is listed once and says how many it
   }));
 
   const steps = Array.from(container.querySelectorAll("ol.detail-list li"))
-    .filter((item) => item.textContent?.includes("Review the problem and its evidence."));
+    .filter((item) => item.textContent?.includes("Narrow policy AdminPolicy."));
   expect(steps).toHaveLength(1);
   expect(steps[0]!.textContent).toContain("Problems this step covers: 3");
+  expect(steps[0]!.textContent).not.toContain("Review the problem and its evidence.");
   // The three findings stay three problems everywhere else in the report.
   const problemMetric = Array.from(container.querySelectorAll<HTMLElement>(".metric-card"))
     .find((card) => card.textContent?.includes("Problems found"));
@@ -3053,6 +3055,7 @@ test("a merged step survives when only a later finding it covers is a security f
     findingId: "finding-problem",
     fingerprint: "fp-problem",
     title: "Unauthenticated admin interface",
+    family: "network_exposure",
     nextStep: "Document why this service must remain reachable.",
   });
   const { container } = renderReport(report("complete", {
@@ -3074,13 +3077,19 @@ test("a merged step survives when only a later finding it covers is a security f
       action: "Document why this service must remain reachable.",
       reason: observation.title,
       findingId: "finding-observation",
+      family: "network_exposure",
       alsoResolves: ["finding-problem"],
     }],
   }));
 
   // Dropping the step because its lead is inventory would take the real
-  // problem's only instruction with it.
-  expect(container.textContent).toContain("Review the problem and its evidence.");
+  // problem's only instruction with it. The list prints the composed family
+  // sentence HTML prints, not the categorical code label.
+  const steps = Array.from(container.querySelectorAll("ol.detail-list li"));
+  expect(steps.some((item) =>
+    item.textContent?.includes("Correct the service or configuration named by this check."))).toBe(true);
+  expect(steps.some((item) =>
+    item.textContent?.includes("Review the problem and its evidence."))).toBe(false);
   expect(container.textContent).not.toContain("No additional action is listed for this scan.");
 });
 

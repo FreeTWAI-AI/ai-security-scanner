@@ -2245,6 +2245,63 @@ export const findingActionSentence = (
   return `${remedy}。`;
 };
 
+/**
+ * One next step's action sentence, composed the same way the HTML report
+ * composes it (`beginner_step_action` in `case_service.rs`).
+ *
+ * A finding-derived step uses that finding's own recommendation — family or
+ * Cloudsplaining policy, otherwise the stored sentence. A gap-derived step is
+ * looked up as coverage prose. An unattributed step names the identifier the
+ * reader has to add. The categorical `code` still groups and orders the step;
+ * it is not this sentence. An empty stored action with nothing to compose from
+ * stays empty: the report layer's absence statement is for a scan with no
+ * steps, not a fabricated code-label fallback.
+ */
+export const beginnerStepAction = (
+  locale: "en" | "zh-TW",
+  step: {
+    action: string;
+    family?: FindingFamily;
+    findingId?: string;
+    unattributed?: UnattributedResults;
+    reason: string;
+  },
+  findings: readonly {
+    findingId: string;
+    evidenceReferences: readonly {
+      detailsFrozen?: boolean;
+      engineId: string;
+      scannerDetails?: { awsIamPolicy?: AwsIamPolicyFindingDetails };
+    }[];
+  }[],
+): string => {
+  const derivedFrom = step.findingId
+    ? findings.find((finding) => finding.findingId === step.findingId)
+    : undefined;
+  if (step.unattributed) {
+    const engineId = step.reason.split(" ")[0] || step.reason;
+    return findingUnattributedGap(locale, engineId, step.unattributed, {
+      dimension: "",
+      reason: step.reason,
+      nextAction: step.action,
+    }).nextAction;
+  }
+  const awsIamPolicy = derivedFrom
+    ?.evidenceReferences
+    .filter((reference) =>
+      reference.detailsFrozen === true && reference.engineId === "cloudsplaining")
+    .map((reference) => reference.scannerDetails?.awsIamPolicy)
+    .find((details) => details !== undefined);
+  const composed = locale === "en" && !derivedFrom
+    ? step.action
+    : findingActionSentence(locale, {
+      englishFallback: step.action,
+      family: step.family,
+      awsIamPolicy,
+    });
+  return derivedFrom ? composed : coverageGapProse(locale, composed);
+};
+
 /** Appends the identifier a composed name carries, when it has one. */
 const withIdentifier = (label: string, identifier: string): string =>
   identifier ? `${label}（${identifier}）` : label;

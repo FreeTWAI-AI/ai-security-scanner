@@ -5,6 +5,7 @@ import {
   ALL_CONFIDENCE_BASIS_CODES,
   ENGLISH_EXPOSURE_OBSERVATION_REASON,
   ENGLISH_ROLLBACK,
+  beginnerStepAction,
   findingActionSentence,
   findingConfidencePresentation,
   findingPriorityReason,
@@ -117,6 +118,36 @@ test("a network-exposure finding is told to correct the service, not to document
   });
   assert.equal(action, "Correct the service or configuration named by this check.");
   assert.doesNotMatch(action, /must remain reachable/u);
+});
+
+test("a next step prints the composed family sentence, not a code-label fallback", () => {
+  const stored = "Document why this service must remain reachable.";
+  const findings = [{
+    findingId: "finding-1",
+    evidenceReferences: [] as { detailsFrozen?: boolean; engineId: string }[],
+  }];
+  assert.equal(
+    beginnerStepAction("en", {
+      action: stored,
+      family: "network_exposure",
+      findingId: "finding-1",
+      reason: "Unauthenticated admin interface — High severity, High confidence",
+    }, findings),
+    "Correct the service or configuration named by this check.",
+  );
+  assert.equal(
+    beginnerStepAction("en", {
+      action: "Review the target and retry.",
+      reason: "The TLS check did not start.",
+    }, []),
+    "Review the target and retry.",
+  );
+  // Absence stays absence. The categorical review_finding sentence is not a
+  // substitute for a step that has nothing to compose.
+  assert.equal(
+    beginnerStepAction("en", { action: "", reason: "" }, []),
+    "",
+  );
 });
 
 test("a leaked credential is told to revoke first, not to adjust permissions", () => {

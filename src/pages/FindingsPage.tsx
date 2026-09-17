@@ -19,6 +19,7 @@ import { projectVisibleFindingGroups } from "../findingGroupPresentation";
 import { isExposureObservation, isSecurityFinding } from "../findingClassification";
 import {
   awsIamPolicySourceLabel,
+  beginnerStepAction,
   engineNameFrom,
   findingActionSentence,
   findingConfidencePresentation,
@@ -1317,9 +1318,11 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
         report.coverageGaps.length - 1,
       )
     : text(noRecordedGapDetail);
+  const nextStepActionText = (step: (typeof orderedNextSteps)[number]): string =>
+    beginnerStepAction(locale, step, report.findings);
   const nextStepSummary = orderedNextSteps[0]
     ? appendRemainingCount(
-        text(nextActionCopy(orderedNextSteps[0].code)),
+        nextStepActionText(orderedNextSteps[0]),
         orderedNextSteps.length - 1,
       )
     : text(copy.noNextStep);
@@ -1703,7 +1706,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
             const covers = (step.alsoResolves?.length ?? 0) + 1;
             return (
               <li key={`${step.code}-${step.findingId ?? step.taskId ?? index}`}>
-                <strong>{text(nextActionCopy(step.code))}</strong>
+                <strong>{nextStepActionText(step)}</strong>
                 {step.findingId && covers > 1 && (
                   <span>{text(copy.stepCoversProblems, { count: formatNumber(covers) })}</span>
                 )}
