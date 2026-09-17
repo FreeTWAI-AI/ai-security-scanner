@@ -7,6 +7,7 @@ import type {
   BeginnerCheckResultKindWire,
   BeginnerCoverageStatus,
   BeginnerMasterReport,
+  BeginnerNextActionCode,
   BeginnerReportFinding,
   BeginnerReportSummary,
   Finding,
@@ -1237,6 +1238,107 @@ test("an incomplete asset row exposes a direct action control, not only prose", 
   expect(action?.textContent).toContain("Review scanner status");
   expect(row?.querySelector(".asset-result-row__outcome span")?.textContent)
     .toContain("Retry this check");
+  fireEvent.click(action!);
+  expect(onOpenProgress).toHaveBeenCalledTimes(1);
+});
+
+const incompleteAssetWithNextAction = (
+  nextActionCode: BeginnerNextActionCode,
+): BeginnerMasterReport =>
+  report("partial", {
+    actual: {
+      checks: [{
+        taskId: "task-failed",
+        checkId: "greenbone",
+        targetAssetIds: ["asset-1"],
+        status: "failed",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageGaps: [{
+      kind: "failed",
+      taskId: "task-failed",
+      targetAssetIds: ["asset-1"],
+      dimension: "vulnerability checks",
+      reason: "The check failed.",
+      nextActionCode,
+      nextAction: "Recorded next action.",
+    }],
+    coverageCounts: counts({ failed: 1 }),
+  });
+
+const assetNextActionControlCases = [
+  ["retry_check", "progress"],
+  ["review_scope_and_retry", "progress"],
+  ["wait_or_cancel", "progress"],
+  ["start_expected_service_and_retry", "progress"],
+  ["choose_compatible_check", "coverage"],
+  ["review_coverage", "coverage"],
+  ["review_manual_control", "coverage"],
+  ["add_asset_identifier", "coverage"],
+  ["review_finding", undefined],
+  ["preserve_visible_limitation", undefined],
+  ["no_action_unless_scope_changes", undefined],
+] as const satisfies ReadonlyArray<
+  readonly [BeginnerNextActionCode, "progress" | "coverage" | undefined]
+>;
+
+true satisfies (
+  Exclude<
+    BeginnerNextActionCode,
+    (typeof assetNextActionControlCases)[number][0]
+  > extends never ? true : false
+);
+
+test.each(assetNextActionControlCases)(
+  "an incomplete asset recording %s offers a %s card control",
+  (nextActionCode, destination) => {
+    const onOpenProgress = vi.fn();
+    const onOpenCoverage = vi.fn();
+    const { container } = renderReport(
+      incompleteAssetWithNextAction(nextActionCode),
+      [],
+      [catalogRun("greenbone")],
+      { onOpenProgress, onOpenCoverage },
+    );
+
+    const row = container.querySelector<HTMLElement>(".asset-result-row");
+    if (!row) throw new Error("the asset result card did not render");
+    expect(row.dataset.assetResult).toBe("incomplete_failed");
+
+    const action = row.querySelector("button");
+    if (destination === undefined) {
+      expect(action).toBeNull();
+      return;
+    }
+
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toContain(
+      destination === "progress" ? "Review scanner status" : "Open scan setup",
+    );
+    fireEvent.click(action!);
+    expect(onOpenProgress).toHaveBeenCalledTimes(destination === "progress" ? 1 : 0);
+    expect(onOpenCoverage).toHaveBeenCalledTimes(destination === "coverage" ? 1 : 0);
+  },
+);
+
+test("a recorded next action must never leave an asset with fewer ways to act than none would", () => {
+  const onOpenProgress = vi.fn();
+  const { container } = renderReport(
+    incompleteAssetWithNextAction("start_expected_service_and_retry"),
+    [],
+    [catalogRun("greenbone")],
+    { onOpenProgress },
+  );
+
+  const row = container.querySelector<HTMLElement>(".asset-result-row");
+  if (!row) throw new Error("the asset result card did not render");
+  expect(row.dataset.assetResult).toBe("incomplete_failed");
+  const action = row.querySelector("button");
+  expect(action).not.toBeNull();
+  expect(action?.textContent).toContain("Review scanner status");
   fireEvent.click(action!);
   expect(onOpenProgress).toHaveBeenCalledTimes(1);
 });

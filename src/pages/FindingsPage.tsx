@@ -836,23 +836,33 @@ const incompleteGapKinds = new Set<BeginnerMasterReport["coverageGaps"][number][
   "unattributed",
 ]);
 
-const progressNextActions = new Set<BeginnerNextActionCode>([
-  "retry_check",
-  "review_scope_and_retry",
-  "wait_or_cancel",
-]);
-const coverageNextActions = new Set<BeginnerNextActionCode>([
-  "choose_compatible_check",
-  "review_coverage",
-]);
+const assetNextActionDestination = {
+  // The retry lives in Progress.
+  retry_check: "progress",
+  review_scope_and_retry: "progress",
+  // The active work and its cancel are in Progress.
+  wait_or_cancel: "progress",
+  // Ends in the same retry as retry_check.
+  start_expected_service_and_retry: "progress",
+  // Coverage is where applicable checks are chosen.
+  choose_compatible_check: "coverage",
+  review_coverage: "coverage",
+  // A manual control is untested coverage to review.
+  review_manual_control: "coverage",
+  // Coverage is where the gap and its reason are stated before the user changes setup.
+  add_asset_identifier: "coverage",
+  // The finding is on the surface the user is already reading.
+  review_finding: undefined,
+  // Deliberately no action.
+  preserve_visible_limitation: undefined,
+  no_action_unless_scope_changes: undefined,
+} as const satisfies Record<BeginnerNextActionCode, "progress" | "coverage" | undefined>;
 
 const assetActionDestination = (
   nextActionCode: BeginnerNextActionCode | undefined,
   status: AssetResultStatus,
 ): "progress" | "coverage" | undefined => {
-  if (nextActionCode && progressNextActions.has(nextActionCode)) return "progress";
-  if (nextActionCode && coverageNextActions.has(nextActionCode)) return "coverage";
-  if (nextActionCode) return undefined;
+  if (nextActionCode) return assetNextActionDestination[nextActionCode];
   if (status === "incomplete_failed") return "progress";
   if (status === "not_tested") return "coverage";
   return undefined;
