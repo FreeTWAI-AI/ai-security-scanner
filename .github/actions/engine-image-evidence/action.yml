@@ -2,6 +2,9 @@ name: Preserve signed engine image evidence
 description: Generate exact per-platform SBOMs and external attestations without changing the published image digest.
 
 inputs:
+  mode:
+    description: Guard decision; build creates signed evidence, while reuse performs no publication mutation.
+    required: true
   engine:
     description: Canonical engine id.
     required: true
@@ -25,6 +28,7 @@ runs:
   using: composite
   steps:
     - name: Re-authenticate for signed OCI referrers
+      if: inputs.mode == 'build'
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
       with:
         registry: ghcr.io
@@ -32,6 +36,7 @@ runs:
         password: ${{ inputs.github-token }}
 
     - name: Generate and validate exact per-platform SBOMs
+      if: inputs.mode == 'build'
       id: evidence
       shell: bash
       env:
@@ -50,6 +55,7 @@ runs:
         --out "package-evidence/${ENGINE}"
 
     - name: Attest index build provenance
+      if: inputs.mode == 'build'
       id: provenance
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
@@ -60,6 +66,7 @@ runs:
         github-token: ${{ inputs.github-token }}
 
     - name: Attest amd64 SPDX SBOM
+      if: inputs.mode == 'build'
       id: amd64-spdx
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
@@ -71,6 +78,7 @@ runs:
         github-token: ${{ inputs.github-token }}
 
     - name: Attest amd64 CycloneDX SBOM
+      if: inputs.mode == 'build'
       id: amd64-cyclonedx
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
@@ -82,6 +90,7 @@ runs:
         github-token: ${{ inputs.github-token }}
 
     - name: Attest arm64 SPDX SBOM
+      if: inputs.mode == 'build'
       id: arm64-spdx
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
@@ -93,6 +102,7 @@ runs:
         github-token: ${{ inputs.github-token }}
 
     - name: Attest arm64 CycloneDX SBOM
+      if: inputs.mode == 'build'
       id: arm64-cyclonedx
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
@@ -104,6 +114,7 @@ runs:
         github-token: ${{ inputs.github-token }}
 
     - name: Bind downloadable evidence to signed statements
+      if: inputs.mode == 'build'
       shell: bash
       env:
         MANIFEST: ${{ steps.evidence.outputs.manifest }}
@@ -142,6 +153,7 @@ runs:
         --arm64-cyclonedx-url "${ARM64_CYCLONEDX_URL}"
 
     - name: Verify GitHub and registry attestation persistence
+      if: inputs.mode == 'build'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}

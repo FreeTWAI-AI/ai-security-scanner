@@ -131,6 +131,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=engine-${{ matrix.engine }}
 
       - name: Publish anonymous pull access
+        if: steps.guard.outputs.should_build == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -259,6 +260,7 @@ jobs:
       - name: Preserve publication evidence
         uses: ./.github/actions/engine-image-evidence
         with:
+          mode: ${{ steps.guard.outputs.mode }}
           engine: ${{ matrix.engine }}
           image: ${{ env.IMAGE }}
           tag: ${{ env.IMAGE_TAG }}
@@ -270,6 +272,7 @@ jobs:
         id: promote
         uses: ./.github/actions/engine-image-evidence/promote
         with:
+          mode: ${{ steps.guard.outputs.mode }}
           image: ${{ env.IMAGE }}
           tag: ${{ env.IMAGE_TAG }}
           digest: ${{ steps.guard.outputs.digest || steps.build.outputs.digest }}

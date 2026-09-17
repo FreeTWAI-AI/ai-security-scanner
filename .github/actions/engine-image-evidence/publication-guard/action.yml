@@ -1,5 +1,5 @@
 name: Guard immutable managed image version
-description: Reuse a same-revision signed index or authorize a unique candidate build without mutating a version tag.
+description: Reuse a signed index with unchanged recorded engine inputs or authorize a unique candidate build without mutating a version tag.
 
 inputs:
   image:
@@ -17,7 +17,7 @@ inputs:
 
 outputs:
   mode:
-    description: build when the version is absent; reuse when the same signed revision already owns it.
+    description: build when the version is absent; reuse when verified recorded engine inputs are unchanged.
     value: ${{ steps.preflight.outputs.mode }}
   should_build:
     description: Whether a fresh uniquely-tagged candidate must be built.

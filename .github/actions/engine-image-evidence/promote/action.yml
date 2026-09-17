@@ -1,7 +1,10 @@
 name: Promote signed managed image candidate
-description: Create a previously absent version tag only after its candidate digest has verified same-revision provenance.
+description: Create a previously absent version tag after verification, or verify a reused immutable binding without mutation.
 
 inputs:
+  mode:
+    description: Guard decision; build may promote once, while reuse only verifies.
+    required: true
   image:
     description: Fully-qualified GHCR image name without tag or digest.
     required: true
@@ -30,6 +33,7 @@ runs:
   using: composite
   steps:
     - name: Authenticate the promotion operation
+      if: inputs.mode == 'build'
       uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
       with:
         registry: ghcr.io
@@ -44,6 +48,7 @@ runs:
         GHCR_TOKEN: ${{ inputs.github-token }}
       run: >-
         node scripts/engine-image-evidence.mjs promote-publication
+        --mode "${{ inputs.mode }}"
         --image "${{ inputs.image }}"
         --tag "${{ inputs.tag }}"
         --digest "${{ inputs.digest }}"
@@ -53,6 +58,6 @@ runs:
         --username "${GITHUB_ACTOR}"
 
     - name: Remove promotion credentials
-      if: always()
+      if: always() && inputs.mode == 'build'
       shell: bash
       run: docker logout ghcr.io

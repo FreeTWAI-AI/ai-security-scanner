@@ -304,6 +304,7 @@ jobs:
           printf 'digest=%s\n' "${index_digest}" >> "${GITHUB_OUTPUT}"
 
       - name: Publish anonymous pull access
+        if: needs.guard.outputs.should_build == 'true'
         continue-on-error: true
         shell: bash
         env:
@@ -376,6 +377,7 @@ jobs:
       - name: Preserve publication evidence
         uses: ./.github/actions/engine-image-evidence
         with:
+          mode: ${{ needs.guard.outputs.mode }}
           engine: greenbone
           image: ${{ env.IMAGE }}
           tag: ${{ env.IMAGE_TAG }}
@@ -387,6 +389,7 @@ jobs:
         id: promote
         uses: ./.github/actions/engine-image-evidence/promote
         with:
+          mode: ${{ needs.guard.outputs.mode }}
           image: ${{ env.IMAGE }}
           tag: ${{ env.IMAGE_TAG }}
           digest: ${{ needs.guard.outputs.digest || steps.publish.outputs.digest }}

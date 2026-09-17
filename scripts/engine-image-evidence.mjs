@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   PROJECT_ROOT,
@@ -261,8 +262,18 @@ function matchingVerifiedProvenance(records, { image, digest, sourceRevision, re
   });
 }
 
-function verifyProvenance({ image, digest, sourceRevision, repository, workflowRef, exec = execFileSync }) {
-  assert(SOURCE_REVISION_PATTERN.test(sourceRevision), `invalid source revision: ${sourceRevision}`);
+function verifiedProvenanceSourceRevision(records, { image, digest, repository, workflowRef }) {
+  for (const record of records) {
+    const sourceRevision = record?.verificationResult?.signature?.certificate?.sourceRepositoryDigest;
+    if (!SOURCE_REVISION_PATTERN.test(sourceRevision ?? "")) continue;
+    if (matchingVerifiedProvenance([record], { image, digest, sourceRevision, repository, workflowRef })) {
+      return sourceRevision;
+    }
+  }
+  return null;
+}
+
+function verifyPublishedProvenance({ image, digest, repository, workflowRef, exec = execFileSync }) {
   assert(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository), `invalid GitHub repository: ${repository}`);
   assert(workflowRef.startsWith(`${repository}/.github/workflows/`) && workflowRef.includes("@refs/heads/"), "workflow ref does not identify this repository's branch workflow");
   let output;
@@ -279,9 +290,150 @@ function verifyProvenance({ image, digest, sourceRevision, repository, workflowR
   }
   const records = JSON.parse(output);
   assert(Array.isArray(records), "GitHub attestation verification returned an invalid record set");
+  const sourceRevision = verifiedProvenanceSourceRevision(records, {
+    image,
+    digest,
+    repository,
+    workflowRef,
+  });
   assert(
-    matchingVerifiedProvenance(records, { image, digest, sourceRevision, repository, workflowRef }),
+    sourceRevision,
+    "version tag is already bound to an unrecognized source repository or workflow",
+  );
+  return sourceRevision;
+}
+
+function verifyProvenance({ image, digest, sourceRevision, repository, workflowRef, exec = execFileSync }) {
+  assert(SOURCE_REVISION_PATTERN.test(sourceRevision), `invalid source revision: ${sourceRevision}`);
+  const verifiedSourceRevision = verifyPublishedProvenance({
+    image,
+    digest,
+    repository,
+    workflowRef,
+    exec,
+  });
+  assert(
+    verifiedSourceRevision === sourceRevision,
     `version tag is already bound to a different source commit or workflow (expected ${sourceRevision})`,
+  );
+}
+
+function managedEngineFromImage(image) {
+  const { packageName } = registryCoordinates(image);
+  const prefix = "ai-security-scanner-engine-";
+  if (!packageName.startsWith(prefix)) return null;
+  const engine = packageName.slice(prefix.length);
+  assert(ENGINE_PATTERN.test(engine), `managed engine image has an invalid engine id: ${image}`);
+  return engine;
+}
+
+function validateEnginePlanBinding(plan, { engine, image, tag, label }) {
+  assert(plan && typeof plan === "object" && !Array.isArray(plan), `${label} engine input plan is not an object`);
+  assert(plan.engine_id === engine, `${label} engine input plan does not identify ${engine}`);
+  assert(
+    plan.final_artifact?.repository === image && plan.final_artifact?.tag === tag,
+    `${label} engine input plan does not bind ${image}:${tag}`,
+  );
+}
+
+export function recordedEngineInputIdentity(plan, { engine, image, tag, label = "current" }) {
+  validateEnginePlanBinding(plan, { engine, image, tag, label });
+  const records = [];
+
+  function visit(value, components) {
+    if (components.length === 1 && ["final_artifact", "publication"].includes(components[0])) return;
+    if (typeof value === "string") {
+      if (value.startsWith("sha256:")) {
+        assert(DIGEST_PATTERN.test(value), `${label} engine input plan has an invalid digest at ${components.join(".")}`);
+        records.push([components.join("."), value]);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((entry, index) => visit(entry, [...components, String(index)]));
+      return;
+    }
+    if (value && typeof value === "object") {
+      for (const key of Object.keys(value).sort()) visit(value[key], [...components, key]);
+    }
+  }
+
+  visit(plan, []);
+  assert(
+    records.some(([field]) => field === "dockerfile.sha256"),
+    `${label} engine input plan has no recorded Dockerfile digest`,
+  );
+  return records;
+}
+
+async function readPublishedEnginePlan({ repository, engine, sourceRevision, token, fetchImpl = fetch }) {
+  const planPath = `engines/images/${engine}/plan.json`;
+  const url = new URL(`https://api.github.com/repos/${repository}/contents/${planPath}`);
+  url.searchParams.set("ref", sourceRevision);
+  const response = await fetchImpl(url, {
+    headers: {
+      Accept: "application/vnd.github.raw+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  assert(
+    response.ok,
+    `published engine input plan is unavailable at ${sourceRevision} (HTTP ${response.status})`,
+  );
+  try {
+    return JSON.parse(await response.text());
+  } catch {
+    throw new Error(`published engine input plan is unreadable at ${sourceRevision}`);
+  }
+}
+
+async function verifyRecordedInputsUnchanged({
+  engine,
+  image,
+  tag,
+  currentSourceRevision,
+  publishedSourceRevision,
+  repository,
+  token,
+  readCurrentPlan = () => readJson(path.join(PROJECT_ROOT, "engines", "images", engine, "plan.json")),
+  readPublishedPlan = (inputs) => readPublishedEnginePlan(inputs),
+}) {
+  let currentPlan;
+  try {
+    currentPlan = await readCurrentPlan();
+  } catch (error) {
+    throw new Error(`current engine input plan is unavailable: ${error.message}`);
+  }
+  let publishedPlan = currentPlan;
+  if (publishedSourceRevision !== currentSourceRevision) {
+    try {
+      publishedPlan = await readPublishedPlan({
+        repository,
+        engine,
+        sourceRevision: publishedSourceRevision,
+        token,
+      });
+    } catch (error) {
+      throw new Error(`published engine input plan is unavailable: ${error.message}`);
+    }
+  }
+  const currentIdentity = recordedEngineInputIdentity(currentPlan, {
+    engine,
+    image,
+    tag,
+    label: "current",
+  });
+  const publishedIdentity = recordedEngineInputIdentity(publishedPlan, {
+    engine,
+    image,
+    tag,
+    label: "published",
+  });
+  assert(
+    isDeepStrictEqual(currentIdentity, publishedIdentity),
+    `version tag is already bound to different recorded build inputs (published from ${publishedSourceRevision})`,
   );
 }
 
@@ -308,55 +460,119 @@ function publicationInputs(args) {
   return { image, tag, sourceRevision, repository, workflowRef, username, token };
 }
 
-async function publicationPreflight(args) {
+export async function publicationPreflight(args, dependencies = {}) {
   const inputs = publicationInputs(args);
-  const existing = await inspectGhcrTag(inputs);
+  const inspectTag = dependencies.inspectGhcrTag ?? inspectGhcrTag;
+  const verifyExistingProvenance = dependencies.verifyPublishedProvenance ?? verifyPublishedProvenance;
+  const appendOutputs = dependencies.appendGithubOutputs ?? appendGithubOutputs;
+  const writeStdout = dependencies.writeStdout ?? ((message) => process.stdout.write(message));
+  const existing = await inspectTag(inputs);
   const runId = process.env.GITHUB_RUN_ID;
   const runAttempt = process.env.GITHUB_RUN_ATTEMPT;
   assert(/^[1-9][0-9]*$/u.test(runId ?? "") && /^[1-9][0-9]*$/u.test(runAttempt ?? ""), "GitHub run identity is invalid");
   const candidateTag = `candidate-${inputs.sourceRevision}-${runId}-${runAttempt}`;
   assert(TAG_PATTERN.test(candidateTag) && candidateTag.length <= 128, "generated candidate tag is invalid");
   if (existing.state === "present") {
-    verifyProvenance({ ...inputs, digest: existing.digest });
-    await appendGithubOutputs([
+    const publishedSourceRevision = verifyExistingProvenance({
+      ...inputs,
+      digest: existing.digest,
+      exec: dependencies.exec ?? execFileSync,
+    });
+    const engine = managedEngineFromImage(inputs.image);
+    if (engine) {
+      await verifyRecordedInputsUnchanged({
+        engine,
+        image: inputs.image,
+        tag: inputs.tag,
+        currentSourceRevision: inputs.sourceRevision,
+        publishedSourceRevision,
+        repository: inputs.repository,
+        token: inputs.token,
+        readCurrentPlan: dependencies.readCurrentPlan,
+        readPublishedPlan: dependencies.readPublishedPlan,
+      });
+    } else {
+      assert(
+        publishedSourceRevision === inputs.sourceRevision,
+        `version tag is already bound to a different source commit or workflow (expected ${inputs.sourceRevision})`,
+      );
+    }
+    await appendOutputs([
       ["mode", "reuse"],
       ["should_build", "false"],
       ["digest", existing.digest],
       ["candidate_tag", candidateTag],
     ]);
-    process.stdout.write(`Reusing verified immutable version ${inputs.image}:${inputs.tag}@${existing.digest}.\n`);
+    writeStdout(
+      `Reusing verified immutable version ${inputs.image}:${inputs.tag}@${existing.digest}; recorded build inputs are unchanged.\n`,
+    );
     return;
   }
-  await appendGithubOutputs([
+  await appendOutputs([
     ["mode", "build"],
     ["should_build", "true"],
     ["digest", ""],
     ["candidate_tag", candidateTag],
   ]);
-  process.stdout.write(`Version ${inputs.image}:${inputs.tag} is absent; a unique candidate may be built.\n`);
+  writeStdout(`Version ${inputs.image}:${inputs.tag} is absent; a unique candidate may be built.\n`);
 }
 
-async function promotePublication(args) {
+export async function promotePublication(args, dependencies = {}) {
   const inputs = publicationInputs(args);
+  const inspectTag = dependencies.inspectGhcrTag ?? inspectGhcrTag;
+  const verifyExistingProvenance = dependencies.verifyPublishedProvenance ?? verifyPublishedProvenance;
+  const verifyInputsUnchanged = dependencies.verifyRecordedInputsUnchanged ?? verifyRecordedInputsUnchanged;
+  const verifyCandidateProvenance = dependencies.verifyProvenance ?? verifyProvenance;
+  const appendOutputs = dependencies.appendGithubOutputs ?? appendGithubOutputs;
+  const dockerExec = dependencies.execFileSync ?? execFileSync;
+  const writeStdout = dependencies.writeStdout ?? ((message) => process.stdout.write(message));
+  const mode = requireString(args, "mode");
+  assert(["build", "reuse"].includes(mode), `invalid publication mode: ${mode}`);
   const digest = requireString(args, "digest");
   digestHex(digest);
-  verifyProvenance({ ...inputs, digest });
-  const existing = await inspectGhcrTag(inputs);
-  if (existing.state === "present") {
-    assert(existing.digest === digest, `refusing to overwrite ${inputs.image}:${inputs.tag} (${existing.digest} != ${digest})`);
-    await appendGithubOutputs([["digest", digest], ["promoted", "false"]]);
-    process.stdout.write(`Verified existing immutable version ${inputs.image}:${inputs.tag}@${digest}; no registry mutation performed.\n`);
+  if (mode === "reuse") {
+    const existing = await inspectTag(inputs);
+    assert(existing.state === "present", `reused version tag disappeared before final verification: ${inputs.image}:${inputs.tag}`);
+    assert(existing.digest === digest, `reused version tag changed during verification (${existing.digest} != ${digest})`);
+    const publishedSourceRevision = verifyExistingProvenance({ ...inputs, digest });
+    const engine = managedEngineFromImage(inputs.image);
+    if (engine) {
+      await verifyInputsUnchanged({
+        engine,
+        image: inputs.image,
+        tag: inputs.tag,
+        currentSourceRevision: inputs.sourceRevision,
+        publishedSourceRevision,
+        repository: inputs.repository,
+        token: inputs.token,
+      });
+    } else {
+      assert(
+        publishedSourceRevision === inputs.sourceRevision,
+        `version tag is already bound to a different source commit or workflow (expected ${inputs.sourceRevision})`,
+      );
+    }
+    await appendOutputs([["digest", digest], ["promoted", "false"]]);
+    writeStdout(`Reverified reused immutable version ${inputs.image}:${inputs.tag}@${digest}; no registry mutation performed.\n`);
     return;
   }
-  execFileSync("docker", [
+  verifyCandidateProvenance({ ...inputs, digest });
+  const existing = await inspectTag(inputs);
+  if (existing.state === "present") {
+    assert(existing.digest === digest, `refusing to overwrite ${inputs.image}:${inputs.tag} (${existing.digest} != ${digest})`);
+    await appendOutputs([["digest", digest], ["promoted", "false"]]);
+    writeStdout(`Verified existing immutable version ${inputs.image}:${inputs.tag}@${digest}; no registry mutation performed.\n`);
+    return;
+  }
+  dockerExec("docker", [
     "buildx", "imagetools", "create",
     "--tag", `${inputs.image}:${inputs.tag}`,
     `${inputs.image}@${digest}`,
   ], { stdio: "inherit" });
-  const promoted = await inspectGhcrTag(inputs);
+  const promoted = await inspectTag(inputs);
   assert(promoted.state === "present" && promoted.digest === digest, "promoted version tag does not resolve to the attested candidate digest");
-  await appendGithubOutputs([["digest", digest], ["promoted", "true"]]);
-  process.stdout.write(`Promoted immutable version ${inputs.image}:${inputs.tag}@${digest}.\n`);
+  await appendOutputs([["digest", digest], ["promoted", "true"]]);
+  writeStdout(`Promoted immutable version ${inputs.image}:${inputs.tag}@${digest}.\n`);
 }
 
 function affectedCloudEngines(changedPaths, eventName) {
@@ -1482,6 +1698,10 @@ async function selfTest() {
       assert(guardIndex >= 0 && guardIndex < evidenceIndex, `${relative} does not guard its version before publication evidence`);
       assert(promoteIndex > evidenceIndex, `${relative} does not defer version promotion until after signed evidence`);
       assert(workflow.includes("outputs.candidate_tag"), `${relative} does not publish through a run-unique candidate tag`);
+      const modeBindings = workflow.match(
+        /^\s+mode: \$\{\{ (?:steps|needs)\.guard\.outputs\.mode \}\}$/gmu,
+      ) ?? [];
+      assert(modeBindings.length >= 2, `${relative} does not bind guard mode to evidence and promotion`);
       assert(workflow.includes("id-token: write") && workflow.includes("attestations: write"), `${relative} cannot create GitHub attestations`);
       assert(workflow.includes("provenance: false") && workflow.includes("sbom: false"), `${relative} may mutate the published index digest`);
       for (const engineId of engines) {
@@ -1494,18 +1714,30 @@ async function selfTest() {
       }
     }
     assert(coveredEngines === 20, "self-test engine workflow coverage changed unexpectedly");
+    const evidenceAction = await readFile(
+      path.join(PROJECT_ROOT, ".github/actions/engine-image-evidence/action.yml"),
+      "utf8",
+    );
+    const evidenceStepCount = evidenceAction.match(/^    - name:/gmu)?.length ?? 0;
+    const buildOnlyStepCount = evidenceAction.match(/^      if: inputs\.mode == 'build'$/gmu)?.length ?? 0;
+    assert(
+      evidenceStepCount > 0 && buildOnlyStepCount === evidenceStepCount,
+      "reuse mode can reach a signed-evidence publication step",
+    );
     const promotionAction = await readFile(
       path.join(PROJECT_ROOT, ".github/actions/engine-image-evidence/promote/action.yml"),
       "utf8",
     );
     assert(
       promotionAction.includes("uses: docker/login-action@") &&
+        promotionAction.includes("if: inputs.mode == 'build'") &&
+        promotionAction.includes('--mode "${{ inputs.mode }}"') &&
         promotionAction.includes("password: ${{ inputs.github-token }}") &&
         promotionAction.includes("if: always()") &&
         promotionAction.includes("run: docker logout ghcr.io"),
       "promotion action is not self-contained across anonymous-smoke credential state",
     );
-    process.stdout.write("Engine image evidence self-test passed (catalog-derived engine set, immutable tag provenance, artifact-scoped attestations and SBOMs, preserved gateway SPDX inventory with explicit unavailable-checksum status, and negative scope/provenance/relationship/digest checks).\n");
+    process.stdout.write("Engine image evidence self-test passed (catalog-derived engine set, immutable tag provenance, non-mutating reuse, artifact-scoped attestations and SBOMs, preserved gateway SPDX inventory with explicit unavailable-checksum status, and negative scope/provenance/relationship/digest checks).\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -1522,4 +1754,5 @@ async function main() {
   throw new Error("expected command: select-cloud-engines, publication-preflight, promote-publication, prepare, finalize, or self-test");
 }
 
-runMain(main);
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) runMain(main);
