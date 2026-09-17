@@ -12,6 +12,8 @@ COPY src-tauri/src src-tauri/src
 COPY mappings/control-mappings.json mappings/control-mappings.json
 COPY bootstrap/aws-readonly-cloudformation.yaml bootstrap/azure-readonly-arm.json bootstrap/gcp-readonly-bindings.json bootstrap/microsoft365-readonly-permissions.json bootstrap/
 COPY engines/catalog.json engines/catalog.json
+COPY docs/research/augustus-single-destination-profile.json docs/research/augustus-single-destination-profile.json
+COPY docs/research/patches/augustus-0.14.29-machine-json.patch docs/research/patches/augustus-0.14.29-machine-json.patch
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/source/target,sharing=locked \
