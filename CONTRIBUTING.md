@@ -59,6 +59,28 @@ All scanners feed one report model. A report contribution should improve the sha
 
 Framework mappings may enrich a report, but they do not replace findings and should not control whether a scan can run.
 
+## Reviewing user-facing claims
+
+User-facing copy must not claim behavior that a different layer does not implement. A beginner cannot detect that mismatch, so a precise false claim is worse than a plainly disclosed limit. Trace every important promise to the data and execution that make it true, then confirm the rendered user state as Product changes already requires.
+
+Look for these defect families:
+
+- Failed or missing runs presented with completed-looking language.
+- Report identity and history that borrow current-case values instead of the selected run's saved facts.
+- Export copy that overstates redaction, source attachment, signatures, relationships, or format availability.
+- Setup and authorization copy that offers actions or outcomes the backend cannot provide.
+- Scanner output that is dropped, flattened, or assigned product-authored severity while appearing upstream-authored.
+- English technical prose leaking into the Traditional Chinese first layer.
+- Coverage gaps that collapse different causes into one misleading sentence.
+
+When reviewing a user-facing claim:
+
+1. Identify the decision the user will make from a sentence or status.
+2. Trace the underlying target, task, scanner output, report record, and export path.
+3. Fix the product behavior or replace the claim directly.
+4. Render the affected state and assert the decision-relevant outcome.
+5. When the change concerns a scan, exercise the real upstream path when practical.
+
 ## Verification
 
 Run checks proportional to the changed boundary. Common commands include:

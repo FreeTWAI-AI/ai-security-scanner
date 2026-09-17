@@ -117,6 +117,8 @@ npm run tauri dev
 
 `npm run dev` opens a browser preview with sample data. Desktop scanning runs through the Tauri application.
 
+`npm run upstream:refresh -- --engine <id>` produces an offline adapter refresh proposal bundle, and `npm run upstream:propose -- --bundle <path>` re-validates it. `mechanical` is the default deterministic path; the optional AI path is selected explicitly with `--provider cli --ai-cli <executable>`. `--open-pr` or `--no-open-pr` records whether the change should be sent back to this repository. These commands print commands for a human to run and never execute them. The full procedure is in [Engine maintenance](docs/engine-maintenance.md).
+
 ## License
 
 Project-owned source is licensed under [Apache-2.0](LICENSE). Third-party engines and data retain their own licenses; see [THIRD_PARTY.md](THIRD_PARTY.md).

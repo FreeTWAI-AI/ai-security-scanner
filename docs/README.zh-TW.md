@@ -33,8 +33,6 @@
 
 - [發布紀錄](release/README.md)保存已發布版本事實與證據格式。
 - [引擎對齊交接](engine-alignment-handover.zh-TW.md)保存 2026-09-10 的精簡工程交接。
-- [完整開發交接筆記](project-handover.zh-TW.md)保存 2026-09-11 的完整工程交接：架構、21 個工具、報告、驗證、限制與下一步方向。
-- [誠實呈現稽核](honesty-audit-handover.md)保存 2026-09-03 稽核使用的檢視方法。
 - [研究](research/)保存已評估的整合與產品研究。
 - [易用性研究](usability/)保存研究流程與證據處理規則。
 
