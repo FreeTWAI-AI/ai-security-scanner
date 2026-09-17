@@ -556,6 +556,32 @@ func TestRunUnitCancellationStopsAndDeletesExactScan(t *testing.T) {
 	}
 }
 
+func TestResultsEnvelopeRequiresExactItemsField(t *testing.T) {
+	for name, body := range map[string]string{
+		"renamed field": `{"results":[]}`,
+		"null items":   `{"items":null}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				return testHTTPResponse(http.StatusOK, body), nil
+			})
+			api := &openvasdClient{client: &http.Client{Transport: transport}, key: "test-key"}
+			if _, err := api.results(context.Background(), "123e4567-e89b-12d3-a456-426614174000"); err == nil {
+				t.Fatal("unknown or null results envelope was accepted as an empty scan")
+			}
+		})
+	}
+
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return testHTTPResponse(http.StatusOK, `{"items":[]}`), nil
+	})
+	api := &openvasdClient{client: &http.Client{Transport: transport}, key: "test-key"}
+	results, err := api.results(context.Background(), "123e4567-e89b-12d3-a456-426614174000")
+	if err != nil || len(results) != 0 {
+		t.Fatalf("exact empty items envelope rejected: results=%#v err=%v", results, err)
+	}
+}
+
 func TestStopProcessGroupUsesNegativePIDAndEscalates(t *testing.T) {
 	command := &exec.Cmd{Process: &os.Process{Pid: 4321}}
 	t.Run("graceful", func(t *testing.T) {
@@ -636,6 +662,11 @@ func TestResultCarriesAdapterEvidenceRetainsOnlyConsequentialOIDLessStatus(t *te
 	for _, resultType := range []string{"log", "host_start", "host_end", "host_stop", "host_detail"} {
 		if resultCarriesAdapterEvidence(scanResult{Type: resultType}) {
 			t.Fatalf("OID-less %s lifecycle noise would be retained", resultType)
+		}
+	}
+	for _, resultType := range []string{"alarm", "", "new_upstream_type"} {
+		if !resultCarriesAdapterEvidence(scanResult{Type: resultType}) {
+			t.Fatalf("OID-less %q result would bypass fail-closed validation", resultType)
 		}
 	}
 	if !resultCarriesAdapterEvidence(scanResult{Type: "error", OID: selectedOID}) {

@@ -45,7 +45,7 @@ const (
 	feedMetadataPath         = feedRootPath + "/vt-metadata.json"
 	notusRootPath            = "/opt/greenbone/notus"
 	openvasdPath             = "/usr/local/bin/openvasd"
-	feedRevision             = "b26d7237d56b7cf85e6ace2b9351e7851461b3a8"
+	feedRevision             = "6c8dce2f22bb9e5da081667994be6e9ed79484d8"
 	templateRevision         = "greenbone-community-feed@" + feedRevision
 	remoteSafeProfileID      = "greenbone_remote_safe_v1"
 	tcpScannerOID            = "1.3.6.1.4.1.25623.1.0.10335"
@@ -408,10 +408,10 @@ func run(ctx context.Context, arguments []string, now time.Time) error {
 			return fmt.Errorf("grant %s scan failed: %w", unit.Grant.ID, scanErr)
 		}
 		for _, result := range results {
-			// Ordinary host lifecycle records without an NVT identity carry no
-			// scanner finding or feed evidence. A dead-host result is different:
-			// it proves that Greenbone could not evaluate this exact target, so
-			// retain its upstream result type even when it has no NVT OID.
+			// Ordinary, recognized host lifecycle records without an NVT identity
+			// carry no scanner finding or feed evidence. All other result types
+			// reach validateResult so missing identities and new upstream result
+			// vocabulary fail closed instead of disappearing here.
 			if !resultCarriesAdapterEvidence(result) {
 				continue
 			}
@@ -1263,12 +1263,12 @@ func (api *openvasdClient) results(ctx context.Context, scanID string) ([]scanRe
 		return results, nil
 	}
 	var envelope struct {
-		Items []scanResult `json:"items"`
+		Items *[]scanResult `json:"items"`
 	}
-	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope.Items) > maxResultsPerRun {
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Items == nil || len(*envelope.Items) > maxResultsPerRun {
 		return nil, errors.New("openvasd returned malformed or oversized results")
 	}
-	return envelope.Items, nil
+	return *envelope.Items, nil
 }
 
 func (api *openvasdClient) request(ctx context.Context, method, path string, body any, output any) (int, error) {
@@ -1352,7 +1352,10 @@ func validateResult(result scanResult, unit scanUnit, relays *unitRelays, closur
 }
 
 func resultCarriesAdapterEvidence(result scanResult) bool {
-	return result.OID != "" || result.Type == "dead_host" || result.Type == "error"
+	if result.OID != "" || result.Type == "dead_host" || result.Type == "error" {
+		return true
+	}
+	return !containsString([]string{"log", "host_start", "host_end", "host_stop", "host_detail"}, result.Type)
 }
 
 func writeXMLResult(writer io.Writer, indexNumber int, result scanResult, unit scanUnit, relays *unitRelays, feed *feedIndex) error {

@@ -2,16 +2,15 @@
 
 This image contains these principal third-party works:
 
-- Greenbone OpenVAS Scanner 23.50.21, revision
-  `c3ae607ef632393b7919fb179d30b940d929f713`, under GPL-2.0. Its license and
+- Greenbone OpenVAS Scanner 23.50.24, revision
+  `26465a11ff0e6a98d60a253265fab5974fc757b6`, under GPL-2.0. Its license and
   complete pinned source archive are shipped in the image.
-- Greenbone Community Feed snapshot `202608240615-community`, revision
-  `b26d7237d56b7cf85e6ace2b9351e7851461b3a8`. The feed declares
+- Greenbone Community Feed snapshot `202609170605-community`, revision
+  `6c8dce2f22bb9e5da081667994be6e9ed79484d8`. The feed declares
   `(GPL-2.0-only or GPL-2.0-or-later or GPL-3.0-only) AND ODbL-1.0`; its NASL
   source, database, license texts, signed checksum manifest, and signature are
   included at `/opt/greenbone/feed`.
-- Greenbone Notus generated data, revision
-  `4635b37aecd2d968680c7609a7fb61e5d780ce93`. The distributed data includes
+- Greenbone Notus generated data, revision `202609170538`. The distributed data includes
   its GPL-2.0 and ODbL-1.0 license notices at `/opt/greenbone/notus`.
 - Debian and other system packages retained from the pinned official
   Greenbone scanner image. Their package copyright notices remain under

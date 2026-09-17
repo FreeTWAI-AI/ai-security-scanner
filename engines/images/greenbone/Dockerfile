@@ -18,13 +18,13 @@ RUN test -z "$(gofmt -d main.go main_test.go)" \
         -buildvcs=false -trimpath -ldflags='-s -w -buildid=' \
         -o /out/ai-security-scanner-engine-entrypoint .
 
-FROM registry.community.greenbone.net/community/vulnerability-tests@sha256:419438986cc4bc88c9a9c7960b519033c9ef1827241457c9acaca3b497a0183c AS feed
-RUN grep -Fqx 'FEED_COMMIT = "b26d7237d56b7cf85e6ace2b9351e7851461b3a8";' /var/lib/openvas/24.10/vt-data/nasl/plugin_feed_info.inc \
+FROM registry.community.greenbone.net/community/vulnerability-tests@sha256:d0010b7d8e24e7df8086b85af9fabe64335dccf9a7e1fd4c7774b4712bd061cd AS feed
+RUN grep -Fqx 'FEED_COMMIT = "6c8dce2f22bb9e5da081667994be6e9ed79484d8";' /var/lib/openvas/24.10/vt-data/nasl/plugin_feed_info.inc \
     && test -s /var/lib/openvas/24.10/vt-data/nasl/vt-metadata.json \
     && test -s /var/lib/openvas/24.10/vt-data/nasl/sha256sums \
     && test -s /var/lib/openvas/24.10/vt-data/nasl/sha256sums.asc
 
-FROM registry.community.greenbone.net/community/notus-data@sha256:73a309ed3dab7a5646952664434b425e2162909c7f92ed55f0abcfc37e211def AS notus
+FROM registry.community.greenbone.net/community/notus-data@sha256:78c6a1198a3effd5a7df22acab826719744dbd16dded5208c6614761386002bc AS notus
 RUN mkdir -p /prepared \
     && tar -xzf /var/lib/notus/notus-data.tar.gz -C /prepared \
     && test -s /prepared/advisories/sha256sums \
@@ -32,12 +32,12 @@ RUN mkdir -p /prepared \
     && test -s /prepared/products/sha256sums
 
 FROM scratch AS source
-ADD --checksum=sha256:47cbc7fbff0e19c4533f48c6e7287298f1466d1556f0fc4a7177c37506a3d5e8 \
-    https://github.com/greenbone/openvas-scanner/archive/c3ae607ef632393b7919fb179d30b940d929f713.tar.gz \
-    /openvas-scanner-c3ae607ef632393b7919fb179d30b940d929f713.tar.gz
+ADD --checksum=sha256:af8b1e0175dfc57f38bdecc08607dbac294459e684e2f3e7d69c85101fa13517 \
+    https://github.com/greenbone/openvas-scanner/archive/refs/tags/v23.50.24.tar.gz \
+    /openvas-scanner-23.50.24.tar.gz
 
 FROM rust:1.98.0-bookworm@sha256:94e9efa4033213dbb70d4f665527e7ece3944ddb7ba1dd2e43f6fd6e2490af58 AS scanner-source
-COPY --from=source /openvas-scanner-c3ae607ef632393b7919fb179d30b940d929f713.tar.gz /tmp/openvas-scanner.tar.gz
+COPY --from=source /openvas-scanner-23.50.24.tar.gz /tmp/openvas-scanner.tar.gz
 RUN mkdir -p /source \
     && tar -xzf /tmp/openvas-scanner.tar.gz --strip-components=1 -C /source \
     && test -f /source/rust/Cargo.lock \
@@ -113,7 +113,7 @@ RUN mkdir -p /archives/include/gssapi /archives/include/krb5 \
 
 FROM scanner-source AS scanner-build
 ARG SOURCE_DATE_EPOCH
-ENV BIN_VERSION="c3ae607ef632393b7919fb179d30b940d929f713" \
+ENV BIN_VERSION="26465a11ff0e6a98d60a253265fab5974fc757b6" \
     CARGO_INCREMENTAL="0" \
     OPENVAS_ARCHIVES="/archives" \
     LIBPCAP_LIBDIR="/archives" \
@@ -152,26 +152,26 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cargo test --locked --lib nasl::utils::function::from_nasl_value::tests \
     && cargo build --locked --release --bin openvasd \
     && install -Dm755 target/release/openvasd /out/openvasd \
-    && /out/openvasd --version 2>&1 | grep -Fq 'c3ae607ef632393b7919fb179d30b940d929f713'
+    && /out/openvasd --version 2>&1 | grep -Fq '26465a11ff0e6a98d60a253265fab5974fc757b6'
 
-FROM registry.community.greenbone.net/community/openvas-scanner@sha256:ff7a14572583cc0e83ae0398a6c462f0c6d180c1bae6d54acbdd0df94f5446c6
+FROM registry.community.greenbone.net/community/openvas-scanner@sha256:5b950bc273d1d5d123f15dfb7f373b0b3a3b7fb75f67286dfa28e88350a6eb33
 
 ARG SOURCE_DATE_EPOCH
 
 LABEL org.opencontainers.image.title="ai-security-scanner Greenbone engine" \
       org.opencontainers.image.description="Signed-feed Greenbone scanner with exact per-grant loopback relays to the managed SOCKS gateway" \
       org.opencontainers.image.source="https://github.com/greenbone/openvas-scanner" \
-      org.opencontainers.image.revision="c3ae607ef632393b7919fb179d30b940d929f713" \
-      org.opencontainers.image.version="23.50.21-feed202608240615-1" \
+      org.opencontainers.image.revision="26465a11ff0e6a98d60a253265fab5974fc757b6" \
+      org.opencontainers.image.version="23.50.24-feed202609170605-1" \
       org.opencontainers.image.licenses="GPL-2.0-only AND ODbL-1.0 AND Apache-2.0" \
-      io.ai-security-scanner.openvas-revision="c3ae607ef632393b7919fb179d30b940d929f713" \
-      io.ai-security-scanner.openvas-source-sha256="sha256:47cbc7fbff0e19c4533f48c6e7287298f1466d1556f0fc4a7177c37506a3d5e8" \
+      io.ai-security-scanner.openvas-revision="26465a11ff0e6a98d60a253265fab5974fc757b6" \
+      io.ai-security-scanner.openvas-source-sha256="sha256:af8b1e0175dfc57f38bdecc08607dbac294459e684e2f3e7d69c85101fa13517" \
       io.ai-security-scanner.openvas-patch="rustls-provider:f401a3a174b6fe20fa187a1b74f53d1f9563a22c7a32bfc9aa122268d10e03c3;service-port:fd6409227338da73344657b5686c65bdf23a737da04f8bb3f7434eeb98da3424;http-compat:0aa8b07e43f2b21f32f7f2fa8181957b456248f0986de2723940809047a35eff;nasl-array-compat:affe3266602aade09416b68f2d085d1f390931d921a78eb7bb526451e1eeb891;eregmatch-captures:8e9ce5794e51abf78d77ea3c11931f50cf54f44be0d15becdd0a06c4f7b95d20;report-port:f9440c30d1c13a0fc13165ae2cdece6faab39409b2656db61d781d1e0865ca1c" \
-      io.ai-security-scanner.feed-revision="b26d7237d56b7cf85e6ace2b9351e7851461b3a8" \
-      io.ai-security-scanner.feed-version="202608240615-community" \
-      io.ai-security-scanner.feed-image-digest="sha256:419438986cc4bc88c9a9c7960b519033c9ef1827241457c9acaca3b497a0183c" \
-      io.ai-security-scanner.notus-revision="4635b37aecd2d968680c7609a7fb61e5d780ce93" \
-      io.ai-security-scanner.notus-image-digest="sha256:73a309ed3dab7a5646952664434b425e2162909c7f92ed55f0abcfc37e211def"
+      io.ai-security-scanner.feed-revision="6c8dce2f22bb9e5da081667994be6e9ed79484d8" \
+      io.ai-security-scanner.feed-version="202609170605-community" \
+      io.ai-security-scanner.feed-image-digest="sha256:d0010b7d8e24e7df8086b85af9fabe64335dccf9a7e1fd4c7774b4712bd061cd" \
+      io.ai-security-scanner.notus-revision="202609170538" \
+      io.ai-security-scanner.notus-image-digest="sha256:78c6a1198a3effd5a7df22acab826719744dbd16dded5208c6614761386002bc"
 
 ENV HOME="/tmp" \
     LANG="C.UTF-8" \
@@ -188,7 +188,7 @@ COPY --from=notus /prepared/ /opt/greenbone/notus/
 COPY --chmod=0444 LICENSE /usr/share/licenses/ai-security-scanner/LICENSE
 COPY --chmod=0444 engines/images/greenbone/SOURCE-OFFER.md /usr/share/source/greenbone/SOURCE-OFFER.md
 COPY --chmod=0444 engines/images/greenbone/THIRD-PARTY-NOTICES.md /usr/share/licenses/greenbone/THIRD-PARTY-NOTICES.md
-COPY --from=source --chmod=0444 /openvas-scanner-c3ae607ef632393b7919fb179d30b940d929f713.tar.gz /usr/share/source/openvas-scanner/openvas-scanner-c3ae607ef632393b7919fb179d30b940d929f713.tar.gz
+COPY --from=source --chmod=0444 /openvas-scanner-23.50.24.tar.gz /usr/share/source/openvas-scanner/openvas-scanner-23.50.24.tar.gz
 COPY --chmod=0444 engines/images/greenbone/Dockerfile /usr/share/source/ai-security-scanner-greenbone/build/Dockerfile
 COPY --chmod=0444 engines/images/greenbone/openvasd-rustls-provider.patch /usr/share/source/ai-security-scanner-greenbone/patches/openvasd-rustls-provider.patch
 COPY --chmod=0444 engines/images/greenbone/openvasd-service-port.patch /usr/share/source/ai-security-scanner-greenbone/patches/openvasd-service-port.patch
@@ -204,7 +204,7 @@ RUN setcap -r /usr/bin/nmap \
     && mkdir -p /run/ai-security-scanner /output /workspace /tmp \
     && chmod 1777 /tmp \
     && test -z "$(getcap -r /usr/bin /usr/local 2>/dev/null)" \
-	&& /usr/local/bin/openvasd --version 2>&1 | grep -Fq 'c3ae607ef632393b7919fb179d30b940d929f713'
+	&& /usr/local/bin/openvasd --version 2>&1 | grep -Fq '26465a11ff0e6a98d60a253265fab5974fc757b6'
 
 WORKDIR /workspace
 USER 65532:65532

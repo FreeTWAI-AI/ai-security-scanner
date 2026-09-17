@@ -279,18 +279,28 @@ const managedLocalK8sContracts = new Map([
   }],
 ]);
 const managedGreenboneContract = {
-  tag: "23.50.21-feed202608240615-1",
+  tag: "23.50.24-feed202609170605-1",
   planKind: "multi_component_build",
   license: { disposition: "source_offer", sourceOfferPath: "engines/images/greenbone/SOURCE-OFFER.md" },
-  scannerRevision: "c3ae607ef632393b7919fb179d30b940d929f713",
-  scannerArchiveSha256: "sha256:47cbc7fbff0e19c4533f48c6e7287298f1466d1556f0fc4a7177c37506a3d5e8",
-  feedVersion: "202608240615-community",
-  feedRevision: "b26d7237d56b7cf85e6ace2b9351e7851461b3a8",
-  feedImageDigest: "sha256:419438986cc4bc88c9a9c7960b519033c9ef1827241457c9acaca3b497a0183c",
-  notusRevision: "4635b37aecd2d968680c7609a7fb61e5d780ce93",
-  notusImageDigest: "sha256:73a309ed3dab7a5646952664434b425e2162909c7f92ed55f0abcfc37e211def",
+  engineVersion: "23.50.24",
+  scannerRevision: "26465a11ff0e6a98d60a253265fab5974fc757b6",
+  scannerArchiveUrl: "https://github.com/greenbone/openvas-scanner/archive/refs/tags/v23.50.24.tar.gz",
+  scannerArchiveSha256: "sha256:af8b1e0175dfc57f38bdecc08607dbac294459e684e2f3e7d69c85101fa13517",
+  feedVersion: "202609170605-community",
+  feedRevision: "6c8dce2f22bb9e5da081667994be6e9ed79484d8",
+  feedImageDigest: "sha256:d0010b7d8e24e7df8086b85af9fabe64335dccf9a7e1fd4c7774b4712bd061cd",
+  notusRevision: "202609170538",
+  notusImageDigest: "sha256:78c6a1198a3effd5a7df22acab826719744dbd16dded5208c6614761386002bc",
   smokeOid: "1.3.6.1.4.1.25623.1.0.108252",
 };
+const publishedGreenboneCatalogContract = {
+  engineVersion: "23.50.21",
+  scannerRevision: "c3ae607ef632393b7919fb179d30b940d929f713",
+  feedVersion: "202608240615-community",
+  feedRevision: "b26d7237d56b7cf85e6ace2b9351e7851461b3a8",
+};
+const greenbonePublicationBlocker =
+  "Publish and independently verify the Greenbone 23.50.24-feed202609170605-1 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence.";
 const managedEvidenceWorkflows = [
   ".github/workflows/engine-images-cloud.yml",
   ".github/workflows/engine-images-external.yml",
@@ -884,7 +894,10 @@ function validateTag(tag, path) {
   }
 }
 
-function validateImage(image, path, { allowDigestPinnedAlias = false } = {}) {
+function validateImage(image, path, {
+  allowDigestPinnedAlias = false,
+  allowFloatingDigestPinnedAlias = false,
+} = {}) {
   if (!image || typeof image !== "object") {
     errors.push(`${path}: image object is required`);
     return;
@@ -893,7 +906,11 @@ function validateImage(image, path, { allowDigestPinnedAlias = false } = {}) {
     errors.push(`${path}.repository: invalid repository`);
   }
   const normalizedTag = typeof image.tag === "string" ? image.tag.toLowerCase() : "";
-  if (allowDigestPinnedAlias && image.tag && !floatingTags.has(normalizedTag) && !/[${}]/.test(image.tag)) {
+  if (allowFloatingDigestPinnedAlias && image.tag && !/[${}]/.test(image.tag)) {
+    // Greenbone no longer retains versioned data/runtime tags. The recorded
+    // rolling tag is provenance only; the mandatory digest remains the build
+    // identity and every Dockerfile FROM uses that digest directly.
+  } else if (allowDigestPinnedAlias && image.tag && !floatingTags.has(normalizedTag) && !/[${}]/.test(image.tag)) {
     // A human-readable distro codename remains immutable because the digest
     // below is mandatory; latest/nightly/template aliases stay forbidden.
   } else {
@@ -1027,14 +1044,20 @@ function externalDockerfileDigestReferences(dockerfileText) {
   return sortedUnique(references);
 }
 
-function validateExactDeclaredBaseImages(recipe, dockerfileText, planRelative) {
+function validateExactDeclaredBaseImages(recipe, dockerfileText, planRelative, {
+  allowFloatingDigestPinnedAliases = false,
+} = {}) {
   if (!Array.isArray(recipe?.base_images) || recipe.base_images.length === 0) {
     errors.push(`${planRelative}: source build must enumerate every digest-pinned external base image`);
     return;
   }
   const declaredReferences = [];
   for (const [index, image] of recipe.base_images.entries()) {
-    validateImage(image, `${planRelative}.build_recipe.base_images[${index}]`, { allowDigestPinnedAlias: true });
+    validateImage(image, `${planRelative}.build_recipe.base_images[${index}]`, {
+      allowDigestPinnedAlias: true,
+      allowFloatingDigestPinnedAlias: allowFloatingDigestPinnedAliases &&
+        image.repository.startsWith("registry.community.greenbone.net/community/"),
+    });
     const digestReference = `${image.repository}@${image.digest}`;
     declaredReferences.push(digestReference);
     if (!dockerfileText.includes(image.digest ?? "__missing_digest__")) {
@@ -1182,28 +1205,7 @@ function validatePublishedLocalK8sImage(plan, planRelative, engine, contract) {
   }
 }
 
-function validatePublishedGreenboneImage(plan, planRelative, engine) {
-  const command = ["--engine", "greenbone", "--scope", "/run/ai-security-scanner/scope.json", "--output", "/output"];
-  const dockerfileText = validatePublishedManagedBasics(plan, planRelative, engine, managedGreenboneContract, command, {
-    required: true,
-    mode: "managed_allowlist",
-    destinations: ["authorized target addresses"],
-  });
-  if (dockerfileText === null) return;
-
-  if (engine.engine_version !== "23.50.21" ||
-      engine.source_revision !== managedGreenboneContract.scannerRevision ||
-      engine.provenance?.engine?.artifact_source_revision !== managedGreenboneContract.scannerRevision ||
-      engine.rule_version !== managedGreenboneContract.feedRevision ||
-      engine.provenance?.rules?.mode !== "embedded" ||
-      engine.provenance?.rules?.revision !== managedGreenboneContract.feedRevision ||
-      engine.provenance?.data?.mode !== "embedded" ||
-      engine.provenance?.data?.revision !== managedGreenboneContract.feedRevision ||
-      engine.compatibility?.knowledge_input?.kind !== "embedded" ||
-      engine.compatibility?.knowledge_input?.version !== managedGreenboneContract.feedVersion ||
-      engine.compatibility?.knowledge_input?.pin_state !== "pinned_or_not_applicable") {
-    errors.push(`catalog:greenbone: scanner and Community Feed provenance must match the immutable release closure`);
-  }
+function validateGreenboneBuildClosure(plan, planRelative, dockerfileText) {
   const runtime = plan.managed_runtime;
   if (runtime?.proxy !== "AI_SECURITY_SCANNER_PROXY" || runtime?.updates !== false || runtime?.telemetry !== false ||
       runtime?.per_grant_target_execution !== true) {
@@ -1216,20 +1218,36 @@ function validatePublishedGreenboneImage(plan, planRelative, engine) {
     errors.push(`${planRelative}: Greenbone build must lock the scanner revision, epoch, and publication platforms`);
   }
   const sourceArchive = recipe?.source_archive;
-  if (sourceArchive?.url !== `https://github.com/greenbone/openvas-scanner/archive/${managedGreenboneContract.scannerRevision}.tar.gz` ||
+  if (sourceArchive?.url !== managedGreenboneContract.scannerArchiveUrl ||
       sourceArchive?.sha256 !== managedGreenboneContract.scannerArchiveSha256) {
     errors.push(`${planRelative}: Greenbone scanner source archive does not match the exact release closure`);
+  }
+  if (plan.source?.revision !== managedGreenboneContract.scannerRevision ||
+      plan.source?.acquisition_source !== `https://github.com/greenbone/openvas-scanner/commit/${managedGreenboneContract.scannerRevision}`) {
+    errors.push(`${planRelative}: Greenbone source provenance does not match the reviewed scanner revision`);
   }
   const frontend = recipe?.dockerfile_frontend;
   validateImage(frontend, `${planRelative}.build_recipe.dockerfile_frontend`);
   if (dockerfileText.split(/\r?\n/)[0] !== `# syntax=${frontend?.repository}:${frontend?.tag}@${frontend?.digest}`) {
     errors.push(`${planRelative}: Greenbone Dockerfile frontend does not match its immutable build recipe`);
   }
-  validateExactDeclaredBaseImages(recipe, dockerfileText, planRelative);
+  validateExactDeclaredBaseImages(recipe, dockerfileText, planRelative, {
+    allowFloatingDigestPinnedAliases: true,
+  });
+  const greenboneBaseTags = new Map((recipe?.base_images ?? []).map(({ repository, tag }) => [repository, tag]));
+  for (const [repository, tag] of [
+    ["registry.community.greenbone.net/community/vulnerability-tests", "community"],
+    ["registry.community.greenbone.net/community/notus-data", "community"],
+    ["registry.community.greenbone.net/community/openvas-scanner", "stable"],
+  ]) {
+    if (greenboneBaseTags.get(repository) !== tag) {
+      errors.push(`${planRelative}: Greenbone base image ${repository} must record the rolling ${tag} tag resolved for this digest`);
+    }
+  }
 
   const requiredDockerfileInputs = [
     `ADD --checksum=${managedGreenboneContract.scannerArchiveSha256}`,
-    `openvas-scanner/archive/${managedGreenboneContract.scannerRevision}.tar.gz`,
+    managedGreenboneContract.scannerArchiveUrl,
     'org.opencontainers.image.source="https://github.com/greenbone/openvas-scanner"',
     'org.opencontainers.image.licenses="GPL-2.0-only AND ODbL-1.0 AND Apache-2.0"',
     `community/vulnerability-tests@${managedGreenboneContract.feedImageDigest}`,
@@ -1319,12 +1337,82 @@ function validatePublishedGreenboneImage(plan, planRelative, engine) {
     "directEgressDenied: true",
     "unauthorizedPortDenied: true",
     "docker logout ghcr.io",
+    `IMAGE_TAG: ${managedGreenboneContract.tag}`,
   ]) {
     if (!workflowText.includes(required)) errors.push(`${planRelative}: Greenbone workflow does not preserve ${required}`);
   }
   if ((workflowText.match(/managed-socks-smoke\.sh/g) ?? []).length < 2) {
     errors.push(`${planRelative}: Greenbone workflow must real-smoke both native inputs and the final anonymously pulled index`);
   }
+}
+
+function isPendingGreenbonePublication(plan, engine) {
+  const expectedRepository = `${managedImageRepositoryPrefix}greenbone`;
+  const publishedTag = `${publishedGreenboneCatalogContract.engineVersion}-feed${publishedGreenboneCatalogContract.feedVersion.replace(/-community$/u, "")}-1`;
+  return engine?.id === "greenbone" && plan?.publish_state === "publication_in_progress" &&
+    plan.publication === null && deepEqual(plan.blockers, [greenbonePublicationBlocker]) &&
+    plan.final_artifact?.repository === expectedRepository &&
+    plan.final_artifact?.tag === managedGreenboneContract.tag && plan.final_artifact?.digest === null &&
+    engine.distribution_mode === "pull_pinned_image" && engine.image?.repository === expectedRepository &&
+    engine.image?.tag === publishedTag && digestPattern.test(engine.image?.digest ?? "") &&
+    engine.engine_version === publishedGreenboneCatalogContract.engineVersion &&
+    engine.source_revision === publishedGreenboneCatalogContract.scannerRevision &&
+    engine.rule_version === publishedGreenboneCatalogContract.feedRevision &&
+    engine.status === "integrated" && engine.compatibility?.runnable === true &&
+    deepEqual(engine.compatibility?.blocked_by, []);
+}
+
+function validatePublishedGreenboneImage(plan, planRelative, engine) {
+  const command = ["--engine", "greenbone", "--scope", "/run/ai-security-scanner/scope.json", "--output", "/output"];
+  const dockerfileText = validatePublishedManagedBasics(plan, planRelative, engine, managedGreenboneContract, command, {
+    required: true,
+    mode: "managed_allowlist",
+    destinations: ["authorized target addresses"],
+  });
+  if (dockerfileText === null) return;
+
+  if (engine.engine_version !== managedGreenboneContract.engineVersion ||
+      engine.source_revision !== managedGreenboneContract.scannerRevision ||
+      engine.provenance?.engine?.artifact_source_revision !== managedGreenboneContract.scannerRevision ||
+      engine.rule_version !== managedGreenboneContract.feedRevision ||
+      engine.provenance?.rules?.mode !== "embedded" ||
+      engine.provenance?.rules?.revision !== managedGreenboneContract.feedRevision ||
+      engine.provenance?.data?.mode !== "embedded" ||
+      engine.provenance?.data?.revision !== managedGreenboneContract.feedRevision ||
+      engine.compatibility?.knowledge_input?.kind !== "embedded" ||
+      engine.compatibility?.knowledge_input?.version !== managedGreenboneContract.feedVersion ||
+      engine.compatibility?.knowledge_input?.pin_state !== "pinned_or_not_applicable") {
+    errors.push(`catalog:greenbone: scanner and Community Feed provenance must match the immutable release closure`);
+  }
+  validateGreenboneBuildClosure(plan, planRelative, dockerfileText);
+}
+
+function validatePendingGreenboneImage(plan, planRelative, engine) {
+  if (!isPendingGreenbonePublication(plan, engine)) {
+    errors.push(`${planRelative}: Greenbone refresh must retain the currently published catalog image while the exact replacement awaits publication`);
+    return;
+  }
+  const command = ["--engine", "greenbone", "--scope", "/run/ai-security-scanner/scope.json", "--output", "/output"];
+  const entrypoint = "/usr/local/bin/ai-security-scanner-engine-entrypoint";
+  if (plan.plan_kind !== managedGreenboneContract.planKind || !deepEqual(plan.command, command) ||
+      engine.license?.disposition !== managedGreenboneContract.license.disposition ||
+      engine.license?.source_offer_path !== managedGreenboneContract.license.sourceOfferPath) {
+    errors.push(`${planRelative}: pending Greenbone build does not match its reviewed plan, command, or source-offer contract`);
+  }
+  const dockerfileText = validatePublishedManagedDockerfile(
+    plan,
+    planRelative,
+    engine,
+    managedGreenboneContract.tag,
+    entrypoint,
+  );
+  const launcherPath = resolve(root, "engines/images/greenbone-launcher/main.go");
+  if (plan.wrapper?.required !== true || plan.wrapper?.entrypoint !== entrypoint ||
+      plan.wrapper?.launcher_sha256 !== sha256File(launcherPath) ||
+      engine.compatibility?.wrapper?.entrypoint !== entrypoint) {
+    errors.push(`${planRelative}: pending Greenbone wrapper must bind the exact project-owned launcher source and entrypoint`);
+  }
+  if (dockerfileText !== null) validateGreenboneBuildClosure(plan, planRelative, dockerfileText);
 }
 
 function validateCloudManagedImage(plan, planRelative, engine) {
@@ -2539,6 +2627,8 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
   }
   const plan = parseJson(planPath);
   if (!plan) continue;
+  const pendingGreenbonePublication = isPendingGreenbonePublication(plan, engine);
+  const expectedManagedRepository = `${managedImageRepositoryPrefix}${engine.id}`;
   if (engine.distribution_mode === "pull_pinned_image" || engine.distribution_mode === "bundled_image") {
     if (engine.image !== null) {
       validateImage(engine.image, `${label}.image`);
@@ -2560,21 +2650,27 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
     if (plan[field] !== engine.compatibility[field]) errors.push(`${planRelative}: ${field} does not match catalog`);
   }
   if (Object.hasOwn(plan, "support_date")) errors.push(`${planRelative}: retired support_date field must not be present`);
-  if (plan.source?.revision !== engine.source_revision || plan.build_recipe?.source_revision && plan.build_recipe.source_revision !== engine.source_revision) {
+  if (!pendingGreenbonePublication &&
+      (plan.source?.revision !== engine.source_revision ||
+       plan.build_recipe?.source_revision && plan.build_recipe.source_revision !== engine.source_revision)) {
     errors.push(`${planRelative}: source revision does not match catalog`);
   }
   if (!revisionPattern.test(plan.source?.revision ?? "")) errors.push(`${planRelative}: source must be pinned to a commit`);
   if (!deepEqual(plan.command, engine.command)) errors.push(`${planRelative}: command does not match catalog`);
   if (!deepEqual(plan.output, engine.execution?.output)) errors.push(`${planRelative}: output contract does not match catalog`);
   if (!deepEqual(plan.license, engine.license)) errors.push(`${planRelative}: license disposition does not match catalog`);
-  if (engine.compatibility?.runnable && plan.blockers?.length > 0) errors.push(`${planRelative}: runnable engine plan cannot retain blockers`);
-  if (!engine.compatibility?.runnable && (!Array.isArray(plan.blockers) || plan.blockers.length === 0)) errors.push(`${planRelative}: non-runnable engine plan must state blockers`);
-  if (!deepEqual(plan.blockers, engine.compatibility?.blocked_by)) {
+  if (!pendingGreenbonePublication && engine.compatibility?.runnable && plan.blockers?.length > 0) errors.push(`${planRelative}: runnable engine plan cannot retain blockers`);
+  if (!pendingGreenbonePublication && !engine.compatibility?.runnable && (!Array.isArray(plan.blockers) || plan.blockers.length === 0)) errors.push(`${planRelative}: non-runnable engine plan must state blockers`);
+  if (!pendingGreenbonePublication && !deepEqual(plan.blockers, engine.compatibility?.blocked_by)) {
     errors.push(`${planRelative}: plan blockers must exactly match catalog compatibility blockers`);
   }
   if (plan.verified_upstream_artifact) validateImage(plan.verified_upstream_artifact, `${planRelative}.verified_upstream_artifact`);
   for (const [index, image] of (plan.build_recipe?.base_images ?? []).entries()) {
-    validateImage(image, `${planRelative}.build_recipe.base_images[${index}]`, { allowDigestPinnedAlias: managedCloudIds.has(engine.id) });
+    validateImage(image, `${planRelative}.build_recipe.base_images[${index}]`, {
+      allowDigestPinnedAlias: managedCloudIds.has(engine.id),
+      allowFloatingDigestPinnedAlias: engine.id === "greenbone" &&
+        image.repository.startsWith("registry.community.greenbone.net/community/"),
+    });
   }
   for (const [index, step] of (plan.build_recipe?.static_steps ?? []).entries()) {
     const stepPath = `${planRelative}.build_recipe.static_steps[${index}]`;
@@ -2589,7 +2685,14 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
       }
     }
   }
-  if (engine.image) {
+  if (pendingGreenbonePublication) {
+    const pending = plan.final_artifact;
+    if (!pending || pending.repository !== expectedManagedRepository ||
+        pending.tag !== managedGreenboneContract.tag || pending.digest !== null ||
+        plan.publish_state !== "publication_in_progress") {
+      errors.push(`${planRelative}: Greenbone publication in progress must retain its exact replacement repository/tag and null digest`);
+    }
+  } else if (engine.image) {
     validateImage(plan.final_artifact, `${planRelative}.final_artifact`);
     if (!deepEqual(plan.final_artifact, { repository: engine.image.repository, tag: engine.image.tag, digest: engine.image.digest })) errors.push(`${planRelative}: final artifact does not match catalog image`);
   } else if (managedCloudIds.has(engine.id) || isPendingM365Publication(plan, engine) ||
@@ -2605,13 +2708,14 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
     errors.push(`${planRelative}: unpublished managed artifact must have null tag/digest and explicit publish state`);
   }
   const localK8sContract = managedLocalK8sContracts.get(engine.id);
-  const expectedManagedRepository = `${managedImageRepositoryPrefix}${engine.id}`;
   if (engine.id === "mcp-armor") {
     validateMcpArmorImage(plan, planRelative, engine);
   } else if (localK8sContract && isPendingLocalK8sPublication(plan, engine)) {
     validatePendingManagedCandidate(plan, planRelative, engine, localK8sContract);
   } else if (localK8sContract && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
     validatePublishedLocalK8sImage(plan, planRelative, engine, localK8sContract);
+  } else if (engine.id === "greenbone" && pendingGreenbonePublication) {
+    validatePendingGreenboneImage(plan, planRelative, engine);
   } else if (engine.id === "greenbone" && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
     validatePublishedGreenboneImage(plan, planRelative, engine);
   } else if (engine.id === "cloudquery") {

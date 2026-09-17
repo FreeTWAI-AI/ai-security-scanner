@@ -8409,4 +8409,56 @@ mod tests {
                 .any(|warning| warning.contains("attribute limit"))
         );
     }
+
+    #[test]
+    fn greenbone_xml_contract_binds_launcher_field_names() {
+        let xml = br#"<results><result id="result-7"><name>Result name</name><host>198.51.100.7</host><port>443/tcp</port><result_type>alarm</result_type><severity>8.1</severity><threat>High</threat><summary>Summary text</summary><solution>Solution text</solution><qod><value>95</value></qod><asset_id>asset-7</asset_id><nvt oid="1.3.6.1.4.1.25623.1.0.100007"><name>NVT name</name><family>General</family><refs><ref type="cve" id="CVE-2026-1007"/></refs></nvt></result></results>"#;
+
+        let mut warnings = Vec::new();
+        let records = parse_greenbone_xml(xml, &mut warnings).expect("launcher XML parses");
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(record.result_id.as_deref(), Some("result-7"));
+        assert_eq!(
+            record.nvt_oid.as_deref(),
+            Some("1.3.6.1.4.1.25623.1.0.100007")
+        );
+        assert_eq!(record.result_name.as_deref(), Some("Result name"));
+        assert_eq!(record.nvt_name.as_deref(), Some("NVT name"));
+        assert_eq!(record.host.as_deref(), Some("198.51.100.7"));
+        assert_eq!(record.port.as_deref(), Some("443/tcp"));
+        assert_eq!(record.result_type.as_deref(), Some("alarm"));
+        assert_eq!(record.severity.as_deref(), Some("8.1"));
+        assert_eq!(record.threat.as_deref(), Some("High"));
+        assert_eq!(record.summary.as_deref(), Some("Summary text"));
+        assert_eq!(record.solution.as_deref(), Some("Solution text"));
+        assert_eq!(record.qod.as_deref(), Some("95"));
+        assert_eq!(record.asset_id.as_deref(), Some("asset-7"));
+        assert_eq!(record.family.as_deref(), Some("General"));
+        assert_eq!(record.cves, ["CVE-2026-1007"]);
+    }
+
+    #[test]
+    fn greenbone_unknown_result_type_withholds_completion() {
+        let parsed = ParsedArtifact::Xml(vec![GreenboneXmlResult {
+            pointer: "/report/results/result[1]".to_owned(),
+            result_id: Some("result-1".to_owned()),
+            nvt_oid: Some("1.3.6.1.4.1.25623.1.0.100007".to_owned()),
+            result_type: Some("new_upstream_type".to_owned()),
+            severity: Some("8.1".to_owned()),
+            asset_id: Some("asset-7".to_owned()),
+            ..GreenboneXmlResult::default()
+        }]);
+        let mut warnings = Vec::new();
+        let extraction = extract_greenbone(&parsed, &mut warnings, &["asset-7".to_owned()]);
+
+        assert!(extraction.records.is_empty());
+        assert!(!extraction.complete);
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("unsupported upstream result type"))
+        );
+    }
 }

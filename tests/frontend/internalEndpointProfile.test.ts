@@ -198,7 +198,7 @@ test("the Telnet endpoint profile checks only cleartext login-prompt exposure", 
 test("the endpoint profiles match the native and Greenbone launcher boundaries", () => {
   assert.match(
     greenboneLauncherSource,
-    /feedRevision\s+= "b26d7237d56b7cf85e6ace2b9351e7851461b3a8"/u,
+    /feedRevision\s+= "6c8dce2f22bb9e5da081667994be6e9ed79484d8"/u,
   );
   assert.match(greenboneLauncherSource, /maxSelectedVTsPerGrant\s+= 128/u);
   assert.match(greenboneLauncherSource, /the Greenbone profile does not expand network targets/u);
