@@ -344,17 +344,13 @@ test("public development status stays catalog-backed and excludes local handoff 
     "garak": [/No managed image/iu, /model-endpoint scope grant/iu, /credential path/iu],
     "agentic-radar": [/No managed image/iu, /typed framework-selection path/iu, /accepted upstream release/iu],
     "mcp-armor": [/No verified published digest/iu],
-    "trivy": [/Publish and independently verify/iu],
-    "kube-bench": [/Publish and independently verify/iu],
-    "maester": [/Publish and independently verify/iu],
-    "greenbone": [/Publish and independently verify/iu],
   };
 
   assert.equal(integrated.length + experimental.length, catalog.length);
   assert.match(
     statusContent,
     new RegExp(
-      `contains ${catalog.length} records: ${integrated.length} integrated, runnable engines and ${experimental.length} experimental or\\s+publication-pending integrations that remain non-runnable`,
+      `contains ${catalog.length} records: ${integrated.length} integrated, runnable engines and ${experimental.length} experimental AI\\s+integrations that remain non-runnable`,
       "iu",
     ),
   );

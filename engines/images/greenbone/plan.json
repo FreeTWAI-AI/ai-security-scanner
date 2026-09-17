@@ -6,7 +6,7 @@
   "support_until": "2026-11-22",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "publication_in_progress",
+  "publish_state": "published_managed_artifact",
   "source": {
     "repository": "https://github.com/greenbone/openvas-scanner",
     "revision": "c3ae607ef632393b7919fb179d30b940d929f713",
@@ -16,8 +16,8 @@
   "verified_upstream_artifact": null,
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-greenbone",
-    "tag": "23.50.21-feed202608240615-2",
-    "digest": null
+    "tag": "23.50.21-feed202608240615-1",
+    "digest": "sha256:35404e619a14027291e73f9048c3b3a3d070ca42aae0fe3a24ce86087a7ce381"
   },
   "build_recipe": {
     "source_revision": "c3ae607ef632393b7919fb179d30b940d929f713",
@@ -91,7 +91,7 @@
   "dockerfile": {
     "emitted": true,
     "path": "engines/images/greenbone/Dockerfile",
-    "sha256": "sha256:7f2e48438543e2b3cfd2e43c286d213b6f2320029fa7a5826840d4b518ff9bfc",
+    "sha256": "sha256:29fa5ad7a36fdf225c7e0aa59d22f1506f64665993208c8417477fbcc31ee51f",
     "reason": null
   },
   "wrapper": {
@@ -119,9 +119,7 @@
     "rationale": "The image carries the exact GPL-covered scanner source, source-form signed feed snapshot, license notices, project patches, and a three-year corresponding-source offer.",
     "source_offer_path": "engines/images/greenbone/SOURCE-OFFER.md"
   },
-  "blockers": [
-    "Publish and independently verify the Greenbone 23.50.21-feed202608240615-2 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
-  ],
+  "blockers": [],
   "managed_runtime": {
     "non_root_user": "65532:65532",
     "read_only_rootfs": true,
@@ -137,5 +135,19 @@
     "telemetry": false,
     "per_grant_target_execution": true
   },
-  "publication": null
+  "publication": {
+    "workflow_run": "https://github.com/teddashh/ai-security-scanner/actions/runs/32763152941",
+    "source_revision": "69f05d86d5002782196f8e161edbaa300e03bd0c",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "platform_digests": {
+      "linux/amd64": "sha256:83302a06b50e02b28cc046702b36de743a906548cb73a7e7e18fe8db31b573bd",
+      "linux/arm64": "sha256:1bf516fcf263836e80ccfb0ef20978d3d1f3a21cbad843bdc30a371507f83072"
+    },
+    "anonymous_pull_verified": true,
+    "evidence_artifact": "greenbone-image-evidence-32763152941-1",
+    "managed_smoke_evidence_sha256": "sha256:fb603d0ff5af51568d14b90b44b8fe693d5a841784e055a17443f6f13c8eddc4"
+  }
 }

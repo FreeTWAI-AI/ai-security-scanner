@@ -6,7 +6,7 @@
   "support_until": "2026-11-22",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "publication_in_progress",
+  "publish_state": "published_managed_artifact",
   "source": {
     "repository": "https://github.com/aquasecurity/kube-bench",
     "revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
@@ -17,7 +17,7 @@
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-kube-bench",
     "tag": "0.16.0-4",
-    "digest": null
+    "digest": "sha256:77a136e48c6491528a70acabc8380e161d362a63c5bcc9d66312393c3436538c"
   },
   "build_recipe": {
     "source_revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
@@ -96,9 +96,7 @@
     "rationale": "Apache-2.0 permits redistribution with notices; the immutable snapshot benchmark profile is included.",
     "source_offer_path": null
   },
-  "blockers": [
-    "Publish and independently verify the kube-bench 0.16.0-4 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
-  ],
+  "blockers": [],
   "managed_runtime": {
     "non_root_user": "65532:65532",
     "read_only_rootfs": true,
@@ -111,5 +109,19 @@
     "updates": false,
     "telemetry": false
   },
-  "publication": null
+  "publication": {
+    "workflow_run": "https://github.com/teddashh/ai-security-scanner/actions/runs/35273577688",
+    "source_revision": "9ee5257d269b2aaf9dc28d1eed470ed9e9c933f3",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "platform_digests": {
+      "linux/amd64": "sha256:d491a83f089ac31503a4be398417100354e9c0f5a4f2ddc8294964287bb3cd44",
+      "linux/arm64": "sha256:ced2c87f2a755b0676d787985ba0056a505e89ad50827e928f63d341d6edea83"
+    },
+    "anonymous_pull_verified": true,
+    "evidence_artifact": "kube-bench-image-evidence-35273577688-1",
+    "managed_smoke_evidence_sha256": "sha256:f9a2f171b0ba51ba6f6fcc6882354d7f51e473bef03be232d3ece382a06a3635"
+  }
 }

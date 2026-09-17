@@ -279,7 +279,7 @@ const managedLocalK8sContracts = new Map([
   }],
 ]);
 const managedGreenboneContract = {
-  tag: "23.50.21-feed202608240615-2",
+  tag: "23.50.21-feed202608240615-1",
   planKind: "multi_component_build",
   license: { disposition: "source_offer", sourceOfferPath: "engines/images/greenbone/SOURCE-OFFER.md" },
   scannerRevision: "c3ae607ef632393b7919fb179d30b940d929f713",
@@ -438,8 +438,7 @@ function validateManagedImageEvidence(catalogEntries) {
       : null;
     const repository = engine?.image?.repository ??
       (isPendingM365Publication(plan, engine) || isPendingManagedExternalPublication(plan, engine) ||
-       isPendingMcpArmorPublication(plan, engine) || isPendingLocalK8sPublication(plan, engine) ||
-       isPendingGreenbonePublication(plan, engine)
+       isPendingMcpArmorPublication(plan, engine) || isPendingLocalK8sPublication(plan, engine)
         ? plan.final_artifact.repository
         : undefined);
     if (typeof repository !== "string" || !repository.startsWith(managedImageRepositoryPrefix)) continue;
@@ -1985,16 +1984,8 @@ function isPendingLocalK8sPublication(plan, engine) {
   );
 }
 
-function isPendingGreenbonePublication(plan, engine) {
-  if (engine?.id !== "greenbone") return false;
-  return isPendingManagedCandidate(plan, engine, managedGreenboneContract, "multi_component_plan");
-}
-
 function validatePendingManagedCandidate(plan, planRelative, engine, contract) {
-  const pending = engine.id === "greenbone"
-    ? isPendingGreenbonePublication(plan, engine)
-    : isPendingLocalK8sPublication(plan, engine);
-  if (!pending) {
+  if (!isPendingLocalK8sPublication(plan, engine)) {
     errors.push(`${planRelative}: unpublished managed build must remain isolated with null artifact/publication claims and an explicit per-engine blocker`);
     return;
   }
@@ -2007,20 +1998,11 @@ function validatePendingManagedCandidate(plan, planRelative, engine, contract) {
   }
   const entrypoint = contract.entrypoint ?? "/usr/local/bin/ai-security-scanner-engine-entrypoint";
   validatePublishedManagedDockerfile(plan, planRelative, engine, contract.tag, entrypoint);
-  const launcherRelative = contract.launcherPath ?? (engine.id === "greenbone"
-    ? "engines/images/greenbone-launcher/main.go"
-    : "engines/images/local-launcher/main.go");
+  const launcherRelative = contract.launcherPath ?? "engines/images/local-launcher/main.go";
   const launcherPath = resolve(root, launcherRelative);
   if (plan.wrapper?.launcher_sha256 !== sha256File(launcherPath) ||
       plan.wrapper?.entrypoint !== entrypoint || engine.compatibility?.wrapper?.entrypoint !== entrypoint) {
     errors.push(`${planRelative}: pending wrapper must bind the exact project-owned launcher source and entrypoint`);
-  }
-  if (engine.id === "greenbone") {
-    const workflowText = readFileSync(resolve(root, ".github/workflows/engine-image-greenbone.yml"), "utf8");
-    if (!workflowText.includes(`group: engine-image-greenbone-${contract.tag}`) ||
-        !workflowText.includes(`IMAGE_TAG: ${contract.tag}`)) {
-      errors.push(`${planRelative}: Greenbone publication workflow identity does not match ${contract.tag}`);
-    }
   }
 }
 
@@ -2563,8 +2545,7 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
     } else if (!isPendingM365Publication(plan, engine) &&
         !isPendingManagedExternalPublication(plan, engine) &&
         !isPendingMcpArmorPublication(plan, engine) &&
-        !isPendingLocalK8sPublication(plan, engine) &&
-        !isPendingGreenbonePublication(plan, engine)) {
+        !isPendingLocalK8sPublication(plan, engine)) {
       errors.push(`${label}.image: only an exactly isolated reviewed publication-in-progress operation may omit its immutable image`);
     }
   } else if (engine.image !== null) {
@@ -2613,7 +2594,7 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
     if (!deepEqual(plan.final_artifact, { repository: engine.image.repository, tag: engine.image.tag, digest: engine.image.digest })) errors.push(`${planRelative}: final artifact does not match catalog image`);
   } else if (managedCloudIds.has(engine.id) || isPendingM365Publication(plan, engine) ||
       isPendingManagedExternalPublication(plan, engine) || isPendingMcpArmorPublication(plan, engine) ||
-      isPendingLocalK8sPublication(plan, engine) || isPendingGreenbonePublication(plan, engine)) {
+      isPendingLocalK8sPublication(plan, engine)) {
     const pending = plan.final_artifact;
     if (!pending || typeof pending.repository !== "string" || typeof pending.tag !== "string" || pending.digest !== null || plan.publish_state !== "publication_in_progress") {
       errors.push(`${planRelative}: managed image publication in progress must retain its exact repository/tag and null digest`);
@@ -2631,8 +2612,6 @@ for (const engine of Array.isArray(catalog) ? catalog : []) {
     validatePendingManagedCandidate(plan, planRelative, engine, localK8sContract);
   } else if (localK8sContract && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
     validatePublishedLocalK8sImage(plan, planRelative, engine, localK8sContract);
-  } else if (engine.id === "greenbone" && isPendingGreenbonePublication(plan, engine)) {
-    validatePendingManagedCandidate(plan, planRelative, engine, managedGreenboneContract);
   } else if (engine.id === "greenbone" && isManagedPublicationClaimed(engine, plan, expectedManagedRepository)) {
     validatePublishedGreenboneImage(plan, planRelative, engine);
   } else if (engine.id === "cloudquery") {

@@ -6,7 +6,7 @@
   "support_until": "2026-11-22",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "publication_in_progress",
+  "publish_state": "published_managed_artifact",
   "source": {
     "repository": "https://github.com/aquasecurity/trivy",
     "revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
@@ -17,7 +17,7 @@
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-trivy",
     "tag": "0.74.0-4",
-    "digest": null
+    "digest": "sha256:9bfcef9a6a9d9a69eefcece06b0670eaed72541656b65155469b41acb3855dc2"
   },
   "build_recipe": {
     "source_revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
@@ -131,9 +131,7 @@
     "rationale": "Apache-2.0 permits redistribution with notices; the embedded database notice and immutable manifest are included.",
     "source_offer_path": null
   },
-  "blockers": [
-    "Publish and independently verify the Trivy 0.74.0-4 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
-  ],
+  "blockers": [],
   "managed_runtime": {
     "non_root_user": "65532:65532",
     "read_only_rootfs": true,
@@ -146,5 +144,19 @@
     "updates": false,
     "telemetry": false
   },
-  "publication": null
+  "publication": {
+    "workflow_run": "https://github.com/teddashh/ai-security-scanner/actions/runs/35273577688",
+    "source_revision": "9ee5257d269b2aaf9dc28d1eed470ed9e9c933f3",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "platform_digests": {
+      "linux/amd64": "sha256:efcc0345af1a1fca1491b6cda96938804c2f1e19f680b4e348edddebe6c4ad33",
+      "linux/arm64": "sha256:8bed6a6664525e7819f4824647d695dfa311ff619e504fed2bca21a03ae36faa"
+    },
+    "anonymous_pull_verified": true,
+    "evidence_artifact": "trivy-image-evidence-35273577688-2",
+    "managed_smoke_evidence_sha256": "sha256:e20fa96fd9c8a856a21f9c01a7115ea8de7209686ca1d90f958f1e54e06939f0"
+  }
 }

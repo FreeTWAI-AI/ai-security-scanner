@@ -8,8 +8,8 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 
 ## At a glance
 
-- The engine catalog contains 24 records: 17 integrated, runnable engines and 7 experimental or
-  publication-pending integrations that remain non-runnable.
+- The engine catalog contains 24 records: 21 integrated, runnable engines and 3 experimental AI
+  integrations that remain non-runnable.
 - Repository, website/API, infrastructure, cloud, Microsoft 365, and Kubernetes paths use bounded
   upstream checks and feed one product-owned report.
 - Report presentation distinguishes measured zero findings from an asset that was not measured, and
@@ -33,15 +33,6 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 Experimental entries remain `runnable: false`. Research artifacts and local image identifiers are not
 substitutes for a published digest or an authorized runtime path.
 
-## Pending managed image publications
-
-| Integration | Prepared candidate | Current fail-closed boundary |
-| --- | --- | --- |
-| Trivy | The next managed build includes the prepared offline Java-package analysis improvements. | Publish and independently verify the candidate for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence. |
-| kube-bench | The next managed build includes the prepared upstream CIS 1.11 node profile. | Publish and independently verify the candidate for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence. |
-| Maester | The next managed build includes the prepared specification-checked wrapper. | Publish and independently verify the candidate for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence. |
-| Greenbone Community Edition | The next managed build includes the prepared launcher source. | Publish and independently verify the candidate for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence. |
-
 ## Current verification baseline
 
 The latest recorded local baseline for these lanes completed successfully:
@@ -61,8 +52,6 @@ and its offline synthetic smoke test again produced one finding, two completed c
 
 - MCP Armor has no verified published digest and remains non-runnable.
 - The other experimental AI integrations remain non-runnable while their catalog blockers exist.
-- Trivy, kube-bench, Maester, and Greenbone remain non-runnable until the prepared candidate images
-  are published, independently verified, and pinned by immutable digest.
 
 These blockers describe fail-closed admission state; they do not authorize a publication or release
 plan. Publication, packaging, signing, versioning, and compliance posture remain product-owner
