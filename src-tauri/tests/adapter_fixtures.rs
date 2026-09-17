@@ -894,7 +894,7 @@ fn finding_written_before_confidence_basis_codes_still_loads_without_one() {
 }
 
 #[test]
-fn greenbone_qod_bands_are_source_confidence_and_absence_is_derived() {
+fn greenbone_qod_bands_are_source_confidence_and_absence_stays_unknown() {
     let bytes = br#"<?xml version="1.0"?>
 <get_reports_response><report><results>
   <result id="high"><name>High QoD</name><host>192.0.2.1</host><severity>5.0</severity><qod><value>95</value></qod><nvt oid="1.3.6.1.4.1.1"><name>High QoD</name></nvt></result>
@@ -931,7 +931,7 @@ fn greenbone_qod_bands_are_source_confidence_and_absence_is_derived() {
         );
     }
     let absent = by_title["Absent QoD"];
-    assert_eq!(absent.confidence, Confidence::Medium);
+    assert_eq!(absent.confidence, Confidence::Unknown);
     assert_eq!(
         absent.confidence_basis_code,
         Some(ConfidenceBasisCode::MissingDetectionQualityScore)
@@ -940,8 +940,30 @@ fn greenbone_qod_bands_are_source_confidence_and_absence_is_derived() {
         absent
             .priority_reasons
             .iter()
-            .any(|reason| reason.contains("absence of a detection-quality score"))
+            .any(|reason| reason
+                == "Greenbone Community Edition did not report detection quality.")
     );
+    assert!(
+        absent
+            .plain_language_summary
+            .contains("Greenbone Community Edition did not report detection quality for it.")
+    );
+    assert!(
+        !absent
+            .plain_language_summary
+            .contains("This product rated its confidence")
+    );
+    assert!(
+        absent
+            .tags
+            .iter()
+            .any(|tag| tag == "confidence-basis:unavailable")
+    );
+    assert!(absent.tags.iter().all(|tag| {
+        tag != "confidence-basis:derived"
+            && !tag.starts_with("source-confidence:")
+            && !tag.starts_with("quality-of-detection:")
+    }));
 }
 
 #[test]

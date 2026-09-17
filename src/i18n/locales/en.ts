@@ -190,6 +190,7 @@ export const en = {
   "status.confidence.high": "High confidence",
   "status.confidence.medium": "Medium confidence",
   "status.confidence.low": "Low confidence",
+  "status.confidence.unknown": "Unknown confidence",
 
   "status.workflow.unreviewed": "Open",
   "status.workflow.expertReview": "Expert review requested",

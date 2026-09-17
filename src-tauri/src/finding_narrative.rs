@@ -258,6 +258,9 @@ pub fn confidence_presentation_english(
     priority_reasons: &[String],
 ) -> String {
     if let Some(code) = confidence_basis_code {
+        if code == ConfidenceBasisCode::MissingDetectionQualityScore {
+            return format!("{confidence_label} — scanner did not report detection quality");
+        }
         return format!(
             "{confidence_label} — this product's rating from {}",
             confidence_basis_english(code)
@@ -275,6 +278,9 @@ pub fn confidence_presentation_zh_hant(
     priority_reasons: &[String],
 ) -> String {
     if let Some(code) = confidence_basis_code {
+        if code == ConfidenceBasisCode::MissingDetectionQualityScore {
+            return format!("{confidence_label} — 掃描工具未提供偵測品質");
+        }
         return format!(
             "{confidence_label} — 本產品依據{}評定",
             confidence_basis_zh_hant(code)
@@ -3404,7 +3410,7 @@ mod tests {
     }
 
     #[test]
-    fn every_confidence_basis_composes_chinese_and_names_this_product() {
+    fn every_confidence_basis_composes_chinese_and_states_who_supplied_the_rating() {
         // The labelled confidence field carries the basis. The risk summary
         // used to repeat it and no longer does, so distinctness is asserted
         // where the reader actually sees it.
@@ -3414,9 +3420,16 @@ mod tests {
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(presentations.len(), ALL_CONFIDENCE_BASIS_CODES.len());
         for presentation in &presentations {
-            assert!(presentation.contains("本產品依據"), "{presentation}");
             assert!(presentation.starts_with("高 — "), "{presentation}");
         }
+        assert!(presentations.contains("高 — 掃描工具未提供偵測品質"));
+        assert_eq!(
+            presentations
+                .iter()
+                .filter(|presentation| presentation.contains("本產品依據"))
+                .count(),
+            ALL_CONFIDENCE_BASIS_CODES.len() - 1
+        );
         // The summary states what the scanner reported and stops there.
         for code in ALL_CONFIDENCE_BASIS_CODES {
             let summary = summary_zh_hant(
@@ -3436,6 +3449,14 @@ mod tests {
             "高 — 來源工具評定：HIGH"
         );
         assert_eq!(confidence_presentation_zh_hant("高", None, &[]), "高");
+        assert_eq!(
+            confidence_presentation_english(
+                "Unknown confidence",
+                Some(ConfidenceBasisCode::MissingDetectionQualityScore),
+                &[],
+            ),
+            "Unknown confidence — scanner did not report detection quality"
+        );
     }
 
     #[test]

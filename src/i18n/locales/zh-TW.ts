@@ -192,6 +192,7 @@ export const zhTW = {
   "status.confidence.high": "高信心",
   "status.confidence.medium": "中等信心",
   "status.confidence.low": "低信心",
+  "status.confidence.unknown": "未知信心",
 
   "status.workflow.unreviewed": "待處理",
   "status.workflow.expertReview": "已請專家確認",

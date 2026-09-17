@@ -398,7 +398,7 @@
         "fingerprint": { "type": "string", "minLength": 1 },
         "title": { "type": "string", "minLength": 1 },
         "severity": { "enum": ["unknown", "informational", "low", "medium", "high", "critical"] },
-        "confidence": { "enum": ["low", "medium", "high", "confirmed"] },
+        "confidence": { "enum": ["unknown", "low", "medium", "high", "confirmed"] },
         "observed_at": { "type": "string", "format": "date-time" },
         "snapshot_source": { "const": "run_snapshot" },
         "evidence_hashes": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$" } },

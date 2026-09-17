@@ -559,7 +559,7 @@ func TestRunUnitCancellationStopsAndDeletesExactScan(t *testing.T) {
 func TestResultsEnvelopeRequiresExactItemsField(t *testing.T) {
 	for name, body := range map[string]string{
 		"renamed field": `{"results":[]}`,
-		"null items":   `{"items":null}`,
+		"null items":    `{"items":null}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -696,7 +696,7 @@ func TestWriteXMLResultPreservesUpstreamResultTypes(t *testing.T) {
 				result.Protocol = ""
 			}
 			var output bytes.Buffer
-			if err := writeXMLResult(&output, index, result, unit, testRelays(), feed); err != nil {
+			if err := writeXMLResult(&output, io.Discard, index, result, unit, testRelays(), feed); err != nil {
 				t.Fatal(err)
 			}
 			encoded := output.String()
@@ -738,7 +738,7 @@ func TestWriteXMLResultKeepsUnratedAlarmAuthoritative(t *testing.T) {
 			feed.ByOID[selectedOID] = metadata
 
 			var output bytes.Buffer
-			if err := writeXMLResult(&output, 0, result, unit, testRelays(), feed); err != nil {
+			if err := writeXMLResult(&output, io.Discard, 0, result, unit, testRelays(), feed); err != nil {
 				t.Fatal(err)
 			}
 			encoded := output.String()
@@ -764,7 +764,7 @@ func TestWriteXMLResultProducesEscapedAdapterEvidence(t *testing.T) {
 	unit := scanUnit{AssetID: document.Assets[0].ID, Grant: *document.Assets[0].Grants[0].ExternalScope}
 	result := scanResult{ID: 9, Type: "alarm", IPAddress: "127.0.0.1", OID: selectedOID, Port: 40443, Protocol: "tcp", Message: "found <risk> & evidence"}
 	var output bytes.Buffer
-	if err := writeXMLResult(&output, 0, result, unit, testRelays(), feed); err != nil {
+	if err := writeXMLResult(&output, io.Discard, 0, result, unit, testRelays(), feed); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "&lt;risk&gt; &amp; evidence") || !strings.Contains(output.String(), `type="cve" id="CVE-2024-12345"`) {
@@ -783,6 +783,66 @@ func TestWriteXMLResultProducesEscapedAdapterEvidence(t *testing.T) {
 	var decoded any
 	if err := xml.Unmarshal(output.Bytes(), &decoded); err != nil {
 		t.Fatalf("generated result is not XML: %v", err)
+	}
+}
+
+func TestQODForTypePreservesRecognizedValues(t *testing.T) {
+	for qodType, expected := range map[string]int{
+		"exploit":                  100,
+		"remote_vul":               99,
+		"remote_active":            95,
+		"package":                  97,
+		"remote_banner":            80,
+		"remote_banner_unreliable": 30,
+	} {
+		actual, recognized := qodForType(qodType)
+		if !recognized || actual != expected {
+			t.Errorf("qodForType(%q) = (%d, %t), want (%d, true)", qodType, actual, recognized, expected)
+		}
+	}
+}
+
+func TestWriteXMLResultOmitsUnknownQODAndWarnsOnce(t *testing.T) {
+	feed := testFeed()
+	metadata := feed.ByOID[selectedOID]
+	metadata.Tag.QODType = "new_upstream_qod"
+	feed.ByOID[selectedOID] = metadata
+	document := validScope(time.Now().UTC())
+	unit := scanUnit{AssetID: document.Assets[0].ID, Grant: *document.Assets[0].Grants[0].ExternalScope}
+	result := scanResult{ID: 9, Type: "alarm", IPAddress: "127.0.0.1", OID: selectedOID, Port: 40443, Protocol: "tcp", Message: "detected"}
+	var output bytes.Buffer
+	var warnings bytes.Buffer
+
+	if err := writeXMLResult(&output, &warnings, 0, result, unit, testRelays(), feed); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "<qod>") {
+		t.Fatalf("unknown QoD type emitted detection quality: %s", output.String())
+	}
+	if strings.Count(warnings.String(), "\n") != 1 || !strings.Contains(warnings.String(), "new_upstream_qod") {
+		t.Fatalf("unknown QoD warning = %q, want exactly one warning naming the upstream value", warnings.String())
+	}
+}
+
+func TestWriteXMLResultOmitsAbsentQOD(t *testing.T) {
+	feed := testFeed()
+	metadata := feed.ByOID[selectedOID]
+	metadata.Tag.QODType = ""
+	feed.ByOID[selectedOID] = metadata
+	document := validScope(time.Now().UTC())
+	unit := scanUnit{AssetID: document.Assets[0].ID, Grant: *document.Assets[0].Grants[0].ExternalScope}
+	result := scanResult{ID: 9, Type: "alarm", IPAddress: "127.0.0.1", OID: selectedOID, Port: 40443, Protocol: "tcp", Message: "detected"}
+	var output bytes.Buffer
+	var warnings bytes.Buffer
+
+	if err := writeXMLResult(&output, &warnings, 0, result, unit, testRelays(), feed); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "<qod>") {
+		t.Fatalf("absent QoD type emitted detection quality: %s", output.String())
+	}
+	if warnings.Len() != 0 {
+		t.Fatalf("absent QoD type emitted an unrecognized-value warning: %q", warnings.String())
 	}
 }
 

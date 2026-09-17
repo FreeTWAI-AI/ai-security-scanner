@@ -866,6 +866,7 @@ fn severity_name(severity: &Severity) -> &'static str {
 
 fn confidence_name(confidence: &Confidence) -> &'static str {
     match confidence {
+        Confidence::Unknown => "unknown",
         Confidence::Low => "low",
         Confidence::Medium => "medium",
         Confidence::High => "high",
@@ -884,8 +885,9 @@ mod tests {
     use chrono::TimeZone;
 
     #[test]
-    fn comparison_preserves_unknown_severity_name() {
+    fn comparison_preserves_unknown_rating_names() {
         assert_eq!(severity_name(&Severity::Unknown), "unknown");
+        assert_eq!(confidence_name(&Confidence::Unknown), "unknown");
     }
 
     fn fixture() -> AssessmentCase {

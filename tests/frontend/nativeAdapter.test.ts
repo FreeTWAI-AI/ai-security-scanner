@@ -2430,6 +2430,42 @@ test("dropping an unrecognized asset preserves its findings and known sibling re
   assert.equal(workspace.case.findingCount, 2);
 });
 
+test("native findings preserve unknown confidence instead of substituting a band", () => {
+  const finding = (id: string, confidence: string) => ({
+    id,
+    case_id: "case-platforms-1",
+    first_seen_run_id: "run-1",
+    last_seen_run_id: "run-1",
+    fingerprint: `fingerprint-${id}`,
+    title: id,
+    plain_language_summary: "Greenbone did not report detection quality.",
+    possible_impact: "Impact",
+    severity: "medium",
+    confidence,
+    priority: 30,
+    priority_reasons: ["Greenbone did not report detection quality."],
+    asset_ids: ["host-asset"],
+    evidence: [],
+    control_references: [],
+    recommendation: "Review the source evidence.",
+    verification_guidance: "Run the check again.",
+    rollback_considerations: null,
+    official_references: [],
+    recommended_expert_type: "Vulnerability manager",
+    status: "unreviewed",
+    tags: [],
+    confidence_basis_code: "missing_detection_quality_score",
+  });
+  const workspace = adaptNativeCase(platformCaseFixture({
+    findings: [finding("missing-qod", "unknown"), finding("future-value", "future")],
+  }));
+
+  assert.deepEqual(workspace.findings.map((item: { confidence: string }) => item.confidence), [
+    "unknown",
+    "unknown",
+  ]);
+});
+
 test("an omitted unrecognized coverage row still informs its known asset", () => {
   const workspace = adaptNativeCase(platformCaseFixture({
     assets: [{

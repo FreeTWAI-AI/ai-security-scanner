@@ -421,7 +421,7 @@ func run(ctx context.Context, arguments []string, now time.Time) error {
 			if err := validateResult(result, unit, relays, closures[unit.Grant.ID], index); err != nil {
 				return err
 			}
-			if err := writeXMLResult(bounded, resultCount, result, unit, relays, index); err != nil {
+			if err := writeXMLResult(bounded, os.Stderr, resultCount, result, unit, relays, index); err != nil {
 				return err
 			}
 			resultCount++
@@ -1358,7 +1358,7 @@ func resultCarriesAdapterEvidence(result scanResult) bool {
 	return !containsString([]string{"log", "host_start", "host_end", "host_stop", "host_detail"}, result.Type)
 }
 
-func writeXMLResult(writer io.Writer, indexNumber int, result scanResult, unit scanUnit, relays *unitRelays, feed *feedIndex) error {
+func writeXMLResult(writer io.Writer, warnings io.Writer, indexNumber int, result scanResult, unit scanUnit, relays *unitRelays, feed *feedIndex) error {
 	metadata := feed.ByOID[result.OID]
 	name := metadata.Name
 	if name == "" {
@@ -1379,7 +1379,10 @@ func writeXMLResult(writer io.Writer, indexNumber int, result scanResult, unit s
 			threat = threatForScore(severity)
 		}
 	}
-	qod := qodForType(metadata.Tag.QODType)
+	qod, hasQOD := qodForType(metadata.Tag.QODType)
+	if !hasQOD && metadata.Tag.QODType != "" {
+		_, _ = fmt.Fprintf(warnings, "Greenbone engine launcher warning: unrecognized QoD type %s; detection quality was omitted\n", metadata.Tag.QODType)
+	}
 	relayPort := result.Port
 	port := 0
 	if relayPort > 0 && relayPort <= 65535 {
@@ -1419,7 +1422,12 @@ func writeXMLResult(writer io.Writer, indexNumber int, result scanResult, unit s
 		_, err := io.WriteString(writer, "</result>")
 		return err
 	}
-	if _, err := fmt.Fprintf(writer, "<qod><value>%d</value></qod><nvt oid=\"%s\"><name>%s</name><family>%s</family><refs>", qod, xmlEscape(result.OID), xmlEscape(name), xmlEscape(metadata.Family)); err != nil {
+	if hasQOD {
+		if _, err := fmt.Fprintf(writer, "<qod><value>%d</value></qod>", qod); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(writer, "<nvt oid=\"%s\"><name>%s</name><family>%s</family><refs>", xmlEscape(result.OID), xmlEscape(name), xmlEscape(metadata.Family)); err != nil {
 		return err
 	}
 	seen := make(map[string]struct{})
@@ -1534,22 +1542,22 @@ func threatForScore(score float64) string {
 	}
 }
 
-func qodForType(value string) int {
+func qodForType(value string) (int, bool) {
 	switch value {
 	case "exploit":
-		return 100
+		return 100, true
 	case "remote_vul":
-		return 99
+		return 99, true
 	case "remote_active":
-		return 95
+		return 95, true
 	case "package":
-		return 97
+		return 97, true
 	case "remote_banner":
-		return 80
+		return 80, true
 	case "remote_banner_unreliable":
-		return 30
+		return 30, true
 	default:
-		return 50
+		return 0, false
 	}
 }
 

@@ -3788,6 +3788,7 @@ fn severity_word(severity: &Severity) -> &'static str {
 
 fn confidence_word(confidence: &Confidence) -> &'static str {
     match confidence {
+        Confidence::Unknown => "Unknown",
         Confidence::Low => "Low",
         Confidence::Medium => "Medium",
         Confidence::High => "High",
@@ -4329,10 +4330,11 @@ fn severity_rank(severity: &Severity) -> u8 {
 
 fn confidence_rank(confidence: &Confidence) -> u8 {
     match confidence {
-        Confidence::Low => 0,
-        Confidence::Medium => 1,
-        Confidence::High => 2,
-        Confidence::Confirmed => 3,
+        Confidence::Unknown => 0,
+        Confidence::Low => 1,
+        Confidence::Medium => 2,
+        Confidence::High => 3,
+        Confidence::Confirmed => 4,
     }
 }
 
@@ -4369,6 +4371,20 @@ mod tests {
                 &[],
             ),
             "Policy failure — High severity, High confidence — this product's rating from a deterministic policy or configuration evaluation"
+        );
+        assert_eq!(
+            super::finding_step_reason(
+                "Greenbone result",
+                &super::Severity::High,
+                &super::Confidence::Unknown,
+                Some(crate::domain::ConfidenceBasisCode::MissingDetectionQualityScore),
+                &[],
+            ),
+            "Greenbone result — High severity, Unknown confidence — scanner did not report detection quality"
+        );
+        assert!(
+            super::confidence_rank(&super::Confidence::Unknown)
+                < super::confidence_rank(&super::Confidence::Low)
         );
     }
 

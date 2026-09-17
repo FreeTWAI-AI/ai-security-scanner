@@ -1239,6 +1239,7 @@ pub enum Severity {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum Confidence {
+    Unknown,
     Low,
     Medium,
     High,

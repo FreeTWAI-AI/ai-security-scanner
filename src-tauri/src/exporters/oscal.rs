@@ -447,6 +447,7 @@ fn severity_name(severity: &Severity) -> &'static str {
 
 fn confidence_name(confidence: &Confidence) -> &'static str {
     match confidence {
+        Confidence::Unknown => "unknown",
         Confidence::Low => "low",
         Confidence::Medium => "medium",
         Confidence::High => "high",
@@ -461,8 +462,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     #[test]
-    fn oscal_export_preserves_unknown_severity() {
+    fn oscal_export_preserves_unknown_ratings() {
         assert_eq!(severity_name(&Severity::Unknown), "unknown");
+        assert_eq!(confidence_name(&Confidence::Unknown), "unknown");
     }
 
     fn fixture() -> AssessmentCase {

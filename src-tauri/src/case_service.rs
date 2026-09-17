@@ -16684,6 +16684,64 @@ fn translated_task_sentence(catalog: HtmlReportCatalog, stored: &str) -> &str {
     }
 }
 
+fn html_confidence_legend(
+    confidence_bases_used: &[crate::domain::ConfidenceBasisCode],
+    confidence_basis_counts: &[(crate::domain::ConfidenceBasisCode, usize)],
+    catalog: HtmlReportCatalog,
+) -> String {
+    if confidence_bases_used.is_empty() {
+        return String::new();
+    }
+    let mut bases = confidence_bases_used.to_vec();
+    bases.sort_by_key(|code| {
+        std::cmp::Reverse(
+            confidence_basis_counts
+                .iter()
+                .find_map(|(used, count)| (used == code).then_some(*count))
+                .unwrap_or(0),
+        )
+    });
+    let detection_quality_unavailable =
+        bases.contains(&crate::domain::ConfidenceBasisCode::MissingDetectionQualityScore);
+    bases.retain(|code| *code != crate::domain::ConfidenceBasisCode::MissingDetectionQualityScore);
+    let mut explanation = String::new();
+    if !bases.is_empty() {
+        explanation.push_str(catalog.text(
+            " where a scanner reported no confidence of its own, this product's rating comes from ",
+            "當掃描工具未提供自己的信心程度時，本產品依下列基準評定：",
+        ));
+        explanation.push_str(
+            &bases
+                .iter()
+                .map(|code| {
+                    html_escape(match catalog.locale {
+                        crate::export::ReportLocale::En => {
+                            crate::finding_narrative::confidence_basis_english(*code)
+                        }
+                        crate::export::ReportLocale::ZhHant => {
+                            crate::finding_narrative::confidence_basis_zh_hant(*code)
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join(catalog.text("; ", "；")),
+        );
+        explanation.push_str(catalog.text(".", "。"));
+    }
+    if detection_quality_unavailable {
+        explanation.push_str(catalog.text(
+            " Unknown means the scanner did not report detection quality.",
+            "未知表示掃描工具未提供偵測品質。",
+        ));
+    }
+    format!(
+        "<p class=\"finding-legend\"><strong>{}{}</strong>{}</p>",
+        catalog.text("Confidence", "信心程度"),
+        catalog.text(":", "："),
+        explanation,
+    )
+}
+
 fn html_report_bytes(
     case: &AssessmentCase,
     run_id: &str,
@@ -17851,41 +17909,8 @@ fn html_report_bytes(
     // actually accounts for, so the sentence opens with the one behind most
     // of the numbers rather than with whichever finding happened to sort
     // first.
-    let confidence_legend = if confidence_bases_used.is_empty() {
-        String::new()
-    } else {
-        let mut bases = confidence_bases_used.clone();
-        bases.sort_by_key(|code| {
-            std::cmp::Reverse(
-                confidence_basis_counts
-                    .iter()
-                    .find_map(|(used, count)| (used == code).then_some(*count))
-                    .unwrap_or(0),
-            )
-        });
-        format!(
-            "<p class=\"finding-legend\"><strong>{}{}</strong>{}{}{}</p>",
-            catalog.text("Confidence", "信心程度"),
-            catalog.text(":", "："),
-            catalog.text(
-                " where a scanner reported no confidence of its own, this product's rating comes from ",
-                "當掃描工具未提供自己的信心程度時，本產品依下列基準評定：",
-            ),
-            bases
-                .iter()
-                .map(|code| html_escape(match catalog.locale {
-                    crate::export::ReportLocale::En => {
-                        crate::finding_narrative::confidence_basis_english(*code)
-                    }
-                    crate::export::ReportLocale::ZhHant => {
-                        crate::finding_narrative::confidence_basis_zh_hant(*code)
-                    }
-                }))
-                .collect::<Vec<_>>()
-                .join(catalog.text("; ", "；")),
-            catalog.text(".", "。"),
-        )
-    };
+    let confidence_legend =
+        html_confidence_legend(&confidence_bases_used, &confidence_basis_counts, catalog);
     let finding_index = if index_rows.is_empty() {
         String::new()
     } else {
@@ -32579,6 +32604,27 @@ mod tests {
             verification_guidance: None,
         };
         assert!(beginner_aws_iam_policy(&finding).is_none());
+    }
+
+    #[test]
+    fn html_confidence_legend_states_missing_detection_quality_without_a_replacement_rating() {
+        let basis = crate::domain::ConfidenceBasisCode::MissingDetectionQualityScore;
+        let counts = [(basis, 1usize)];
+        let english = html_confidence_legend(
+            &[basis],
+            &counts,
+            HtmlReportCatalog::new(crate::export::ReportLocale::En),
+        );
+        let chinese = html_confidence_legend(
+            &[basis],
+            &counts,
+            HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant),
+        );
+
+        assert!(english.contains("Unknown means the scanner did not report detection quality."));
+        assert!(!english.contains("this product's rating"));
+        assert!(chinese.contains("未知表示掃描工具未提供偵測品質。"));
+        assert!(!chinese.contains("本產品依"));
     }
 
     #[test]

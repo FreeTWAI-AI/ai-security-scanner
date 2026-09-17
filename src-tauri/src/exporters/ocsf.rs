@@ -391,6 +391,7 @@ fn ocsf_severity(severity: &Severity) -> (u8, &'static str) {
 
 fn ocsf_confidence(confidence: &Confidence) -> (u8, &'static str) {
     match confidence {
+        Confidence::Unknown => (0, "Unknown"),
         Confidence::Low => (1, "Low"),
         Confidence::Medium => (2, "Medium"),
         Confidence::High | Confidence::Confirmed => (3, "High"),
@@ -399,6 +400,7 @@ fn ocsf_confidence(confidence: &Confidence) -> (u8, &'static str) {
 
 fn confidence_name(confidence: &Confidence) -> &'static str {
     match confidence {
+        Confidence::Unknown => "unknown",
         Confidence::Low => "low",
         Confidence::Medium => "medium",
         Confidence::High => "high",
@@ -425,8 +427,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn unknown_severity_uses_the_ocsf_unknown_identifier() {
+    fn unknown_ratings_use_the_ocsf_unknown_identifiers() {
         assert_eq!(ocsf_severity(&Severity::Unknown), (0, "Unknown"));
+        assert_eq!(ocsf_confidence(&Confidence::Unknown), (0, "Unknown"));
+        assert_eq!(confidence_name(&Confidence::Unknown), "unknown");
     }
 
     fn fixture() -> AssessmentCase {

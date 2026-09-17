@@ -103,6 +103,23 @@ test("a zh-TW reader is not handed English paragraphs under Chinese headings", (
   expect(rendered).toContain("Potential AWS secret detected");
 });
 
+test("missing Greenbone detection quality renders as unavailable instead of a confidence band", () => {
+  window.localStorage.setItem(localeStorageKey, "en");
+  const { container } = renderPage([leakedCredential({
+    id: "finding-greenbone",
+    fingerprint: "greenbone:missing-qod",
+    title: "Greenbone NVT finding",
+    confidence: "unknown",
+    confidenceBasisCode: "missing_detection_quality_score",
+    priorityReasons: ["Greenbone did not report detection quality."],
+  })]);
+  const rendered = container.textContent ?? "";
+
+  expect(rendered).toContain("Unknown confidence — scanner did not report detection quality");
+  expect(rendered).not.toContain("Medium confidence");
+  expect(rendered).not.toContain("quality-of-detection:50");
+});
+
 test("an English reader gets direct report-layer wording", () => {
   window.localStorage.setItem(localeStorageKey, "en");
   const { container } = renderPage([leakedCredential()]);

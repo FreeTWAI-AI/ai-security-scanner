@@ -296,6 +296,11 @@ export const findingConfidencePresentation = (
   priorityReasons: readonly string[],
 ): string => {
   if (confidenceBasisCode) {
+    if (confidenceBasisCode === "missing_detection_quality_score") {
+      return locale === "en"
+        ? `${confidenceLabel} — scanner did not report detection quality`
+        : `${confidenceLabel} — 掃描工具未提供偵測品質`;
+    }
     const basis = CONFIDENCE_BASIS[confidenceBasisCode];
     if (!basis) return confidenceLabel;
     return locale === "en"

@@ -260,7 +260,7 @@ test("every severity basis this product can derive has Chinese", () => {
   assert.equal(seen.size, BASES.length);
 });
 
-test("every confidence basis has distinct Chinese prose and a visible product attribution", () => {
+test("every confidence basis states whether the product or scanner supplied the rating", () => {
   // The labelled confidence field carries the basis. The risk summary used to
   // repeat it and no longer does, so distinctness is asserted where the reader
   // actually sees it.
@@ -273,8 +273,12 @@ test("every confidence basis has distinct Chinese prose and a visible product at
       [],
     );
     assert.ok(HAN.test(presentation), `${confidenceBasisCode}: ${presentation}`);
-    assert.ok(presentation.includes("本產品依據"), presentation);
     assert.ok(presentation.startsWith("高"), presentation);
+    if (confidenceBasisCode === "missing_detection_quality_score") {
+      assert.equal(presentation, "高 — 掃描工具未提供偵測品質");
+    } else {
+      assert.ok(presentation.includes("本產品依據"), presentation);
+    }
     seen.add(presentation);
 
     // The summary states what the scanner reported and stops there.
@@ -289,6 +293,15 @@ test("every confidence basis has distinct Chinese prose and a visible product at
   }
   assert.equal(seen.size, ALL_CONFIDENCE_BASIS_CODES.length);
   assert.equal(ALL_CONFIDENCE_BASIS_CODES.length, 6);
+  assert.equal(
+    findingConfidencePresentation(
+      "en",
+      "Unknown confidence",
+      "missing_detection_quality_score",
+      [],
+    ),
+    "Unknown confidence — scanner did not report detection quality",
+  );
 });
 
 test("engine confidence keeps its source word and legacy confidence stays unchanged", () => {

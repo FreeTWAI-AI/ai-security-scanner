@@ -1710,7 +1710,7 @@ const mapContextFactors = (values: string[] | null | undefined): ContextFactor[]
   (values ?? []).flatMap((value) => CONTEXT_FACTORS.filter((factor) => factor === value));
 
 const mapConfidence = (confidence: string): Confidence => {
-  return (["confirmed", "high", "medium", "low"].includes(confidence) ? confidence : "low") as Confidence;
+  return (["confirmed", "high", "medium", "low", "unknown"].includes(confidence) ? confidence : "unknown") as Confidence;
 };
 
 const mapWorkflow = (status: string): FindingWorkflowState => {

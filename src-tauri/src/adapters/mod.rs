@@ -221,7 +221,7 @@ fn derived_confidence(code: ConfidenceBasisCode) -> DerivedConfidence {
         ConfidenceBasisCode::TemplateMatcher => Confidence::Medium,
         // With no Greenbone QoD value, the NVT result remains useful but cannot
         // inherit the confidence of one of the engine's scored QoD bands.
-        ConfidenceBasisCode::MissingDetectionQualityScore => Confidence::Medium,
+        ConfidenceBasisCode::MissingDetectionQualityScore => Confidence::Unknown,
     };
     DerivedConfidence { confidence, code }
 }
@@ -6674,6 +6674,9 @@ fn merge_finding(
         )),
     }
     match &confidence_basis {
+        Some(ConfidenceBasisCode::MissingDetectionQualityScore) => {
+            tags.push("confidence-basis:unavailable".into());
+        }
         Some(_) => tags.push("confidence-basis:derived".into()),
         None => tags.push(format!(
             "source-confidence:{}",
@@ -6723,6 +6726,10 @@ fn merge_finding(
                 ),
             },
             match &confidence_basis {
+                Some(ConfidenceBasisCode::MissingDetectionQualityScore) => format!(
+                    "{} did not report detection quality for it.",
+                    input.manifest.display_name,
+                ),
                 Some(code) => format!(
                     "{} reported no confidence rating for it. This product rated its confidence {} from {}.",
                     input.manifest.display_name,
@@ -6758,6 +6765,10 @@ fn merge_finding(
                 ),
             },
             match &confidence_basis {
+                Some(ConfidenceBasisCode::MissingDetectionQualityScore) => format!(
+                    "{} did not report detection quality.",
+                    input.manifest.display_name,
+                ),
                 Some(code) => format!(
                     "Confidence derived from {}; {} reports no confidence of its own.",
                     confidence_basis_text(*code),
@@ -7248,9 +7259,9 @@ fn parse_confidence(value: &str) -> Confidence {
         "high" => Confidence::High,
         "medium" | "moderate" => Confidence::Medium,
         "low" => Confidence::Low,
-        // Confidence has no Unknown variant. Preserve the engine's raw word in
-        // source_confidence and fail closed at the lowest canonical band.
-        _ => Confidence::Low,
+        // Preserve an unfamiliar engine word in source_confidence without
+        // converting it into a confidence rating the engine did not provide.
+        _ => Confidence::Unknown,
     }
 }
 
@@ -7280,6 +7291,7 @@ fn severity_label(severity: &Severity) -> &'static str {
 
 fn confidence_label(confidence: &Confidence) -> &'static str {
     match confidence {
+        Confidence::Unknown => "unknown",
         Confidence::Low => "low",
         Confidence::Medium => "medium",
         Confidence::High => "high",
@@ -8437,6 +8449,44 @@ mod tests {
         assert_eq!(record.asset_id.as_deref(), Some("asset-7"));
         assert_eq!(record.family.as_deref(), Some("General"));
         assert_eq!(record.cves, ["CVE-2026-1007"]);
+    }
+
+    #[test]
+    fn greenbone_missing_qod_stays_unknown_without_detection_quality_tag() {
+        let parsed = ParsedArtifact::Xml(vec![GreenboneXmlResult {
+            pointer: "/report/results/result[1]".to_owned(),
+            result_id: Some("result-1".to_owned()),
+            nvt_oid: Some("1.3.6.1.4.1.25623.1.0.100007".to_owned()),
+            nvt_name: Some("NVT name".to_owned()),
+            host: Some("198.51.100.7".to_owned()),
+            port: Some("443/tcp".to_owned()),
+            result_type: Some("alarm".to_owned()),
+            severity: Some("8.1".to_owned()),
+            threat: Some("High".to_owned()),
+            asset_id: Some("asset-7".to_owned()),
+            ..GreenboneXmlResult::default()
+        }]);
+        let mut warnings = Vec::new();
+
+        let extraction = extract_greenbone(&parsed, &mut warnings, &["asset-7".to_owned()]);
+
+        assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+        assert_eq!(extraction.records.len(), 1);
+        let record = &extraction.records[0];
+        assert_eq!(record.confidence, Confidence::Unknown);
+        assert!(record.source_confidence.is_empty());
+        assert_eq!(
+            record.confidence_basis,
+            Some(ConfidenceBasisCode::MissingDetectionQualityScore)
+        );
+        assert!(
+            record
+                .tags
+                .iter()
+                .all(|tag| !tag.starts_with("quality-of-detection:")),
+            "missing QoD produced a detection-quality tag: {:?}",
+            record.tags
+        );
     }
 
     #[test]

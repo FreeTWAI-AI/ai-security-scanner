@@ -1601,6 +1601,7 @@ fn severity_name(severity: &Severity) -> &'static str {
 
 fn confidence_name(confidence: &Confidence) -> &'static str {
     match confidence {
+        Confidence::Unknown => "unknown",
         Confidence::Low => "low",
         Confidence::Medium => "medium",
         Confidence::High => "high",
@@ -3096,6 +3097,33 @@ mod tests {
         let report =
             serde_json::to_value(export_master_framework_report(&fixture(), "run-1").unwrap())
                 .unwrap();
+        validate_schema_value(&schema, &schema, &report, "$").unwrap();
+    }
+
+    #[test]
+    fn framework_report_schema_preserves_unknown_confidence() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../schemas/master-framework-report.schema.json"
+        ))
+        .unwrap();
+        let mut case = fixture();
+        case.findings[0].confidence = Confidence::Unknown;
+        case.findings[0].confidence_basis_code =
+            Some(ConfidenceBasisCode::MissingDetectionQualityScore);
+        case.finding_observations[0].confidence = Confidence::Unknown;
+        let snapshot = case.finding_observations[0]
+            .finding_snapshot
+            .as_mut()
+            .expect("frozen finding snapshot");
+        snapshot.confidence = Confidence::Unknown;
+        snapshot.confidence_basis_code = Some(ConfidenceBasisCode::MissingDetectionQualityScore);
+        let report =
+            serde_json::to_value(export_master_framework_report(&case, "run-1").unwrap()).unwrap();
+
+        assert_eq!(
+            report["frameworks"][0]["controls"][0]["relationships"][0]["finding"]["confidence"],
+            "unknown"
+        );
         validate_schema_value(&schema, &schema, &report, "$").unwrap();
     }
 
