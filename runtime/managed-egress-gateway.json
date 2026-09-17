@@ -4,7 +4,7 @@
   "image": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-egress-gateway",
     "publication_tag": "0.2.0-1",
-    "digest": "sha256:2dd94b04a8f501602e7ea3060b6a92e8f5e23ef7fb5cfd1b4d2834571a3ed16d",
-    "source_revision": "0efbe466ce4ceedc2a0c62661d92623d184e853c"
+    "digest": "sha256:b797a23a6598064d30c27a31e710bd9ffd617e5e70ccf3d7daf018248be8b92c",
+    "source_revision": "18b7313a692c1803881828e37b38c4a82b59a86f"
   }
 }
