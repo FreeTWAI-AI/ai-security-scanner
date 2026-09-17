@@ -33,6 +33,10 @@ const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const INPUT_HASH_POLICY_PATH = "engines/image-input-hash-policy.json";
 const REVISION_CATALOG_INTERPRETATION = "Completing an upstream revision refresh requires a re-pinned source archive with a new SHA-256 checksum, a Dockerfile revision update, and a rebuilt image; those network, registry, and owner-authorized publication steps are outside this offline pipeline.";
 
+function providerPathClass(providerId) {
+  return providerId === "cli" ? "optional_ai" : "formal_default";
+}
+
 function sha256(bytes) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
@@ -911,6 +915,14 @@ export function renderReport(proposal) {
     : proposal.changes.attributions.map((entry) =>
         `- **${entry.provider}** — \`${entry.file}${entry.field ? `:${entry.field}` : ""}\`: ${entry.reason}`
       ).join("\n");
+  const modelAttributions = proposal.changes.attributions.filter(({ provider }) => provider === "cli");
+  const modelAuthored = proposal.provider.selected !== "cli"
+    ? ""
+    : modelAttributions.length === 0
+      ? "\n### Model-authored edits\n\nThe optional AI provider produced no model-authored edit of its own.\n"
+      : `\n### Model-authored edits\n\n${modelAttributions.map((entry) =>
+          `- \`${entry.file}\` — before: ${entry.before ?? "new file"}; after: ${entry.after}`
+        ).join("\n")}\n\nA model wrote these bytes, and a human must read them before they become a PR.\n`;
   const verificationRows = proposal.verification.map((check) =>
     `| ${markdownCell(check.name)} | ${markdownCell(check.status)} | ${markdownCell(check.reason ?? "Completed")} |`
   ).join("\n");
@@ -925,12 +937,15 @@ export function renderReport(proposal) {
     : proposal.pr_ineligibility_reasons.map((reason) => `- ${reason}`).join("\n");
   const checkout = proposal.inputs.local_research_checkout;
   const lock = proposal.inputs.upstream_lock;
+  const providerDescription = proposal.provider.path_class === "optional_ai"
+    ? "optional AI path; the deterministic default path is **mechanical**"
+    : "default deterministic offline path";
   return `# Upstream refresh proposal: ${proposal.engine.id}\n\n`
     + `Generated: ${proposal.generated_at}\n\n`
     + `Refresh kind: **${proposal.refresh_kind ?? "revision"}**\n\n`
     + `Outcome: **${proposal.outcome}**\n\n`
     + `Policy: **${proposal.policy.status}** — ${proposal.policy.reason}\n\n`
-    + `Provider: **${proposal.provider.selected}** (${proposal.provider.status}) — ${proposal.provider.rationale}\n\n`
+    + `Provider: **${proposal.provider.selected}** (${proposal.provider.status}) — ${providerDescription}. ${proposal.provider.rationale}\n\n`
     + `## Inputs\n\n`
     + `| Input | Status | Revision or value | Detail |\n| --- | --- | --- | --- |\n`
     + `| Engine plan | available | ${markdownCell(proposal.inputs.plan.source_revision)} | \`${proposal.inputs.plan.path}\` |\n`
@@ -941,7 +956,7 @@ export function renderReport(proposal) {
     + `| Local research checkout | ${checkout.status} | ${markdownCell(checkout.revision)} | ${markdownCell(checkout.reason ?? `${checkout.comparison}; worktree ${checkout.worktree}`)} |\n`
     + `| Upstream lock | ${lock.status} | ${markdownCell(lock.revision)} | ${markdownCell(lock.reason ?? lock.comparison)} |\n\n`
     + `## Offline drift\n\n**${proposal.drift.status}** — ${proposal.drift.summary}\n\n`
-    + `## Proposed changes\n\n${changed}\n\n### Attribution\n\n${attribution}\n\n`
+    + `## Proposed changes\n\n${changed}\n\n### Attribution\n\n${attribution}\n${modelAuthored}\n`
     + `## Verification\n\n| Check | Outcome | Detail |\n| --- | --- | --- |\n${verificationRows}\n\n${verificationDetails ? `${verificationDetails}\n\n` : ""}`
     + `## Risk facts\n\n${risk}\n\n`
     + `## PR eligibility\n\n**${proposal.pr_eligible ? "May become a PR" : "May not become a PR"}**.\n\n${reasons}\n\n`
@@ -965,7 +980,7 @@ function proposalForUnavailable({ engineId, resolved, providerId, refreshKind, b
       engine: { id: engineId, adapter_plan: resolved.planRelative },
       adapter: { plan: resolved.planRelative, changed_files: [], provider: providerId },
       policy: resolved.policy,
-      provider: { selected: providerId, status: "not_run", rationale: reason },
+      provider: { selected: providerId, path_class: providerPathClass(providerId), status: "not_run", rationale: reason },
       inputs: resolved.inputs ?? {
         plan: { status: "unavailable", path: resolved.planRelative },
         local_research_checkout: { status: "not_run", revision: null, comparison: "unavailable", reason },
@@ -1084,6 +1099,7 @@ export async function refreshEngine({
     policy: resolved.policy,
     provider: {
       selected: providerId,
+      path_class: providerPathClass(providerId),
       status: provider.status,
       rationale: provider.rationale,
       model_invoked: providerId === "cli" && provider.status === "completed",

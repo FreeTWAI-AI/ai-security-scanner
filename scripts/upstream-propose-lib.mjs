@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
 const REQUIRED_VERIFICATIONS = Object.freeze([
@@ -7,10 +7,6 @@ const REQUIRED_VERIFICATIONS = Object.freeze([
   "validate:engine-catalog",
   "validate:engine-line-endings",
 ]);
-
-function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
-}
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", `'"'"'`)}'`;
@@ -40,11 +36,24 @@ function safeProposalPath(path, engineId, refreshKind) {
   return safeAdapterPath(path, engineId);
 }
 
-export function evaluateBundleForPr({ bundlePath }) {
+function providerPathClass(providerId) {
+  if (providerId === "mechanical") return "formal_default";
+  if (providerId === "cli") return "optional_ai";
+  return "unknown";
+}
+
+function providerPathLabel(pathClass) {
+  if (pathClass === "formal_default") return "default deterministic path";
+  if (pathClass === "optional_ai") return "optional AI path";
+  return "unclassified path";
+}
+
+export function evaluateBundleForPr({ bundlePath, decision = "undecided" }) {
   const absolute = resolve(bundlePath);
   const proposalPath = lstatSync(absolute).isDirectory() ? resolve(absolute, "proposal.json") : absolute;
   const directory = dirname(proposalPath);
-  const proposal = readJson(proposalPath);
+  const proposalBytes = readFileSync(proposalPath);
+  const proposal = JSON.parse(proposalBytes.toString("utf8"));
   const reasons = [];
   if (proposal?.policy?.status !== "eligible") reasons.push(`Policy status is ${proposal?.policy?.status ?? "missing"}.`);
   if (proposal?.changes?.produced !== true || !Array.isArray(proposal?.changes?.files) || proposal.changes.files.length === 0) {
@@ -79,20 +88,41 @@ export function evaluateBundleForPr({ bundlePath }) {
   const branch = `upstream-refresh/${proposal?.engine?.id ?? "unknown"}/${timestampPath(proposal?.generated_at ?? new Date())}`;
   const relativePatch = relative(process.cwd(), patchPath) || "changes.patch";
   const files = Array.isArray(proposal?.changes?.files) ? proposal.changes.files : [];
-  const commands = eligible ? [
+  const localCommands = eligible ? [
     `git apply --check ${shellQuote(relativePatch)}`,
     `git switch -c ${shellQuote(branch)}`,
     `git apply ${shellQuote(relativePatch)}`,
     `git add -- ${files.map(shellQuote).join(" ")}`,
     `git commit -m ${shellQuote(`Refresh ${proposal.engine.id} upstream adapter`)}`,
+  ] : [];
+  const commands = eligible && decision === "open" ? [
+    ...localCommands,
     `git push -u origin ${shellQuote(branch)}`,
     `gh pr create --fill --head ${shellQuote(branch)}`,
-  ] : [];
-  return { eligible, reasons: uniqueReasons, commands, proposal, proposalPath, patchPath };
+  ] : localCommands;
+  const providerId = proposal?.provider?.selected ?? "unknown";
+  const pathClass = providerPathClass(providerId);
+  return {
+    eligible,
+    reasons: uniqueReasons,
+    commands,
+    decision,
+    provider: { id: providerId, path_class: pathClass, label: providerPathLabel(pathClass) },
+    proposal,
+    proposalPath,
+    proposalDigest: sha256(proposalBytes),
+    patchPath,
+    patchDigest: patchBytes ? sha256(patchBytes) : null,
+    directory,
+  };
 }
 
 export function renderProposeResult(result) {
-  const lines = [`PR eligible: ${result.eligible ? "yes" : "no"}`];
+  const lines = [
+    `Provider: ${result.provider.id} (${result.provider.label})`,
+    `PR decision: ${result.decision}`,
+    `PR eligible: ${result.eligible ? "yes" : "no"}`,
+  ];
   if (result.reasons.length > 0) {
     lines.push("Reasons:", ...result.reasons.map((reason) => `- ${reason}`));
   }
@@ -101,5 +131,37 @@ export function renderProposeResult(result) {
   } else {
     lines.push("Commands: none; this bundle may not become a PR.");
   }
+  if (result.eligible && result.decision === "keep-local") {
+    lines.push("No push or PR-creation command is printed because the client chose to keep the change local.");
+  } else if (result.eligible && result.decision === "undecided") {
+    lines.push(
+      "PR choices:",
+      "- Open a PR back to Main: re-run with --open-pr.",
+      "- Keep the change local: re-run with --no-open-pr.",
+    );
+  }
   return `${lines.join("\n")}\n`;
+}
+
+export function recordPrDecision(result, now = new Date()) {
+  if (result.decision === "undecided") return null;
+  const record = {
+    schema_version: 1,
+    decided_at: new Date(now).toISOString(),
+    decision: result.decision,
+    engine: result.proposal?.engine?.id ?? null,
+    refresh_kind: result.proposal?.refresh_kind ?? "revision",
+    provider: {
+      id: result.provider.id,
+      path_class: result.provider.path_class,
+    },
+    pr_eligible: result.eligible,
+    bundle: {
+      proposal: { path: "proposal.json", sha256: result.proposalDigest },
+      patch: { path: "changes.patch", sha256: result.patchDigest },
+    },
+    commands_printed: result.commands,
+  };
+  writeFileSync(resolve(result.directory, "pr-decision.json"), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  return resolve(result.directory, "pr-decision.json");
 }

@@ -63,7 +63,15 @@ If the product owner separately requests artifact distribution, use the [engine 
 
 An engine failure or unavailable artifact remains an explicit per-engine `not_tested`/failed outcome. It must not be replaced by an unpinned artifact, a broader profile, or a fabricated result.
 
-## 5. Downstream patch exception
+## 5. Assisted refresh proposals
+
+Create an offline bundle with `npm run upstream:refresh -- --engine <id> [--kind revision|provenance]`, then re-validate it with `npm run upstream:propose -- --bundle <path>`. `revision` refreshes the pinned upstream revision and related adapter inputs; `provenance` records baselined build-input hashes and supports only the mechanical provider. A `revision` proposal cannot reach PR eligibility from this offline pipeline: completing one requires a re-pinned source archive with a new checksum, a Dockerfile revision update, and a rebuilt image, so `validate:engine-catalog` fails and the proposal says so. Review it as a reading of the drift, not as a shippable change.
+
+`mechanical` is the formal default deterministic offline path. The optional AI path must be selected explicitly with `--provider cli --ai-cli <executable>`; repeat `--ai-cli-arg <arg>` when the executable needs arguments. Any model-authored files are attributed with before and after digests in `report.md` for human review.
+
+The proposal step records one of three PR decisions: `--open-pr` prints the local, push, and PR-creation commands; `--no-open-pr` prints only local commands; omitting both leaves the decision undecided and prints the flags for choosing later. These tools only print commands for a human to review and run; they never execute them on the client's behalf.
+
+## 6. Downstream patch exception
 
 Before accepting a patch to upstream scanner behavior, record all of the following beside the engine plan:
 
@@ -81,7 +89,7 @@ The current Prowler Azure static-token and GCP exact-project implementation is s
 
 Project launchers that only enforce section 2 boundaries are adapters, not detector forks. Any launcher code that begins deciding whether evidence is vulnerable, changing native severity, or authoring engine-specific remediation has crossed into report or detector logic and must be moved or removed.
 
-## 6. Dates, replacement, and history
+## 7. Dates, replacement, and history
 
 `knowledge_date` describes the newest knowledge in the exact engine/rule/template/feed/database closure. `support_until` is the last date maintainers claim support for that closure and is normally no more than 90 days later. Historical cases retain their original engine identity and dates.
 

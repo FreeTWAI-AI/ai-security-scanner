@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   cpSync,
   mkdirSync,
   mkdtempSync,
@@ -22,6 +23,7 @@ import {
 } from "../../scripts/upstream-refresh-lib.mjs";
 import { validateEngineInputHashes } from "../../scripts/validate-engine-input-hashes.mjs";
 import { main as proposeMain } from "../../scripts/upstream-propose.mjs";
+import { main as refreshMain } from "../../scripts/upstream-refresh.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const fixedNow = new Date("2026-09-17T12:34:56.000Z");
@@ -435,7 +437,7 @@ test("a provenance refresh with baselined gaps becomes PR-eligible and upstream:
       verificationRunner: () => passedVerification(),
     });
     let stdout = "";
-    const proposeStatus = proposeMain(["--bundle", result.bundlePath], { write(value) { stdout += value; } });
+    const proposeStatus = proposeMain(["--bundle", result.bundlePath, "--open-pr"], { write(value) { stdout += value; } });
     assert.deepEqual({
       kind: result.proposal.refresh_kind,
       outcome: result.proposal.outcome,
@@ -444,7 +446,7 @@ test("a provenance refresh with baselined gaps becomes PR-eligible and upstream:
       files: result.proposal.changes.files,
       checks: result.proposal.verification.map(({ status }) => status),
       proposeStatus,
-      proposeEligible: stdout.startsWith("PR eligible: yes\n"),
+      proposeEligible: stdout.includes("PR eligible: yes\n"),
       printsPush: stdout.includes("git push -u origin"),
       printsPr: stdout.includes("gh pr create --fill --head"),
     }, {
@@ -713,16 +715,80 @@ test("the cli provider uses an injected double and attributes model edits", asyn
       provider: result.proposal.provider,
       files: result.proposal.changes.files,
       attributionProviders: [...new Set(result.proposal.changes.attributions.map(({ provider }) => provider))],
+      reportNamesPath: result.report.includes("optional AI path; the deterministic default path is **mechanical**"),
+      reportNamesModelEdits: result.report.includes("### Model-authored edits")
+        && result.report.includes("A model wrote these bytes, and a human must read them before they become a PR."),
+      reportRecordsDigests: result.report.includes(`before: ${sha256("FROM scratch\n")}; after: ${sha256("FROM scratch\n# model review\n")}`),
     }, {
       calls: 1,
       provider: {
         selected: "cli",
+        path_class: "optional_ai",
         status: "completed",
         rationale: "Reviewed without spawning any executable; request sample.",
         model_invoked: true,
       },
       files: ["engines/images/sample/Dockerfile", "engines/images/sample/plan.json"],
       attributionProviders: ["mechanical", "cli"],
+      reportNamesPath: true,
+      reportNamesModelEdits: true,
+      reportRecordsDigests: true,
+    });
+  } finally {
+    setup.cleanup();
+  }
+});
+
+test("the cli provider reports when it produced no model-authored edit", async () => {
+  const setup = createFixture();
+  try {
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "sample",
+      providerId: "cli",
+      policy: policy([["sample", "eligible"]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+      verificationRunner: () => passedVerification(),
+      cliRunner: () => ({ rationale: "No judgment-dependent edit was needed.", edits: [] }),
+    });
+    assert.equal(result.report.includes("The optional AI provider produced no model-authored edit of its own."), true);
+  } finally {
+    setup.cleanup();
+  }
+});
+
+test("a cli edit to a hash-recorded build input fails input-hash verification and cannot become a PR", async () => {
+  const setup = createFixture();
+  try {
+    commit(setup.root, "fixture root");
+    const result = await refreshEngine({
+      root: setup.root,
+      engineId: "sample",
+      providerId: "cli",
+      policy: policy([["sample", "eligible"]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+      cliRunner: () => ({
+        rationale: "Changed a recorded build input.",
+        edits: [{
+          path: "engines/images/sample/Dockerfile",
+          content: "FROM scratch\n# model-authored input\n",
+          reason: "Changed bytes whose digest is recorded in plan.json.",
+        }],
+      }),
+    });
+    const hashCheck = result.proposal.verification.find(({ name }) => name === "validate:engine-input-hashes");
+    assert.deepEqual({
+      checkName: hashCheck.name,
+      checkStatus: hashCheck.status,
+      eligible: result.proposal.pr_eligible,
+      reason: result.proposal.pr_ineligibility_reasons.includes("Verification check validate:engine-input-hashes failed."),
+    }, {
+      checkName: "validate:engine-input-hashes",
+      checkStatus: "failed",
+      eligible: false,
+      reason: true,
     });
   } finally {
     setup.cleanup();
@@ -767,43 +833,210 @@ test("changes.patch applies cleanly with git apply --check", async () => {
   }
 });
 
-test("upstream:propose prints commands without network or git-write operations", () => {
+test("both upstream refresh CLIs print help and do no work", async () => {
+  let refreshOutput = "";
+  let proposeOutput = "";
+  const refreshStatus = await refreshMain(["--help"], { log(value) { refreshOutput += `${value}\n`; } });
+  const proposeStatus = proposeMain(["-h"], { write(value) { proposeOutput += value; } });
+  assert.deepEqual({
+    refreshStatus,
+    proposeStatus,
+    refreshOptions: [
+      "--engine <id>",
+      "--kind {revision,provenance}",
+      "--provider {mechanical,cli}",
+      "--ai-cli <executable>",
+      "--ai-cli-arg <arg>",
+    ].every((option) => refreshOutput.includes(option)),
+    refreshExplainsPaths: refreshOutput.includes("default deterministic offline path")
+      && refreshOutput.includes("optional AI path"),
+    proposeOptions: proposeOutput.includes("--open-pr") && proposeOutput.includes("--no-open-pr"),
+  }, {
+    refreshStatus: 0,
+    proposeStatus: 0,
+    refreshOptions: true,
+    refreshExplainsPaths: true,
+    proposeOptions: true,
+  });
+});
+
+test("upstream:propose records explicit decisions and remains structurally unable to execute commands or use a network", () => {
   const root = mkdtempSync(join(tmpdir(), "upstream-propose-test-"));
   try {
-    const bundle = join(root, "bundle");
+    const makeBundle = (name, provider = { selected: "mechanical", path_class: "formal_default" }, parent = root) => {
+      const bundle = join(parent, name);
+      mkdirSync(bundle);
+      const proposal = {
+        generated_at: fixedNow.toISOString(),
+        refresh_kind: "revision",
+        engine: { id: "sample" },
+        provider,
+        policy: { status: "eligible" },
+        changes: { produced: true, files: ["engines/images/sample/plan.json"] },
+        verification: passedVerification(),
+        artifacts: [{ path: "changes.patch", sha256: sha256("diff --git a/file b/file\n") }],
+        pr_eligible: true,
+      };
+      writeFileSync(join(bundle, "proposal.json"), `${JSON.stringify(proposal)}\n`);
+      writeFileSync(join(bundle, "changes.patch"), "diff --git a/file b/file\n");
+      writeFileSync(join(bundle, "report.md"), "# Review\n");
+      return bundle;
+    };
+    const undecidedBundle = makeBundle("undecided");
+    const openBundle = makeBundle("open");
+    const localBundle = makeBundle("keep-local", { selected: "cli", path_class: "optional_ai" });
+    let undecidedOutput = "";
+    let openOutput = "";
+    let localOutput = "";
+    const undecidedStatus = proposeMain(["--bundle", undecidedBundle], { write(value) { undecidedOutput += value; } });
+    const openStatus = proposeMain(["--open-pr", "--bundle", openBundle], { write(value) { openOutput += value; } });
+    const localStatus = proposeMain(["--bundle", localBundle, "--no-open-pr"], { write(value) { localOutput += value; } });
+    const openDecision = JSON.parse(readFileSync(join(openBundle, "pr-decision.json"), "utf8"));
+    const localDecision = JSON.parse(readFileSync(join(localBundle, "pr-decision.json"), "utf8"));
+    const entrySource = readFileSync(join(repositoryRoot, "scripts", "upstream-propose.mjs"), "utf8");
+    const librarySource = readFileSync(join(repositoryRoot, "scripts", "upstream-propose-lib.mjs"), "utf8");
+    const libraryImports = [...librarySource.matchAll(/^import .* from "([^"]+)";/gm)].map((match) => match[1]);
+    const commandLines = (output) => output.split("\n").filter((line) => /^(?:git|gh) /.test(line));
+    const fsMutatingCalls = (source) => [...source.matchAll(/\b(?:writeFile(?:Sync)?|appendFile(?:Sync)?|rmSync|unlinkSync|renameSync|mkdirSync|cpSync|chmodSync|openSync)\s*\(/g)].map((match) => match[0]);
+    const forbiddenFs = /appendFile|rmSync|unlinkSync|renameSync|mkdirSync|cpSync|chmodSync|openSync/;
+    const lastCommandBlockLine = (output) => output.split("\n").reduce((index, line, current) => (
+      line.startsWith("Exact commands (not executed):") || /^(?:git|gh) /.test(line) || line.startsWith("Commands: none")
+        ? current
+        : index
+    ), -1);
+    const recordLineIndex = (output) => output.split("\n").findIndex((line) => line.startsWith("PR decision record:"));
+    const openRecordPath = resolve(openBundle, "pr-decision.json");
+    const localRecordPath = resolve(localBundle, "pr-decision.json");
+    assert.deepEqual({
+      statuses: [undecidedStatus, openStatus, localStatus],
+      providerFirst: undecidedOutput.startsWith("Provider: mechanical (default deterministic path)\n")
+        && localOutput.startsWith("Provider: cli (optional AI path)\n"),
+      decisionsNamed: undecidedOutput.includes("PR decision: undecided")
+        && openOutput.includes("PR decision: open")
+        && localOutput.includes("PR decision: keep-local"),
+      commandCounts: [commandLines(undecidedOutput).length, commandLines(openOutput).length, commandLines(localOutput).length],
+      undecidedHasNoRemoteCommands: !undecidedOutput.includes("git push") && !undecidedOutput.includes("gh pr create"),
+      undecidedNamesChoices: undecidedOutput.includes("re-run with --open-pr") && undecidedOutput.includes("re-run with --no-open-pr"),
+      localHasNoRemoteCommands: !localOutput.includes("git push") && !localOutput.includes("gh pr create"),
+      localExplainsChoice: localOutput.includes("because the client chose to keep the change local"),
+      openPrintsRemoteCommands: openOutput.includes("git push -u origin") && openOutput.includes("gh pr create --fill --head"),
+      undecidedFiles: readdirSync(undecidedBundle).sort(),
+      openRecord: {
+        decision: openDecision.decision,
+        engine: openDecision.engine,
+        kind: openDecision.refresh_kind,
+        provider: openDecision.provider,
+        eligible: openDecision.pr_eligible,
+        proposalDigest: openDecision.bundle.proposal.sha256,
+        patchDigest: openDecision.bundle.patch.sha256,
+        commands: openDecision.commands_printed,
+      },
+      localRecordCommands: localDecision.commands_printed,
+      undecidedRecordLines: undecidedOutput.split("\n").filter((line) => line.startsWith("PR decision record:")),
+      openRecordLine: openOutput.split("\n").filter((line) => line.startsWith("PR decision record:")),
+      localRecordLine: localOutput.split("\n").filter((line) => line.startsWith("PR decision record:")),
+      openRecordAfterCommands: recordLineIndex(openOutput) > lastCommandBlockLine(openOutput),
+      localRecordAfterCommands: recordLineIndex(localOutput) > lastCommandBlockLine(localOutput),
+      libraryImports,
+      libraryMutatingCalls: fsMutatingCalls(librarySource),
+      libraryWriteDestination: librarySource.match(/\bwriteFileSync\s*\(\s*(resolve\(result\.directory,\s*"pr-decision\.json"\))/)?.[1] ?? null,
+      libraryForbiddenFs: forbiddenFs.test(librarySource),
+      entryMutatingCalls: fsMutatingCalls(entrySource),
+      entryForbiddenFs: forbiddenFs.test(entrySource),
+      importsProcessOrNetwork: /node:(?:child_process|http|https|net)|\bfetch\s*\(|\bimport\s*\(/.test(`${entrySource}\n${librarySource}`),
+    }, {
+      statuses: [0, 0, 0],
+      providerFirst: true,
+      decisionsNamed: true,
+      commandCounts: [5, 7, 5],
+      undecidedHasNoRemoteCommands: true,
+      undecidedNamesChoices: true,
+      localHasNoRemoteCommands: true,
+      localExplainsChoice: true,
+      openPrintsRemoteCommands: true,
+      undecidedFiles: ["changes.patch", "proposal.json", "report.md"],
+      openRecord: {
+        decision: "open",
+        engine: "sample",
+        kind: "revision",
+        provider: { id: "mechanical", path_class: "formal_default" },
+        eligible: true,
+        proposalDigest: sha256(readFileSync(join(openBundle, "proposal.json"))),
+        patchDigest: sha256("diff --git a/file b/file\n"),
+        commands: commandLines(openOutput),
+      },
+      localRecordCommands: commandLines(localOutput),
+      undecidedRecordLines: [],
+      openRecordLine: [`PR decision record: ${openRecordPath}`],
+      localRecordLine: [`PR decision record: ${localRecordPath}`],
+      openRecordAfterCommands: true,
+      localRecordAfterCommands: true,
+      libraryImports: ["node:crypto", "node:fs", "node:path"],
+      libraryMutatingCalls: ["writeFileSync("],
+      libraryWriteDestination: "resolve(result.directory, \"pr-decision.json\")",
+      libraryForbiddenFs: false,
+      entryMutatingCalls: [],
+      entryForbiddenFs: false,
+      importsProcessOrNetwork: false,
+    });
+    const parent = join(root, "write-parent");
+    mkdirSync(parent);
+    const scopedBundle = makeBundle("bundle", undefined, parent);
+    const parentEntries = readdirSync(parent).sort();
+    const bundleEntries = readdirSync(scopedBundle).sort();
+    proposeMain(["--bundle", join(scopedBundle, "proposal.json"), "--open-pr"], { write() {} });
+    assert.deepEqual({
+      parentEntriesAfter: readdirSync(parent).sort(),
+      bundleAdded: readdirSync(scopedBundle).filter((name) => !bundleEntries.includes(name)).sort(),
+      bundleRemoved: bundleEntries.filter((name) => !readdirSync(scopedBundle).includes(name)),
+    }, {
+      parentEntriesAfter: parentEntries,
+      bundleAdded: ["pr-decision.json"],
+      bundleRemoved: [],
+    });
+    assert.throws(
+      () => proposeMain(["--no-open-pr", "--bundle", undecidedBundle, "--open-pr"], { write() {} }),
+      { message: "Choose either --open-pr or --no-open-pr, not both." },
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("upstream:propose reports an unwritable decision record without changing the eligibility exit code", () => {
+  const root = mkdtempSync(join(tmpdir(), "upstream-propose-read-only-"));
+  const bundle = join(root, "bundle");
+  try {
     mkdirSync(bundle);
+    const patch = "diff --git a/file b/file\n";
     const proposal = {
       generated_at: fixedNow.toISOString(),
+      refresh_kind: "revision",
       engine: { id: "sample" },
+      provider: { selected: "mechanical", path_class: "formal_default" },
       policy: { status: "eligible" },
       changes: { produced: true, files: ["engines/images/sample/plan.json"] },
       verification: passedVerification(),
-      artifacts: [{ path: "changes.patch", sha256: sha256("diff --git a/file b/file\n") }],
+      artifacts: [{ path: "changes.patch", sha256: sha256(patch) }],
       pr_eligible: true,
     };
     writeFileSync(join(bundle, "proposal.json"), `${JSON.stringify(proposal)}\n`);
-    writeFileSync(join(bundle, "changes.patch"), "diff --git a/file b/file\n");
+    writeFileSync(join(bundle, "changes.patch"), patch);
     writeFileSync(join(bundle, "report.md"), "# Review\n");
+    chmodSync(bundle, 0o555);
     let stdout = "";
-    const status = proposeMain(["--bundle", bundle], { write(value) { stdout += value; } });
-    const entrySource = readFileSync(join(repositoryRoot, "scripts", "upstream-propose.mjs"), "utf8");
-    const librarySource = readFileSync(join(repositoryRoot, "scripts", "upstream-propose-lib.mjs"), "utf8");
+    const status = proposeMain(["--bundle", bundle, "--no-open-pr"], { write(value) { stdout += value; } });
     assert.deepEqual({
       status,
-      eligible: stdout.startsWith("PR eligible: yes\n"),
-      printsPush: stdout.includes("git push -u origin"),
-      printsPr: stdout.includes("gh pr create --fill --head"),
-      importsProcessOrNetwork: /node:(?:child_process|http|https|net)|\b(?:writeFile|rmSync|unlinkSync|renameSync)\b/.test(`${entrySource}\n${librarySource}`),
-      bundleFiles: readdirSync(bundle).sort(),
+      reportsFailure: stdout.includes("PR decision record: not written"),
+      decisionFileExists: readdirSync(bundle).includes("pr-decision.json"),
     }, {
       status: 0,
-      eligible: true,
-      printsPush: true,
-      printsPr: true,
-      importsProcessOrNetwork: false,
-      bundleFiles: ["changes.patch", "proposal.json", "report.md"],
+      reportsFailure: true,
+      decisionFileExists: false,
     });
   } finally {
+    chmodSync(bundle, 0o755);
     rmSync(root, { recursive: true, force: true });
   }
 });

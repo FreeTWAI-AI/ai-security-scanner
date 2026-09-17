@@ -5,18 +5,33 @@ import { pathToFileURL } from "node:url";
 
 import { refreshEngines } from "./upstream-refresh-lib.mjs";
 
+export const REFRESH_USAGE = `Usage: npm run upstream:refresh -- --engine <id> [options]
+
+Options:
+  --engine <id>                    Engine to refresh; repeat for more than one engine.
+  --kind {revision,provenance}     Refresh revision metadata or build-input provenance.
+  --provider {mechanical,cli}      Provider path. mechanical is the default deterministic offline path.
+  --ai-cli <executable>            With --provider cli, invoke this named AI executable.
+  --ai-cli-arg <arg>               Pass an argument to the AI executable; repeat as needed.
+  -h, --help                       Show this help and exit.
+
+The cli provider is an optional AI path. It runs only when explicitly selected with
+--provider cli and invokes the executable named by --ai-cli.
+`;
+
 export function parseRefreshArguments(argv) {
-  const options = { engineIds: [], providerId: "mechanical", refreshKind: "revision", cliArgs: [] };
+  const options = { engineIds: [], providerId: "mechanical", refreshKind: "revision", cliArgs: [], help: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--engine") options.engineIds.push(argv[++index]);
+    if (argument === "--help" || argument === "-h") options.help = true;
+    else if (argument === "--engine") options.engineIds.push(argv[++index]);
     else if (argument === "--kind") options.refreshKind = argv[++index];
     else if (argument === "--provider") options.providerId = argv[++index];
     else if (argument === "--ai-cli") options.cliCommand = argv[++index];
     else if (argument === "--ai-cli-arg") options.cliArgs.push(argv[++index]);
     else throw new Error(`Unknown argument: ${argument}`);
   }
-  if (options.engineIds.length === 0 || options.engineIds.some((id) => !id)) {
+  if (!options.help && (options.engineIds.length === 0 || options.engineIds.some((id) => !id))) {
     throw new Error("At least one --engine <id> is required.");
   }
   return options;
@@ -24,6 +39,10 @@ export function parseRefreshArguments(argv) {
 
 export async function main(argv = process.argv.slice(2), io = console) {
   const options = parseRefreshArguments(argv);
+  if (options.help) {
+    io.log(REFRESH_USAGE.trimEnd());
+    return 0;
+  }
   const root = resolve(import.meta.dirname, "..");
   const run = await refreshEngines({ root, ...options });
   for (const result of run.results) {
