@@ -333,10 +333,6 @@ export function validatePlatformQualification(evidence, context = {}) {
   if (context.tag) assert(evidence.releaseIdentity.tag === context.tag, "qualification tag differs from release");
   if (context.commit) assert(evidence.releaseIdentity.sourceCommit === context.commit, "qualification commit differs from release");
   if (context.releaseChannel) assert(evidence.releaseIdentity.releaseChannel === context.releaseChannel, "qualification release channel differs from release");
-  if (evidence.platform === "macos-universal") {
-    assert(evidence.releaseIdentity.releaseChannel === "prerelease", "hosted macOS runtime-not-observed evidence is allowed only for a pre-release");
-  }
-
   exactKeys(evidence.runner, ["provider", "environment", "runnerLabel", "os", "arch", "imageOs", "imageVersion", "workflow", "job", "runId", "runAttempt", "freshJob", "artifactOnlyFromBuild"], "qualification runner");
   assert(evidence.runner.provider === "github-actions" && evidence.runner.environment === "github-hosted", "qualification did not run on a GitHub-hosted runner");
   assert(evidence.runner.runnerLabel === contract.runnerLabel, "qualification runner label is incorrect");

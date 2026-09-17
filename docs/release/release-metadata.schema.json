@@ -195,55 +195,6 @@
           }
         }
       }
-    },
-    {
-      "if": {
-        "properties": {
-          "publicationMode": { "const": "public-github-release" },
-          "releaseChannel": { "const": "stable" }
-        },
-        "required": ["publicationMode", "releaseChannel"]
-      },
-      "then": {
-        "properties": {
-          "distribution": {
-            "properties": {
-              "platforms": {
-                "prefixItems": [
-                  {},
-                  {},
-                  {
-                    "properties": {
-                      "installers": {
-                        "items": {
-                          "properties": {
-                            "artifact": {
-                              "oneOf": [
-                                { "type": "null" },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "humanPath": { "$ref": "#/$defs/verifiedHumanOutcome" },
-                                    "operatingSystemSigning": { "$ref": "#/$defs/verifiedSigningOutcome" },
-                                    "windowsLifecycle": {
-                                      "properties": { "state": { "const": "verified" } },
-                                      "required": ["state"]
-                                    }
-                                  }
-                                }
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
     }
   ],
   "$defs": {

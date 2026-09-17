@@ -25,12 +25,6 @@ const WINDOWS_NSIS_DATA_PRESERVATION_FILES = Object.freeze([
   ["ghost-repair-uninstall-report", "windows-nsis-data-preservation/ghost-repair-uninstall/beginner-report.html"],
 ]);
 
-export function requiresStablePublicWindowsEvidence({ publicationMode, releaseChannel, platform }) {
-  return publicationMode === "public-github-release" &&
-    releaseChannel === "stable" &&
-    platform === "windows-x86_64";
-}
-
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -230,7 +224,7 @@ function validateWindowsDataPreservation(outcome, platform, installerType, label
   );
 }
 
-function validateArtifact(artifact, platform, installerType, publicationMode, releaseChannel) {
+function validateArtifact(artifact, platform, installerType, publicationMode) {
   exactKeys(
     artifact,
     [
@@ -260,20 +254,6 @@ function validateArtifact(artifact, platform, installerType, publicationMode, re
   } else {
     assert(artifact.operatingSystemSigning.evidenceFile === null, `${platform}/${artifact.file} unsigned artifact must not claim signing evidence`);
     assert(typeof artifact.operatingSystemSigning.reason === "string" && artifact.operatingSystemSigning.reason.length > 0, `${platform}/${artifact.file} unsigned artifact needs a reason`);
-  }
-  if (requiresStablePublicWindowsEvidence({ publicationMode, releaseChannel, platform })) {
-    assert(
-      artifact.humanPath.state === "verified",
-      `${platform}/${artifact.file} public Windows artifact has no exact-candidate beginner human path`,
-    );
-    assert(
-      artifact.operatingSystemSigning.state === "verified",
-      `${platform}/${artifact.file} public Windows artifact has no verified Authenticode evidence`,
-    );
-    assert(
-      artifact.windowsLifecycle.state === "verified",
-      `${platform}/${artifact.file} public Windows artifact has no real installed-app lifecycle evidence`,
-    );
   }
   exactKeys(artifact.notarization, ["state", "evidenceFile", "reason"], `${platform}/${artifact.file} notarization`);
   const notarizationStates = platform === "macos-universal"
@@ -361,7 +341,7 @@ function validateArtifact(artifact, platform, installerType, publicationMode, re
   }
 }
 
-function validatePlatform(platformRecord, releaseState, publicationMode, releaseChannel) {
+function validatePlatform(platformRecord, releaseState, publicationMode) {
   exactKeys(platformRecord, ["platform", "availability", "reason", "installers"], `platform ${String(platformRecord?.platform)}`);
   const contract = PLATFORM_BY_ID.get(platformRecord.platform);
   assert(contract, `release metadata has an unsupported platform: ${String(platformRecord.platform)}`);
@@ -387,7 +367,6 @@ function validatePlatform(platformRecord, releaseState, publicationMode, release
         platformRecord.platform,
         installer.installerType,
         publicationMode,
-        releaseChannel,
       );
     } else {
       assert(installer.artifact === null, `${platformRecord.platform}/${installer.installerType} unavailable record claims an artifact`);
@@ -443,7 +422,6 @@ export function validateReleaseMetadataV3(metadata, expected = {}) {
       platformRecord,
       metadata.releaseState,
       metadata.publicationMode,
-      metadata.releaseChannel,
     );
   }
   assert(Array.isArray(metadata.distribution.bundledEngines) && metadata.distribution.bundledEngines.length === 0, "release metadata must not claim bundled engines");

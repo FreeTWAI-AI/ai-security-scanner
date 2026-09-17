@@ -873,6 +873,27 @@ async function main() {
     await createQualificationFixture(outputs[1], "macos-universal", "dmg");
     await createQualificationFixture(outputs[2], "windows-x86_64", "msi");
     await createQualificationFixture(outputs[2], "windows-x86_64", "nsis");
+    const stableMacQualification = path.join(
+      outputs[1],
+      "platform-qualification-macos-universal-dmg-stable.json",
+    );
+    const stableMacEvidence = await readJson(
+      path.join(outputs[1], "platform-qualification-macos-universal-dmg.json"),
+    );
+    stableMacEvidence.releaseIdentity.releaseChannel = "stable";
+    await writeFile(stableMacQualification, `${JSON.stringify(stableMacEvidence, null, 2)}\n`);
+    run("platform-qualification.mjs", [
+      "validate",
+      "--file", stableMacQualification,
+      "--artifact-dir", outputs[1],
+      "--platform", "macos-universal",
+      "--installer-type", "dmg",
+      "--version", VERSION,
+      "--tag", TAG,
+      "--commit", COMMIT,
+      "--release-channel", "stable",
+    ]);
+    await rm(stableMacQualification);
     for (const [platformOutput, platform, installerType, wrongInitialPhase] of [
       [outputs[0], "linux-x86_64", "deb", "installed"],
       [outputs[2], "windows-x86_64", "msi", "installed"],
@@ -1374,6 +1395,110 @@ async function main() {
       throw new Error("technically qualified Windows prerelease installers were not offered");
     }
 
+    const stablePublicInput = path.join(temporary, "windows-public-stable-input");
+    await mkdir(stablePublicInput);
+    await mergeFlat(publicWithoutPromotionInput, stablePublicInput);
+    const stablePublicPreparedMetadata = structuredClone(publicWithoutPromotionMetadata);
+    stablePublicPreparedMetadata.releaseChannel = "stable";
+    stablePublicPreparedMetadata.stableTarget = VERSION;
+    await writeFile(
+      path.join(stablePublicInput, "release-metadata.json"),
+      `${JSON.stringify(stablePublicPreparedMetadata, null, 2)}\n`,
+    );
+    for (const [platform, installerType] of [
+      ["linux-x86_64", "deb"],
+      ["macos-universal", "dmg"],
+      ["windows-x86_64", "msi"],
+      ["windows-x86_64", "nsis"],
+    ]) {
+      const qualificationFile = path.join(
+        stablePublicInput,
+        `platform-qualification-${platform}-${installerType}.json`,
+      );
+      const stableQualification = await readJson(qualificationFile);
+      stableQualification.releaseIdentity.releaseChannel = "stable";
+      await writeFile(qualificationFile, `${JSON.stringify(stableQualification, null, 2)}\n`);
+    }
+    const stableReleasePolicyFixture = path.join(temporary, "stable-package.json");
+    await writeFile(
+      stableReleasePolicyFixture,
+      `${JSON.stringify({ version: VERSION, release: { channel: "stable", target: VERSION } })}\n`,
+    );
+    const prereleasePolicyFixture = releasePolicyFixture;
+    const stablePublicOutput = path.join(temporary, "windows-public-stable-output");
+    releasePolicyFixture = stableReleasePolicyFixture;
+    try {
+      run("finalize-release.mjs", [
+        "--input", stablePublicInput,
+        "--out", stablePublicOutput,
+        "--version", VERSION,
+        "--tag", TAG,
+        "--commit", COMMIT,
+        "--publication-mode", "public-github-release",
+        "--tauri-config", tauriConfig,
+      ]);
+      run("verify-finalized-release.mjs", [
+        "--dir", stablePublicOutput,
+        "--version", VERSION,
+        "--tag", TAG,
+        "--commit", COMMIT,
+        "--publication-mode", "public-github-release",
+        "--tauri-config", tauriConfig,
+      ]);
+    } finally {
+      releasePolicyFixture = prereleasePolicyFixture;
+    }
+    const stablePublicMetadata = await readJson(
+      path.join(stablePublicOutput, "release-metadata.json"),
+    );
+    const stablePublicWindows = stablePublicMetadata.distribution.platforms.find(
+      ({ platform }) => platform === "windows-x86_64",
+    );
+    const stablePublicMac = stablePublicMetadata.distribution.platforms.find(
+      ({ platform }) => platform === "macos-universal",
+    );
+    if (
+      stablePublicMetadata.releaseChannel !== "stable" ||
+      stablePublicWindows.availability !== "offered" ||
+      stablePublicWindows.installers.some(({ availability, artifact }) =>
+        availability !== "offered" ||
+        artifact.humanPath.state !== "not-observed" ||
+        artifact.operatingSystemSigning.state !== "not-configured" ||
+        artifact.operatingSystemSigning.evidenceFile !== null ||
+        artifact.notarization.state !== "not-applicable" ||
+        artifact.windowsLifecycle.state !== "not-observed" ||
+        !artifact.knownLimitations.includes("beginner-human-path-not-observed") ||
+        !artifact.knownLimitations.includes("operating-system-signing-not-configured") ||
+        !artifact.knownLimitations.includes("windows-lifecycle-not-observed")
+      )
+    ) {
+      throw new Error("stable public Windows installers were blocked or overstated their evidence");
+    }
+    const stablePublicDmg = stablePublicMac.installers[0];
+    if (
+      stablePublicMac.availability !== "offered" ||
+      stablePublicDmg.availability !== "offered" ||
+      stablePublicDmg.artifact.technicalQualification.state !== "installer-passed-runtime-not-observed" ||
+      stablePublicDmg.artifact.notarization.state !== "not-configured" ||
+      !stablePublicDmg.artifact.knownLimitations.includes("managed-runtime-not-observed-on-qualification-host") ||
+      !stablePublicDmg.artifact.knownLimitations.includes("apple-notarization-not-configured")
+    ) {
+      throw new Error("stable public macOS qualification lost or overstated its hosted-runner limitations");
+    }
+    const stablePublicNotes = await readFile(
+      path.join(stablePublicOutput, "RELEASE_NOTES.md"),
+      "utf8",
+    );
+    if (
+      !stablePublicNotes.includes("Windows installers in this stable release are not code-signed") ||
+      !stablePublicNotes.includes("Unknown publisher") ||
+      !stablePublicNotes.includes("SmartScreen may warn on first run") ||
+      !stablePublicNotes.includes("Authenticode not verified") ||
+      stablePublicNotes.includes("unsigned Windows installers for public testing")
+    ) {
+      throw new Error("stable public Windows release notes did not disclose unsigned installers accurately");
+    }
+
     const protectedCandidateInput = path.join(temporary, "windows-protected-candidate-input");
     await copyTree(scopedPublicInput, protectedCandidateInput);
     const candidateProducer = {
@@ -1518,7 +1643,7 @@ async function main() {
       "resealed protected external-evidence metadata rewrite",
     );
     process.stdout.write(
-      "Release tooling self-test passed artifact-scoped v3, optional-updater, sibling-failure, protected external-evidence, and disclosed public-Windows-prerelease fixtures.\n",
+      "Release tooling self-test passed artifact-scoped v3, optional-updater, sibling-failure, protected external-evidence, stable hosted-macOS limitations, and disclosed public-Windows prerelease/stable fixtures.\n",
     );
     return;
   } finally {

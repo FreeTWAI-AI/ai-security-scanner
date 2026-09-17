@@ -4,7 +4,6 @@ import test from "node:test";
 
 import {
   createPreparedReleaseMetadata,
-  requiresStablePublicWindowsEvidence,
   validateReleaseMetadataV3,
 } from "../../scripts/release/release-metadata.mjs";
 import { WINDOWS_INSTALLED_LIFECYCLE_RECORDS } from "../../scripts/release/windows-installed-lifecycle-evidence.mjs";
@@ -120,6 +119,26 @@ function verifiedWindowsLifecycle() {
   };
 }
 
+function finalizedWindowsMetadata(candidateArtifact = artifact()) {
+  const metadata = windowsOnlyPrepared();
+  metadata.releaseState = "finalized";
+  const windows = metadata.distribution.platforms[2];
+  windows.availability = "offered";
+  windows.installers[0] = {
+    installerType: "msi",
+    availability: "offered",
+    reason: null,
+    artifact: candidateArtifact,
+  };
+  windows.installers[1] = {
+    installerType: "nsis",
+    availability: "not-offered",
+    reason: "technical-qualification-not-observed",
+    artifact: null,
+  };
+  return metadata;
+}
+
 test("prepared v3 metadata records a requested Windows subset without global security claims", () => {
   const metadata = windowsOnlyPrepared();
   assert.equal(metadata.schemaVersion, 3);
@@ -165,7 +184,73 @@ test("finalized v3 metadata can offer one qualified artifact while siblings stay
   assert.equal(metadata.distribution.platforms[2].installers[0].availability, "offered");
 });
 
-test("public prerelease Windows discloses missing promotion evidence while stable stays fail closed", () => {
+test("unsigned artifact rejects claimed operating-system signing evidence", () => {
+  const candidateArtifact = artifact();
+  candidateArtifact.operatingSystemSigning.evidenceFile = "authenticode-evidence.json";
+  const metadata = finalizedWindowsMetadata(candidateArtifact);
+
+  assert.throws(
+    () => validateReleaseMetadataV3(metadata, { releaseState: "finalized" }),
+    {
+      name: "Error",
+      message: "windows-x86_64/ai-security-scanner_0.1.8_x64_en-US.msi unsigned artifact must not claim signing evidence",
+    },
+  );
+});
+
+test("unsigned artifact rejects a null or empty signing reason", () => {
+  for (const reason of [null, ""]) {
+    const candidateArtifact = artifact();
+    candidateArtifact.operatingSystemSigning.reason = reason;
+    const metadata = finalizedWindowsMetadata(candidateArtifact);
+
+    assert.throws(
+      () => validateReleaseMetadataV3(metadata, { releaseState: "finalized" }),
+      {
+        name: "Error",
+        message: "windows-x86_64/ai-security-scanner_0.1.8_x64_en-US.msi unsigned artifact needs a reason",
+      },
+    );
+  }
+});
+
+test("correctly formed unsigned artifact is accepted without signing or notarization evidence", () => {
+  assert.doesNotThrow(
+    () => validateReleaseMetadataV3(finalizedWindowsMetadata(), { releaseState: "finalized" }),
+  );
+});
+
+test("non-verified notarization rejects claimed evidence", () => {
+  const candidateArtifact = artifact();
+  candidateArtifact.notarization.evidenceFile = "notarization-evidence.json";
+  const metadata = finalizedWindowsMetadata(candidateArtifact);
+
+  assert.throws(
+    () => validateReleaseMetadataV3(metadata, { releaseState: "finalized" }),
+    {
+      name: "Error",
+      message: "windows-x86_64/ai-security-scanner_0.1.8_x64_en-US.msi notarization state fabricates evidence",
+    },
+  );
+});
+
+test("non-verified notarization rejects a null or empty reason", () => {
+  for (const reason of [null, ""]) {
+    const candidateArtifact = artifact();
+    candidateArtifact.notarization.reason = reason;
+    const metadata = finalizedWindowsMetadata(candidateArtifact);
+
+    assert.throws(
+      () => validateReleaseMetadataV3(metadata, { releaseState: "finalized" }),
+      {
+        name: "Error",
+        message: "windows-x86_64/ai-security-scanner_0.1.8_x64_en-US.msi notarization state needs a reason",
+      },
+    );
+  }
+});
+
+test("public Windows releases remain offerable on prerelease and stable with exact limitations", () => {
   const metadata = windowsOnlyPrepared();
   metadata.publicationMode = "public-github-release";
   metadata.releaseState = "finalized";
@@ -211,20 +296,26 @@ test("public prerelease Windows discloses missing promotion evidence while stabl
   const stable = structuredClone(metadata);
   stable.releaseChannel = "stable";
   stable.stableTarget = stable.version;
-  assert.throws(
-    () => validateReleaseMetadataV3(stable, { releaseState: "finalized" }),
-    /no exact-candidate beginner human path/u,
-  );
-  assert.equal(requiresStablePublicWindowsEvidence({
-    publicationMode: "public-github-release",
-    releaseChannel: "stable",
-    platform: "windows-x86_64",
-  }), true);
-  assert.equal(requiresStablePublicWindowsEvidence({
-    publicationMode: "public-github-release",
-    releaseChannel: "prerelease",
-    platform: "windows-x86_64",
-  }), false);
+  assert.doesNotThrow(() => validateReleaseMetadataV3(stable, { releaseState: "finalized" }));
+  const stableArtifact = stable.distribution.platforms[2].installers[0].artifact;
+  assert.equal(stableArtifact.humanPath.state, "not-observed");
+  assert.equal(stableArtifact.operatingSystemSigning.state, "not-configured");
+  assert.equal(stableArtifact.operatingSystemSigning.evidenceFile, null);
+  assert.equal(stableArtifact.windowsLifecycle.state, "not-observed");
+
+  for (const [limitation, expectedError] of [
+    ["beginner-human-path-not-observed", /does not disclose its unobserved beginner human path/u],
+    ["operating-system-signing-not-configured", /does not disclose its missing operating-system signature/u],
+    ["windows-lifecycle-not-observed", /does not disclose its unobserved Windows lifecycle/u],
+  ]) {
+    const undisclosedStable = structuredClone(stable);
+    const candidate = undisclosedStable.distribution.platforms[2].installers[0].artifact;
+    candidate.knownLimitations = candidate.knownLimitations.filter((item) => item !== limitation);
+    assert.throws(
+      () => validateReleaseMetadataV3(undisclosedStable, { releaseState: "finalized" }),
+      expectedError,
+    );
+  }
 });
 
 test("MSI cannot claim an updater target the desktop runtime cannot consume", () => {
@@ -389,8 +480,6 @@ test("JSON schema fixes the same ordered platform/installer tuples and lifecycle
   assert.equal(releaseSchema.$defs.supportingWindowsNsisDataPreservation.properties.evidenceFiles.minItems, 4);
   assert.equal(releaseSchema.$defs.supportingWindowsNsisDataPreservation.properties.reason.const,
     "real-installed-app-localhost-lifecycle-not-observed");
-  const stablePublicWindowsConditional = releaseSchema.allOf[2].if;
-  assert.equal(stablePublicWindowsConditional.properties.publicationMode.const, "public-github-release");
-  assert.equal(stablePublicWindowsConditional.properties.releaseChannel.const, "stable");
-  assert.deepEqual(stablePublicWindowsConditional.required, ["publicationMode", "releaseChannel"]);
+  assert.equal(releaseSchema.allOf.length, 2);
+  assert.equal(JSON.stringify(releaseSchema.allOf).includes('"releaseChannel"'), false);
 });

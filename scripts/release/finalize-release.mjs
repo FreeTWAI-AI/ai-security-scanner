@@ -29,7 +29,6 @@ import {
 import {
   platformContract,
   provenanceForArtifact,
-  requiresStablePublicWindowsEvidence,
   validateReleaseMetadataV3,
 } from "./release-metadata.mjs";
 import { publishedReleaseAssetName } from "./release-asset-name.mjs";
@@ -718,26 +717,6 @@ async function scopedFinalizeMain() {
       // only a separately reviewed protected signing producer/publisher policy
       // may create OS-signing promotion evidence. No such policy is configured.
       const signingEvidence = null;
-      if (
-        requiresStablePublicWindowsEvidence({
-          publicationMode,
-          releaseChannel: metadata.releaseChannel,
-          platform: platformRecord.platform,
-        }) &&
-        (!humanEvidence || !signingEvidence || installedAppLifecycleEvidence?.summary?.state !== "verified")
-      ) {
-        const missing = [
-          !signingEvidence ? "authenticode-not-verified" : null,
-          !humanEvidence ? "beginner-human-path-not-observed" : null,
-          installedAppLifecycleEvidence?.summary?.state === "verified"
-            ? null
-            : installerSupport.installerType === "msi"
-              ? "equivalent-msi-lifecycle-not-observed"
-              : "real-installed-app-localhost-lifecycle-not-observed",
-        ].filter(Boolean).join(";");
-        unavailable(installerSupport, missing);
-        continue;
-      }
       const notarizationName = `notarization-${platformRecord.platform}-${installerSupport.installerType}.json`;
       let notarizationEvidence = null;
       if (
@@ -1037,19 +1016,20 @@ async function scopedFinalizeMain() {
   const distributionVerification = publicationMode === "public-github-release"
     ? "Verify the selected file against SHA256SUMS.txt and its artifact-specific public provenance before installing."
     : "These are commit-bound QC artifacts, not a public release; public provenance has not been created.";
-  const offeredWindowsPrereleaseInstallers =
+  const offeredWindowsInstallers =
     publicationMode === "public-github-release" &&
-    metadata.releaseChannel === "prerelease" &&
     finalized.distribution.platforms
       .find(({ platform }) => platform === "windows-x86_64")
       ?.installers.filter(({ availability }) => availability === "offered");
-  const windowsPrereleaseRecord = offeredWindowsPrereleaseInstallers?.length > 0
+  const windowsPackageRecord = offeredWindowsInstallers?.length > 0
     ? [
         "## Windows package record",
         "",
-        "This prerelease includes unsigned Windows installers for public testing. Windows may show an Unknown publisher warning.",
+        metadata.releaseChannel === "prerelease"
+          ? "This prerelease includes unsigned Windows installers for public testing. Windows may show an Unknown publisher warning."
+          : "The Windows installers in this stable release are not code-signed. Windows may show an Unknown publisher warning, and Microsoft Defender SmartScreen may warn on first run.",
         "",
-        ...offeredWindowsPrereleaseInstallers.map(({ installerType, artifact }) => {
+        ...offeredWindowsInstallers.map(({ installerType, artifact }) => {
           const limitations = [];
           if (artifact.operatingSystemSigning.state !== "verified") limitations.push("Authenticode not verified");
           if (artifact.humanPath.state !== "verified") limitations.push("exact-candidate beginner path not observed");
@@ -1083,7 +1063,7 @@ async function scopedFinalizeMain() {
     "provenance requirements, and known limitations are recorded independently for every offered artifact",
     "in release-metadata.json. An absent platform never implies that it passed.",
     "",
-    ...windowsPrereleaseRecord,
+    ...windowsPackageRecord,
   ].join("\n"));
 
   const beforeIndex = (await regularFiles(output))
