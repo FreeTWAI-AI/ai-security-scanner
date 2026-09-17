@@ -863,12 +863,7 @@
     "homepage_url": "https://maester.dev/",
     "license_spdx": "MIT",
     "distribution_mode": "pull_pinned_image",
-    "image": {
-      "repository": "ghcr.io/teddashh/ai-security-scanner-engine-maester",
-      "tag": "2.0.0-6",
-      "digest": "sha256:60913086a28a5eebaa07af1259b691b5970fb44564f8095c76b87f287f3e3c0b",
-      "signature_identity": null
-    },
+    "image": null,
     "source_revision": "6bf1d98f094fc7a68e449d2f40f73ef820b72ee3",
     "engine_version": "2.0.0",
     "rule_version": "6bf1d98f094fc7a68e449d2f40f73ef820b72ee3",
@@ -898,12 +893,12 @@
       "--output",
       "/output"
     ],
-    "status": "integrated",
+    "status": "experimental",
     "notices": [
       "The managed profile runs only the pinned Entra test tree; long-running, preview, mutable raw-GitHub, and DNS-dependent tests are excluded from the Graph-only closure.",
       "Excluded tags are MT.1025-MT.1028, MT.1030-MT.1031, and MT.1182; the exact profile is recorded in the packaging plan and output provenance.",
       "The multi-platform image is built from exact source, PowerShell module, base-image, and license pins; all direct dependency notices are embedded.",
-      "A wrapper-hardened image that preserves missing or unrecognized upstream severity as unknown is published at an immutable digest; anonymous multi-platform access and the linux/amd64 launcher contract were verified at publication."
+      "A wrapper-hardened image that preserves missing or unrecognized upstream severity as unknown is awaiting immutable publication; this engine remains independently unavailable until then."
     ],
     "license": {
       "disposition": "allow",
@@ -917,8 +912,8 @@
         "source_revision": "6bf1d98f094fc7a68e449d2f40f73ef820b72ee3",
         "source_ref": "main",
         "acquisition_source": "https://github.com/maester365/maester/commit/6bf1d98f094fc7a68e449d2f40f73ef820b72ee3",
-        "artifact_source_revision": "f28df23cf8c430466363ea0d78f09b23e84e3df3",
-        "source_association": "attested_match"
+        "artifact_source_revision": null,
+        "source_association": "source_build_required"
       },
       "rules": {
         "mode": "embedded",
@@ -945,9 +940,11 @@
       "support_until": "2026-11-22",
       "maintenance_owner": "teddashh/ai-security-scanner maintainers",
       "update_procedure": "docs/engine-maintenance.md",
-      "runnable": true,
+      "runnable": false,
       "artifact_state": "managed_build_plan",
-      "blocked_by": [],
+      "blocked_by": [
+        "Publish and independently verify the specification-checked Maester 2.0.0-7 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
+      ],
       "knowledge_input": {
         "kind": "runtime_live",
         "identifier": "Microsoft Entra ID configuration",
@@ -1434,12 +1431,7 @@
     "homepage_url": "https://greenbone.github.io/docs/latest/",
     "license_spdx": "GPL-2.0-only AND ODbL-1.0 AND Apache-2.0",
     "distribution_mode": "pull_pinned_image",
-    "image": {
-      "repository": "ghcr.io/teddashh/ai-security-scanner-engine-greenbone",
-      "tag": "23.50.21-feed202608240615-1",
-      "digest": "sha256:35404e619a14027291e73f9048c3b3a3d070ca42aae0fe3a24ce86087a7ce381",
-      "signature_identity": null
-    },
+    "image": null,
     "source_revision": "c3ae607ef632393b7919fb179d30b940d929f713",
     "engine_version": "23.50.21",
     "rule_version": "b26d7237d56b7cf85e6ace2b9351e7851461b3a8",
@@ -1482,11 +1474,12 @@
       "--output",
       "/output"
     ],
-    "status": "integrated",
+    "status": "experimental",
     "notices": [
       "Active external scanning requires an exact case grant and is relayed only through the managed SOCKS boundary.",
       "The signed Community Feed snapshot is embedded and immutable; no live feed synchronization occurs.",
-      "Corresponding scanner source, patches, feed source/data, notices, and the source offer ship with the image."
+      "Corresponding scanner source, patches, feed source/data, notices, and the source offer ship with the image.",
+      "The prepared 23.50.21-feed202608240615-2 image is awaiting immutable publication; this engine remains unavailable until its digest and publication evidence are recorded."
     ],
     "license": {
       "disposition": "source_offer",
@@ -1500,8 +1493,8 @@
         "source_revision": "c3ae607ef632393b7919fb179d30b940d929f713",
         "source_ref": "v23.50.21",
         "acquisition_source": "https://github.com/greenbone/openvas-scanner/commit/c3ae607ef632393b7919fb179d30b940d929f713",
-        "artifact_source_revision": "c3ae607ef632393b7919fb179d30b940d929f713",
-        "source_association": "attested_match"
+        "artifact_source_revision": null,
+        "source_association": "source_build_required"
       },
       "rules": {
         "mode": "embedded",
@@ -1528,9 +1521,11 @@
       "support_until": "2026-11-22",
       "maintenance_owner": "teddashh/ai-security-scanner maintainers",
       "update_procedure": "docs/engine-maintenance.md",
-      "runnable": true,
+      "runnable": false,
       "artifact_state": "multi_component_plan",
-      "blocked_by": [],
+      "blocked_by": [
+        "Publish and independently verify the Greenbone 23.50.21-feed202608240615-2 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
+      ],
       "knowledge_input": {
         "kind": "embedded",
         "identifier": "Greenbone Community Feed snapshot",
@@ -2247,12 +2242,7 @@
     "homepage_url": "https://trivy.dev/",
     "license_spdx": "Apache-2.0",
     "distribution_mode": "pull_pinned_image",
-    "image": {
-      "repository": "ghcr.io/teddashh/ai-security-scanner-engine-trivy",
-      "tag": "0.74.0-3",
-      "digest": "sha256:6b19f88916d2066c1e6bf6f527ebcd40b44a76e3b11d99a3a53e30c74474dfe4",
-      "signature_identity": null
-    },
+    "image": null,
     "source_revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
     "engine_version": "0.74.0",
     "rule_version": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
@@ -2271,7 +2261,7 @@
       "local_artifact_read"
     ],
     "active_external": false,
-    "default_enabled": true,
+    "default_enabled": false,
     "estimated_memory_mb": 2048,
     "estimated_disk_mb": 5000,
     "network_destinations": [],
@@ -2289,14 +2279,15 @@
       "--output",
       "/output"
     ],
-    "status": "integrated",
+    "status": "experimental",
     "notices": [
       "The standard vulnerability database snapshot is embedded and digest-recorded; standard DB, Java DB, VEX repository, version, and telemetry updates are disabled.",
       "The backend-attested input selects a fixed vulnerability profile: package type library for repository and IaC working trees, and package type os for single-image OCI layouts.",
       "Repository and IaC scans cover recognized language-package manifests, including supported Java manifests such as pom.xml. Dependencies discoverable only from JAR archive contents remain outside this profile because the Java database is not embedded.",
       "Use the complementary managed Grype container profile for offline language-package and JAR archive vulnerability coverage inside validated OCI layouts.",
       "The backend-attested input profile selects a fixed filesystem or OCI image-layout command; registry pulls and live Kubernetes access are not accepted.",
-      "Runs against the read-only case workspace with engine networking disabled."
+      "Runs against the read-only case workspace with engine networking disabled.",
+      "The prepared 0.74.0-4 image is awaiting immutable publication; this engine remains unavailable until its digest and publication evidence are recorded."
     ],
     "license": {
       "disposition": "allow",
@@ -2310,8 +2301,8 @@
         "source_revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
         "source_ref": "v0.74.0",
         "acquisition_source": "https://github.com/aquasecurity/trivy/commit/e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
-        "artifact_source_revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
-        "source_association": "attested_match"
+        "artifact_source_revision": null,
+        "source_association": "source_build_required"
       },
       "rules": {
         "mode": "embedded",
@@ -2338,9 +2329,11 @@
       "support_until": "2026-11-22",
       "maintenance_owner": "teddashh/ai-security-scanner maintainers",
       "update_procedure": "docs/engine-maintenance.md",
-      "runnable": true,
+      "runnable": false,
       "artifact_state": "managed_build_plan",
-      "blocked_by": [],
+      "blocked_by": [
+        "Publish and independently verify the Trivy 0.74.0-4 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
+      ],
       "knowledge_input": {
         "kind": "embedded",
         "identifier": "Trivy vulnerability database snapshot",
@@ -2793,12 +2786,7 @@
     "homepage_url": null,
     "license_spdx": "Apache-2.0",
     "distribution_mode": "pull_pinned_image",
-    "image": {
-      "repository": "ghcr.io/teddashh/ai-security-scanner-engine-kube-bench",
-      "tag": "0.16.0-3",
-      "digest": "sha256:d748f98393ec11070bcac45cf53d9f27148b778b17a86445d2fb954d578cb563",
-      "signature_identity": null
-    },
+    "image": null,
     "source_revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
     "engine_version": "source@9f133cb7509ce1dbedfc860e94474588000e25ac",
     "rule_version": "9f133cb7509ce1dbedfc860e94474588000e25ac",
@@ -2813,7 +2801,7 @@
       "local_artifact_read"
     ],
     "active_external": false,
-    "default_enabled": true,
+    "default_enabled": false,
     "estimated_memory_mb": 512,
     "estimated_disk_mb": 512,
     "network_destinations": [],
@@ -2828,10 +2816,11 @@
       "--output",
       "/output"
     ],
-    "status": "integrated",
+    "status": "experimental",
     "notices": [
       "Runs only against an immutable case-provided node configuration snapshot; no host filesystem mount or live cluster access is accepted.",
-      "Engine networking is disabled."
+      "Engine networking is disabled.",
+      "The prepared 0.16.0-4 image is awaiting immutable publication; this engine remains unavailable until its digest and publication evidence are recorded."
     ],
     "license": {
       "disposition": "allow",
@@ -2845,8 +2834,8 @@
         "source_revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
         "source_ref": "main",
         "acquisition_source": "https://github.com/aquasecurity/kube-bench/commit/9f133cb7509ce1dbedfc860e94474588000e25ac",
-        "artifact_source_revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
-        "source_association": "attested_match"
+        "artifact_source_revision": null,
+        "source_association": "source_build_required"
       },
       "rules": {
         "mode": "embedded",
@@ -2873,9 +2862,11 @@
       "support_until": "2026-11-22",
       "maintenance_owner": "teddashh/ai-security-scanner maintainers",
       "update_procedure": "docs/engine-maintenance.md",
-      "runnable": true,
+      "runnable": false,
       "artifact_state": "managed_build_plan",
-      "blocked_by": [],
+      "blocked_by": [
+        "Publish and independently verify the kube-bench 0.16.0-4 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
+      ],
       "knowledge_input": {
         "kind": "runtime_bound",
         "identifier": "Kubernetes node configuration snapshot",

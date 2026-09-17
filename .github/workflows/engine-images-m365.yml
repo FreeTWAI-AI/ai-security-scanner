@@ -35,7 +35,7 @@ jobs:
             dockerfile: engines/images/scubagear/Dockerfile
             expected_version: 1.8.0
           - engine: maester
-            tag: 2.0.0-6
+            tag: 2.0.0-7
             dockerfile: engines/images/maester/Dockerfile
             expected_version: 2.0.0
     env:

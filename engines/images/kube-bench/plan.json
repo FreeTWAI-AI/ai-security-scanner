@@ -6,7 +6,7 @@
   "support_until": "2026-11-22",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "published_managed_artifact",
+  "publish_state": "publication_in_progress",
   "source": {
     "repository": "https://github.com/aquasecurity/kube-bench",
     "revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
@@ -16,8 +16,8 @@
   "verified_upstream_artifact": null,
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-kube-bench",
-    "tag": "0.16.0-3",
-    "digest": "sha256:d748f98393ec11070bcac45cf53d9f27148b778b17a86445d2fb954d578cb563"
+    "tag": "0.16.0-4",
+    "digest": null
   },
   "build_recipe": {
     "source_revision": "9f133cb7509ce1dbedfc860e94474588000e25ac",
@@ -68,7 +68,7 @@
   "dockerfile": {
     "emitted": true,
     "path": "engines/images/kube-bench/Dockerfile",
-    "sha256": "sha256:5ab2502346bfc55417c5b63c45aae7366d3ee7e41f845b5b382664bb05211333",
+    "sha256": "sha256:2db717863a9144c15b27f88be4036d09e07da124fe9aa628210ecded189a5032",
     "reason": null
   },
   "wrapper": {
@@ -96,7 +96,9 @@
     "rationale": "Apache-2.0 permits redistribution with notices; the immutable snapshot benchmark profile is included.",
     "source_offer_path": null
   },
-  "blockers": [],
+  "blockers": [
+    "Publish and independently verify the kube-bench 0.16.0-4 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
+  ],
   "managed_runtime": {
     "non_root_user": "65532:65532",
     "read_only_rootfs": true,
@@ -109,19 +111,5 @@
     "updates": false,
     "telemetry": false
   },
-  "publication": {
-    "workflow_run": "https://github.com/teddashh/ai-security-scanner/actions/runs/33196902246",
-    "source_revision": "2641850304aeade6ab8ee3b23eda80a7f66411d0",
-    "platforms": [
-      "linux/amd64",
-      "linux/arm64"
-    ],
-    "platform_digests": {
-      "linux/amd64": "sha256:f77358aa621fb99e490399e66105132048b1bc21917087a300900a3407f2cdb5",
-      "linux/arm64": "sha256:b5d1ef1ee600d9f5a39c82b13214c34351c6bccfd343cac3b1be045b245dbb30"
-    },
-    "anonymous_pull_verified": true,
-    "evidence_artifact": "kube-bench-image-evidence-33196902246-1",
-    "managed_smoke_evidence_sha256": "sha256:121a16096d0fba70093b3e916e31a4351919ecdf39acd48477e6c346caba938a"
-  }
+  "publication": null
 }

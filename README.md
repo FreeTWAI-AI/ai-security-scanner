@@ -36,7 +36,7 @@ Completed results remain available when an independent check fails. Reports can 
 
 ## Integrated tools
 
-The current runnable engine set integrates 21 upstream projects. The catalog separately retains experimental, non-dispatchable AI contracts; those are not current scan capabilities. See [Development status](docs/development-status.md). The product runs only the tools that apply to each selected asset, keeps their original identifiers, severity, evidence, and remediation, then organizes every completed result in the same report.
+The current runnable engine set integrates 17 upstream projects. The catalog separately retains experimental, non-dispatchable AI contracts; those are not current scan capabilities. See [Development status](docs/development-status.md). The product runs only the tools that apply to each selected asset, keeps their original identifiers, severity, evidence, and remediation, then organizes every completed result in the same report.
 
 **Selected assets → applicable upstream tools → thin adapters → one prioritized report organized by asset**
 

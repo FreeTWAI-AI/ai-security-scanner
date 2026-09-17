@@ -6,7 +6,7 @@
   "support_until": "2026-11-22",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "published_managed_artifact",
+  "publish_state": "publication_in_progress",
   "source": {
     "repository": "https://github.com/aquasecurity/trivy",
     "revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
@@ -16,8 +16,8 @@
   "verified_upstream_artifact": null,
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-trivy",
-    "tag": "0.74.0-3",
-    "digest": "sha256:6b19f88916d2066c1e6bf6f527ebcd40b44a76e3b11d99a3a53e30c74474dfe4"
+    "tag": "0.74.0-4",
+    "digest": null
   },
   "build_recipe": {
     "source_revision": "e1fd17a0ea4a8cf24bc4b4dd7e2cfbf4bb31b994",
@@ -77,7 +77,7 @@
   "dockerfile": {
     "emitted": true,
     "path": "engines/images/trivy/Dockerfile",
-    "sha256": "sha256:72f184e243f0213a0e16b3cd7c530fdef7eea5b0b6b7f8bc362e2ef9f320fd9a",
+    "sha256": "sha256:af317a52fd35995b93dd03a14cd2b3babdf05750b8b99c99e88bf3fe8962ef0d",
     "reason": null
   },
   "wrapper": {
@@ -131,7 +131,9 @@
     "rationale": "Apache-2.0 permits redistribution with notices; the embedded database notice and immutable manifest are included.",
     "source_offer_path": null
   },
-  "blockers": [],
+  "blockers": [
+    "Publish and independently verify the Trivy 0.74.0-4 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence."
+  ],
   "managed_runtime": {
     "non_root_user": "65532:65532",
     "read_only_rootfs": true,
@@ -144,19 +146,5 @@
     "updates": false,
     "telemetry": false
   },
-  "publication": {
-    "workflow_run": "https://github.com/teddashh/ai-security-scanner/actions/runs/33196902246",
-    "source_revision": "2641850304aeade6ab8ee3b23eda80a7f66411d0",
-    "platforms": [
-      "linux/amd64",
-      "linux/arm64"
-    ],
-    "platform_digests": {
-      "linux/amd64": "sha256:cdeaa1dc53492b8ce5eeb5bb7625fd6a5e73328863d157f722408039927a3a37",
-      "linux/arm64": "sha256:17b9e36f4f0859de8506aea428423d61f2eb13efddd2c719769ad4e64135d647"
-    },
-    "anonymous_pull_verified": true,
-    "evidence_artifact": "trivy-image-evidence-33196902246-1",
-    "managed_smoke_evidence_sha256": "sha256:3af188e8860cf9d07a3485021efd59b4cc1690bd07a65dc6f08f30d908ecbd08"
-  }
+  "publication": null
 }
