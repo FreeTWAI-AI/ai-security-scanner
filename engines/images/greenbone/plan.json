@@ -90,7 +90,7 @@
   "dockerfile": {
     "emitted": true,
     "path": "engines/images/greenbone/Dockerfile",
-    "sha256": "sha256:f4a4d246d3e6b5c583714fd2794d12955164047975b138b5ca58cace77902fba",
+    "sha256": "sha256:97689f62f06b098b2b043e67ffd8699759c45ffcb528c2a938d2766adb42ffaa",
     "reason": null
   },
   "wrapper": {

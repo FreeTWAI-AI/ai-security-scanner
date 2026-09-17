@@ -12,7 +12,8 @@ ENV CGO_ENABLED=0 \
 
 WORKDIR /src/launcher
 COPY engines/images/greenbone-launcher/go.mod engines/images/greenbone-launcher/main.go engines/images/greenbone-launcher/main_test.go ./
-RUN test -z "$(gofmt -d main.go main_test.go)" \
+RUN gofmt -d main.go main_test.go | tee /tmp/gofmt.diff \
+    && test ! -s /tmp/gofmt.diff \
     && go test ./... \
     && GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
         -buildvcs=false -trimpath -ldflags='-s -w -buildid=' \
