@@ -14,6 +14,9 @@ product behavior, and the [current product review](product-audit.md) tracks the 
   upstream checks and feed one product-owned report.
 - Report presentation distinguishes measured zero findings from an asset that was not measured, and
   keeps compact document identity in printed headers and footers.
+- The offline adapter refresh pipeline produces reviewable proposals; deterministic generation is the
+  default, AI edits require explicit opt-in and digest attribution, and the person running it chooses
+  whether to open a pull request while the pipeline executes no commands.
 - Native report, case, coverage, route, permission, and engine-task vocabularies are bound to their Rust
   wire contracts; unknown permissions and tasks cannot claim authorization, execution, or coverage.
 - No model endpoint or hosted provider was contacted while developing the experimental AI paths.

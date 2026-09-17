@@ -23,6 +23,7 @@ const CURRENT_PRODUCT_DOCUMENTS = [
   "docs/architecture.md",
   "docs/development-status.md",
   "docs/engine-catalog.md",
+  "docs/engine-alignment-handover.zh-TW.md",
   "docs/engine-maintenance.md",
   "docs/managed-runtime.md",
   "docs/product-audit.md",

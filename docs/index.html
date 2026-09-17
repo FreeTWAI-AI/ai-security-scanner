@@ -53,6 +53,10 @@
             <span class="lang-en">One report</span>
             <span class="lang-zh" lang="zh-Hant">統一報告</span>
           </a>
+          <a href="#staying-current">
+            <span class="lang-en">Staying current</span>
+            <span class="lang-zh" lang="zh-Hant">維持更新</span>
+          </a>
           <a class="nav-github" href="https://github.com/teddashh/ai-security-scanner">GitHub ↗</a>
         </nav>
         <div class="language-switch" role="group" aria-label="Language">
@@ -564,6 +568,28 @@
               </strong>
             </div>
           </div>
+        </section>
+      </div>
+
+      <div class="section-dark" id="staying-current">
+        <section class="section">
+          <div class="section-heading">
+            <h2>
+              <span class="lang-en">Pinned upstream engines, reviewable changes.</span>
+              <span class="lang-zh" lang="zh-Hant">上游引擎精確固定，每次變更都可供審查。</span>
+            </h2>
+            <p>
+              <span class="lang-en">Staying current starts with an offline proposal, not an automatic update. Each proposed change preserves a clear human decision point.</span>
+              <span class="lang-zh" lang="zh-Hant">維持更新從離線提案開始，不會自動套用；每項變更都保留清楚的人工決策點。</span>
+            </p>
+          </div>
+          <ul class="feature-list">
+            <li><span class="lang-en">Every engine is pinned to an exact upstream revision with a recorded digest; it is never floating.</span><span class="lang-zh" lang="zh-Hant">每個引擎都固定到明確的上游修訂版並記錄摘要值，不會追隨浮動版本。</span></li>
+            <li><span class="lang-en">The product can produce an offline adapter refresh proposal that states what changed, what was verified, the risk, and whether it may become a pull request.</span><span class="lang-zh" lang="zh-Hant">產品可為 adapter 產生離線更新提案，清楚交代變更內容、已驗證項目、風險，以及是否允許進入 pull request。</span></li>
+            <li><span class="lang-en">The deterministic path is the default. The optional AI path must be selected explicitly, and every byte a model wrote is attributed with before and after digests for human review.</span><span class="lang-zh" lang="zh-Hant">預設採用可重現的確定性流程；AI 流程必須明確選用，模型寫入的每個位元組都會標示變更前後的摘要值，供人員審閱。</span></li>
+            <li><span class="lang-en">Whoever runs it decides whether to send the change back to the project. The tool prints commands for a person to run and never executes them.</span><span class="lang-zh" lang="zh-Hant">執行者決定是否把變更送回專案；工具只列出可由人員執行的指令，絕不代為執行。</span></li>
+            <li><span class="lang-en">Deliberately pinned engines and experimental integrations are refused with a reason, not silently skipped.</span><span class="lang-zh" lang="zh-Hant">刻意維持固定版本的引擎與實驗性整合會明確拒絕並說明原因，不會悄悄略過。</span></li>
+          </ul>
         </section>
       </div>
 

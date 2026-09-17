@@ -24,6 +24,7 @@ Use the shortest path that matches the task.
 - [Development status](development-status.md) — current implementation, verification, and open gates.
 - [Contributing](../CONTRIBUTING.md) — product priorities, implementation rules, and verification.
 - [Engine maintenance](engine-maintenance.md) — upstream updates, adapter boundaries, and patch exceptions.
+- [Engine and report-layer contracts](engine-alignment-handover.zh-TW.md) — current engine semantics, asset paths, report behavior, and completion criteria.
 - [Threat model](threat-model.md) — protected assets, threats, and required controls.
 - [Security policy](../SECURITY.md) — private vulnerability reporting and operating rules.
 - [Third-party inventory](../THIRD_PARTY.md) — licenses, notices, and distribution records.
@@ -32,7 +33,6 @@ Use the shortest path that matches the task.
 ## Historical and research records
 
 - [Release records](release/README.md) preserve shipped-version facts and evidence formats.
-- [Engine alignment handover](engine-alignment-handover.zh-TW.md) preserves the condensed 2026-09-10 engineering handover.
 - [Research](research/) records evaluated integrations and product studies.
 - [Usability studies](usability/) contains study protocols and evidence-handling rules.
 

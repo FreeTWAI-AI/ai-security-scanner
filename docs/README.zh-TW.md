@@ -24,6 +24,7 @@
 - [目前開發狀態](development-status.md)：目前實作、驗證基準與尚未通過的閘門。
 - [參與開發](../CONTRIBUTING.md)：產品優先順序、實作規則與驗證方式。
 - [引擎維護](engine-maintenance.md)：上游更新、adapter 邊界與 patch 例外。
+- [引擎與報告層契約](engine-alignment-handover.zh-TW.md)：目前的引擎語意、資產路徑、報告行為與完成判準。
 - [威脅模型](threat-model.md)：保護資產、威脅與必要控制。
 - [安全政策](../SECURITY.md)：非公開弱點回報與操作規則。
 - [第三方清單](../THIRD_PARTY.md)：授權、notice 與散布紀錄。
@@ -32,7 +33,6 @@
 ## 歷史與研究紀錄
 
 - [發布紀錄](release/README.md)保存已發布版本事實與證據格式。
-- [引擎對齊交接](engine-alignment-handover.zh-TW.md)保存 2026-09-10 的精簡工程交接。
 - [研究](research/)保存已評估的整合與產品研究。
 - [易用性研究](usability/)保存研究流程與證據處理規則。
 

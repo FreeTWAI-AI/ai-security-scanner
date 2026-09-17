@@ -1,12 +1,8 @@
-# 引擎與報告層交接紀錄
-
-狀態日期：2026-09-10
+# 引擎與報告層契約
 
 目前產品行為：[產品規格](product-spec.md)
 
 目前能力與工作：[產品檢視](product-audit.md)
-
-這份文件保存 2026-09-10 的工程交接事實。完整變更與驗證紀錄位於 Git history。
 
 ## 已成立的共同架構
 
@@ -75,12 +71,6 @@ Greenbone 使用精確已確認的 host 與 ports。Launcher 從固定 Community
 每個選定資產會得到一個狀態：發現問題、已完成檢查未發現問題、未完成或失敗、尚未測試。Observed services 與 connectivity 分開呈現，不進 problem count。
 
 Finding 第一層直接列出結果、影響、下一步與驗證方式。Unknown severity 保持 Unknown。上游證據與技術工作紀錄放在展開細節；正式條款放在報告最後。舊案件在建立權威報告時會正規化為同一套呈現。
-
-## 發布交接
-
-目前主線包含 `v0.1.9` 之後的產品變更，因此下一個公開版本使用新的 immutable version。候選版完成文件、版本身分、release evidence 與平台 qualification 後，以同一批 frozen artifacts 發布。
-
-Installed-product acceptance 使用公開安裝檔完成 repository、website、internal host 的 mixed flow，涵蓋 Setup、Review、Progress、Results、重新開啟與 HTML 匯出，並記錄第一個有用安全結果的時間。
 
 ## 完成判準
 
