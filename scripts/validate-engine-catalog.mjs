@@ -293,12 +293,6 @@ const managedGreenboneContract = {
   notusImageDigest: "sha256:78c6a1198a3effd5a7df22acab826719744dbd16dded5208c6614761386002bc",
   smokeOid: "1.3.6.1.4.1.25623.1.0.108252",
 };
-const publishedGreenboneCatalogContract = {
-  engineVersion: "23.50.21",
-  scannerRevision: "c3ae607ef632393b7919fb179d30b940d929f713",
-  feedVersion: "202608240615-community",
-  feedRevision: "b26d7237d56b7cf85e6ace2b9351e7851461b3a8",
-};
 const greenbonePublicationBlocker =
   "Publish and independently verify the Greenbone 23.50.24-feed202609170605-1 image for linux/amd64 and linux/arm64, then record its immutable digest and exact publication evidence.";
 const managedEvidenceWorkflows = [
@@ -1348,16 +1342,15 @@ function validateGreenboneBuildClosure(plan, planRelative, dockerfileText) {
 
 function isPendingGreenbonePublication(plan, engine) {
   const expectedRepository = `${managedImageRepositoryPrefix}greenbone`;
-  const publishedTag = `${publishedGreenboneCatalogContract.engineVersion}-feed${publishedGreenboneCatalogContract.feedVersion.replace(/-community$/u, "")}-1`;
   return engine?.id === "greenbone" && plan?.publish_state === "publication_in_progress" &&
     plan.publication === null && deepEqual(plan.blockers, [greenbonePublicationBlocker]) &&
     plan.final_artifact?.repository === expectedRepository &&
     plan.final_artifact?.tag === managedGreenboneContract.tag && plan.final_artifact?.digest === null &&
     engine.distribution_mode === "pull_pinned_image" && engine.image?.repository === expectedRepository &&
-    engine.image?.tag === publishedTag && digestPattern.test(engine.image?.digest ?? "") &&
-    engine.engine_version === publishedGreenboneCatalogContract.engineVersion &&
-    engine.source_revision === publishedGreenboneCatalogContract.scannerRevision &&
-    engine.rule_version === publishedGreenboneCatalogContract.feedRevision &&
+    engine.image?.tag === managedGreenboneContract.tag && digestPattern.test(engine.image?.digest ?? "") &&
+    engine.engine_version === managedGreenboneContract.engineVersion &&
+    engine.source_revision === managedGreenboneContract.scannerRevision &&
+    engine.rule_version === managedGreenboneContract.feedRevision &&
     engine.status === "integrated" && engine.compatibility?.runnable === true &&
     deepEqual(engine.compatibility?.blocked_by, []);
 }

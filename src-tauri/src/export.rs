@@ -3361,7 +3361,7 @@ mod tests {
                 timeout_seconds: 15,
             },
             template_policy: TemplatePolicy::conservative(
-                "greenbone-community-feed@b26d7237d56b7cf85e6ace2b9351e7851461b3a8",
+                "greenbone-community-feed@6c8dce2f22bb9e5da081667994be6e9ed79484d8",
                 allowed_template_ids,
             ),
             asserted_authority: "Approved internal endpoint".into(),
