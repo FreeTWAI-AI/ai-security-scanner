@@ -25,7 +25,7 @@ use std::io::{Read, Take};
 use std::path::{Component, Path};
 use std::sync::Arc;
 
-pub const ADAPTER_VERSION: &str = "0.1.4";
+pub const ADAPTER_VERSION: &str = "0.2.0";
 /// Stable identity for the canonical finding fingerprint algorithm. Changing
 /// this value requires an explicit migration before cross-version diffs may be
 /// treated as comparable.

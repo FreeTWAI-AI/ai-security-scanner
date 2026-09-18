@@ -55,7 +55,7 @@ Capability labels use the catalog definitions: connectivity, exposure, vulnerabi
 5. Prefer an official upstream image by immutable digest. If none is suitable, build pinned upstream source with only the minimum launcher required by section 2.
 6. Run representative bounded fixtures through the product adapter. Cover valid and malformed output, unknown fields, empty results, output limits, timeout, cancellation, cleanup, target enforcement, and managed egress where applicable.
 7. Compare normalized records to the raw upstream output. Verify that rule IDs, titles, severities, messages, evidence, and remediation were preserved and that report-only additions are labeled.
-8. Update the adapter schema/version only when the structural output contract changes. Keep migrations capable of explaining existing cases.
+8. Apply the shared adapter-contract version rule in section 8. Keep migrations capable of explaining existing cases.
 9. Set `knowledge_date` to the newest date genuinely represented by the exact engine/data closure. Set `support_until` to the maintained support window; do not refresh either merely because the application was rebuilt.
 10. Update the honest capability and exclusions table if—and only if—the executed upstream profile changed what the product actually checks.
 
@@ -98,3 +98,26 @@ An expired but still inspectable artifact remains attributable. New execution mu
 Any byte-affecting launcher, Dockerfile, embedded rule/policy, feed, database, or scanner patch change creates a new engine artifact revision. A report-only normalizer change advances the adapter/report version without pretending the upstream engine changed.
 
 If an update cannot meet its source, license, compatibility, safety, or artifact requirements, only that engine’s coverage is unavailable. Preserve completed sibling results and state the exact gap in the report.
+
+## 8. Shared adapter contract version
+
+`adapter_version` names the version of the shared normalization contract. It is one value, not one per engine: `ADAPTER_VERSION` in `src-tauri/src/adapters/mod.rs`, mirrored into every catalog entry. A run whose manifest version differs from the loaded adapter’s is refused.
+
+Every stored engine run and every export carries this value, and that is what the rule protects. A stored run claims its normalized output was produced by a named contract. If normalization changes and the version does not, an old run and a new run claim the same contract while meaning different things, and a comparison between them presents our own mapping change as though the target had changed.
+
+Bump it when the same upstream bytes would produce a different normalized result. In practice, bump it when a change alters:
+
+- which upstream records become findings, or stop becoming findings;
+- the value of any normalized field for unchanged input—severity, confidence, title, location, remediation, tags, or evidence references;
+- the set of values a normalized field can take;
+- the warnings or coverage attributed to an engine run.
+
+Do not bump it for refactors, comments, or tests; for report-layer wording, which is not the adapter; or for a new upstream engine, image, or feed version, which `engine_version`, `rule_version`, and the image pin already record.
+
+Numbering follows the contract, not the calendar:
+
+- **Patch:** normalized values change, but every field keeps its shape and its set of possible values, so a consumer written against the old contract still parses the output.
+- **Minor:** the set of possible values widens, or a field is added, so a strict consumer written against the old contract can reject output that is correct.
+- **Major:** a field is removed or changes type.
+
+The change from 0.1.4 to 0.2.0 is a minor bump. `Confidence` gained `Unknown`, and the framework report schema’s confidence enum widened from four values to five, so a validator written against the four-value enum rejects an export that is correct. It was earned in commit `4ec35b0`, where a Greenbone result with no detection quality stopped being reported as Medium confidence.
