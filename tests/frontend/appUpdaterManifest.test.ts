@@ -10,7 +10,7 @@ import {
   type AppUpdaterRuntime,
 } from "../../src/services/appUpdaterManifest.ts";
 
-const VERSION = "0.2.0";
+const VERSION = "1.0.0";
 const SIGNATURE = "A".repeat(96);
 
 const payload = (name: string, signature = SIGNATURE) => ({

@@ -191,6 +191,33 @@ const RELEASE_COPY = new Map([
       ],
     },
   ],
+  [
+    "1.0.0",
+    {
+      updaterNotes:
+        "Windows and macOS installers are now offered alongside Linux, with each artifact's signing and testing state stated in the release record.",
+      releaseNotes: [
+        "> **Windows, macOS, and Linux installers, offered as what they are.**",
+        "",
+        "ai-security-scanner 1.0.0 offers installers for all three desktop platforms.",
+        "",
+        "Version 0.2.0 built Windows and macOS installers and shipped neither. The Windows",
+        "installers passed qualification on a fresh runner and were then withheld, because the",
+        "release tooling required signing evidence this product does not produce. The macOS",
+        "qualification was refused outright, because the tooling accepted hosted-runner",
+        "evidence only on a pre-release. Both rules preferred refusing to disclosing.",
+        "",
+        "Those refusals are gone and every honesty rule beneath them remains. An unsigned",
+        "installer still cannot claim to be signed, still carries a stated reason, and still",
+        "reports what was not tested. The release record states these facts instead of",
+        "treating them as grounds to publish nothing.",
+        "",
+        "This release also reports an engine result with no detection quality as unknown",
+        "confidence rather than rating it medium, refreshes Greenbone to 23.50.24 with its",
+        "feed, and binds every engine's adapter contract version to one shared constant.",
+      ],
+    },
+  ],
 ]);
 
 function releaseCopyFor(version) {

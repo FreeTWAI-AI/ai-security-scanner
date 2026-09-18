@@ -42,7 +42,7 @@ const specs = {
   "kube-bench": { tag: "0.16.0-4", group: "local", smokeFiles: ["kube-bench.json"] },
   scubagear: { tag: "1.8.0-6", group: "m365" },
   maester: { tag: "2.0.0-7", group: "m365" },
-  "egress-gateway": { tag: "0.2.0-1", group: "gateway" },
+  "egress-gateway": { tag: "1.0.0-1", group: "gateway" },
 };
 const workflows = {
   external: ".github/workflows/engine-images-external.yml",
