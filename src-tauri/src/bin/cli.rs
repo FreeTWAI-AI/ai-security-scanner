@@ -8,6 +8,7 @@ use ai_security_scanner_lib::case_service::{
     FindingUngroupRequest, FindingWorkflowRequest, ScanPlanRequest, ScopeApprovalRequest,
     SourceMutation,
 };
+use ai_security_scanner_lib::connectors::MAX_SNAPSHOT_BYTES;
 use ai_security_scanner_lib::connectors::SnapshotConnectorRegistry;
 use ai_security_scanner_lib::container_runtime::{
     CancellationToken, CleanupOutcome, ContainerPlanBuilder, ContainerRuntime, NetworkPolicy,
@@ -22,10 +23,11 @@ use ai_security_scanner_lib::discovery::run_connector;
 use ai_security_scanner_lib::domain::EngineRunStatus;
 use ai_security_scanner_lib::domain::{
     AssessmentActivity, CaseStatus, CreateCaseRequest, DataClass, DistributionMode, EngineManifest,
-    FindingStatus, ScanPermission, SourceConnectionStatus, SourceKind, new_id,
+    FindingStatus, ScanPermission, ScopeGrant, SourceConnectionStatus, SourceKind, new_id,
 };
 use ai_security_scanner_lib::error::{AppError, AppResult};
 use ai_security_scanner_lib::export::{ExportOptions, RedactionProfile, verify_case_bundle};
+use ai_security_scanner_lib::external_scope::ExternalScopeRequest;
 use ai_security_scanner_lib::gateway_release::managed_egress_gateway_spec;
 use ai_security_scanner_lib::managed_network::{
     ManagedGatewayQualification, ManagedNetworkCleanupOutcome, ManagedNetworkController,
@@ -55,9 +57,12 @@ use directories::{BaseDirs, ProjectDirs};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::fs::{self, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::{Component, Path, PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 const MANAGED_RUNTIME_QUALIFICATION_ENGINE_ID: &str = "gitleaks";
 // Keep the release-only artifact prefix compact. Podman's Windows client owns
@@ -509,7 +514,9 @@ struct ScopeApproveArgs {
     case_id: String,
     #[arg(long)]
     asset_id: String,
-    /// Comma-separated, explicit permissions for this asset.
+    /// Comma-separated, explicit permissions for this asset. The
+    /// passive-external-discovery, low-impact-external-connection, and
+    /// active-external-testing permissions require --external-scope.
     #[arg(long, value_enum, value_delimiter = ',', required = true)]
     permission: Vec<PermissionArg>,
     /// Human or accountable local identity recording the decision.
@@ -521,6 +528,11 @@ struct ScopeApproveArgs {
     /// Required for low-impact or active external activity.
     #[arg(long)]
     authorization_reference: Option<String>,
+    /// Absolute path to a regular file explicitly selected by the user. Required
+    /// for passive-external-discovery, low-impact-external-connection, and
+    /// active-external-testing permissions.
+    #[arg(long, value_name = "PATH")]
+    external_scope: Option<PathBuf>,
     #[arg(long)]
     notes: Option<String>,
 }
@@ -533,6 +545,17 @@ enum PermissionArg {
     PassiveExternalDiscovery,
     LowImpactExternalConnection,
     ActiveExternalTesting,
+}
+
+impl PermissionArg {
+    fn is_external(self) -> bool {
+        matches!(
+            self,
+            Self::PassiveExternalDiscovery
+                | Self::LowImpactExternalConnection
+                | Self::ActiveExternalTesting
+        )
+    }
 }
 
 impl From<PermissionArg> for ScanPermission {
@@ -1620,6 +1643,20 @@ fn execute_scope(
             )?;
         }
         ScopeCommand::Approve(args) => {
+            let requires_external_scope = args
+                .permission
+                .iter()
+                .any(|permission| permission.is_external());
+            let external_scope = match args.external_scope.as_deref() {
+                Some(path) => Some(read_external_scope_document(path)?),
+                None if requires_external_scope => {
+                    return Err(AppError::InvalidRequest(
+                        "an external permission requires an explicit scope document selected with --external-scope"
+                            .into(),
+                    ));
+                }
+                None => None,
+            };
             let expires_at = args.expires_at.as_deref().map(parse_rfc3339).transpose()?;
             let grants = service.approve_scope(
                 &args.case_id,
@@ -1630,19 +1667,20 @@ fn execute_scope(
                     expires_at,
                     authorization_reference: args.authorization_reference,
                     notes: args.notes,
-                    external_scope: None,
+                    external_scope,
                 },
             )?;
-            print_value(
-                &json!({
-                    "grants": grants,
-                    "authorization_source": "explicit",
-                }),
-                json_output,
-            )?;
+            print_value(&scope_approval_output(grants), json_output)?;
         }
     }
     Ok(())
+}
+
+fn scope_approval_output(grants: Vec<ScopeGrant>) -> Value {
+    json!({
+        "grants": grants,
+        "authorization_source": "explicit",
+    })
 }
 
 fn execute_finding(
@@ -3364,6 +3402,121 @@ fn parse_rfc3339(value: &str) -> AppResult<DateTime<Utc>> {
         })
 }
 
+#[cfg(all(test, unix))]
+thread_local! {
+    static EXTERNAL_SCOPE_BEFORE_OPEN_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(all(test, unix))]
+fn run_external_scope_before_open_hook() {
+    let hook = EXTERNAL_SCOPE_BEFORE_OPEN_HOOK.with(|hook| hook.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+fn read_external_scope_document(path: &Path) -> AppResult<ExternalScopeRequest> {
+    let selected = path.display();
+    if !path.is_absolute() {
+        return Err(AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" must be an absolute path"
+        )));
+    }
+    if path
+        .components()
+        .any(|component| matches!(component, Component::CurDir | Component::ParentDir))
+    {
+        return Err(AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" contains traversal components"
+        )));
+    }
+
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            Component::RootDir => current.push(Path::new(std::path::MAIN_SEPARATOR_STR)),
+            Component::Normal(name) => {
+                current.push(name);
+                let metadata = fs::symlink_metadata(&current).map_err(|error| {
+                    AppError::InvalidRequest(format!(
+                        "external scope document \"{selected}\" could not be inspected: {error}"
+                    ))
+                })?;
+                if metadata.file_type().is_symlink() {
+                    return Err(AppError::InvalidRequest(format!(
+                        "external scope document \"{selected}\" contains a symlink"
+                    )));
+                }
+            }
+            Component::CurDir | Component::ParentDir => {
+                return Err(AppError::InvalidRequest(format!(
+                    "external scope document \"{selected}\" contains traversal components"
+                )));
+            }
+        }
+    }
+
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" could not be inspected: {error}"
+        ))
+    })?;
+    if !metadata.is_file() {
+        return Err(AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" is not a regular file"
+        )));
+    }
+    if metadata.len() > MAX_SNAPSHOT_BYTES {
+        return Err(AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" exceeds the {MAX_SNAPSHOT_BYTES} byte limit"
+        )));
+    }
+
+    #[cfg(all(test, unix))]
+    run_external_scope_before_open_hook();
+
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    let file = options.open(path).map_err(|error| {
+        AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" could not be opened without following links: {error}"
+        ))
+    })?;
+    let opened_metadata = file.metadata().map_err(|error| {
+        AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" metadata could not be read: {error}"
+        ))
+    })?;
+    if !opened_metadata.is_file() || opened_metadata.len() > MAX_SNAPSHOT_BYTES {
+        return Err(AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" changed or exceeded its byte limit while opening"
+        )));
+    }
+
+    let mut bytes = Vec::with_capacity(opened_metadata.len() as usize);
+    let mut reader = file.take(MAX_SNAPSHOT_BYTES + 1);
+    reader.read_to_end(&mut bytes).map_err(|error| {
+        AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" could not be read: {error}"
+        ))
+    })?;
+    if bytes.len() as u64 > MAX_SNAPSHOT_BYTES {
+        return Err(AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" exceeded its byte limit while reading"
+        )));
+    }
+
+    serde_json::from_slice(&bytes).map_err(|error| {
+        AppError::InvalidRequest(format!(
+            "external scope document \"{selected}\" is not valid JSON for an external scope request: {error}"
+        ))
+    })
+}
+
 fn print_value(value: &(impl Serialize + ?Sized), compact: bool) -> AppResult<()> {
     if compact {
         println!("{}", serde_json::to_string(value)?);
@@ -3376,10 +3529,176 @@ fn print_value(value: &(impl Serialize + ?Sized), compact: bool) -> AppResult<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_security_scanner_lib::adapter::AdapterRegistry;
     use ai_security_scanner_lib::container_runtime::{
         FakeContainerRuntime, FakeRunBehavior, RuntimeCall,
     };
+    use ai_security_scanner_lib::discovery::{DiscoveredAsset, DiscoveryBatch};
+    use ai_security_scanner_lib::domain::{AssetIdentifier, AssetKind};
+    use ai_security_scanner_lib::external_scope::{CanonicalTarget, ExternalActivity};
+    use chrono::Duration;
     use clap::{CommandFactory, Parser};
+
+    struct CliScopeFixture {
+        storage: Storage,
+        engines: EngineRegistry,
+        adapters: AdapterRegistry,
+        artifact_root: PathBuf,
+        signing_key_path: PathBuf,
+        _directory: tempfile::TempDir,
+    }
+
+    impl CliScopeFixture {
+        fn new() -> Self {
+            let directory = tempfile::tempdir().expect("temporary directory");
+            let artifact_root = directory.path().join("artifacts");
+            fs::create_dir(&artifact_root).expect("artifact root");
+            Self {
+                storage: Storage::open(directory.path().join("casework.db")).expect("storage"),
+                engines: EngineRegistry::load_builtin().expect("engine catalog"),
+                adapters: builtin_adapter_registry().expect("adapter registry"),
+                signing_key_path: directory.path().join("integrity-signing-key"),
+                artifact_root,
+                _directory: directory,
+            }
+        }
+
+        fn service(&self) -> CaseService<'_> {
+            CaseService::new(
+                &self.storage,
+                &self.engines,
+                &self.adapters,
+                &self.artifact_root,
+                &self.signing_key_path,
+            )
+        }
+
+        fn discovered_domain(&self) -> (String, String) {
+            let service = self.service();
+            let case = service
+                .create_case(&CreateCaseRequest {
+                    title: "CLI external scope".into(),
+                    organization_name: "Example".into(),
+                    employee_range: "1-10".into(),
+                    assessment_intent: None,
+                    ai_generated_artifact: Default::default(),
+                    data_classes: vec![],
+                    requested_activities: vec![],
+                    source_kinds: vec![],
+                    not_applicable_source_kinds: vec![],
+                    declared_assets: vec![],
+                    notes: None,
+                })
+                .expect("case");
+            let source = service
+                .upsert_source(
+                    &case.id,
+                    SourceMutation {
+                        id: None,
+                        kind: SourceKind::UserDeclared,
+                        label: "Declared targets".into(),
+                        status: SourceConnectionStatus::Connected,
+                        read_only: true,
+                        metadata: BTreeMap::new(),
+                    },
+                )
+                .expect("source");
+            service
+                .reconcile_discovery_batch(
+                    &case.id,
+                    &DiscoveryBatch {
+                        source_id: source.id,
+                        source_kind: SourceKind::UserDeclared,
+                        connector_id: "cli-test".into(),
+                        connector_version: "1".into(),
+                        observed_at: Utc::now(),
+                        assets: vec![DiscoveredAsset {
+                            observation_key: "shop".into(),
+                            kind: AssetKind::Domain,
+                            name: "shop.example.test".into(),
+                            provider: None,
+                            region: None,
+                            stable_identifier: AssetIdentifier {
+                                namespace: "dns_name".into(),
+                                value: "shop.example.test".into(),
+                            },
+                            additional_identifiers: vec![],
+                            internet_exposed: Some(true),
+                            contains_sensitive_data: None,
+                            metadata: BTreeMap::new(),
+                        }],
+                        relations: vec![],
+                        notices: vec![],
+                    },
+                )
+                .expect("discovery");
+            let asset_id = service.show_case(&case.id).expect("stored case").assets[0]
+                .id
+                .clone();
+            (case.id, asset_id)
+        }
+    }
+
+    fn external_scope_value(activity: &str) -> Value {
+        let active = activity == "active_external";
+        json!({
+            "target": "SHOP.Example.Test.",
+            "ports": [443],
+            "protocol": "tcp",
+            "activity": activity,
+            "rate_policy": {
+                "requests_per_second": 2,
+                "concurrency": 1,
+                "timeout_seconds": 300
+            },
+            "template_policy": {
+                "revision": if active {
+                    "0123456789abcdef0123456789abcdef01234567"
+                } else {
+                    "not_applicable"
+                },
+                "allowed_template_ids": if active {
+                    vec!["http/fixture"]
+                } else {
+                    Vec::<&str>::new()
+                },
+                "allow_headless": false,
+                "allow_out_of_band": false,
+                "allow_fuzzing": false,
+                "allow_file_upload": false,
+                "allow_denial_of_service": false,
+                "allow_credential_attacks": false
+            },
+            "asserted_authority": "Approved external scope fixture",
+            "allow_sensitive_networks": false
+        })
+    }
+
+    fn write_external_scope(path: &Path, activity: &str) {
+        fs::write(
+            path,
+            serde_json::to_vec_pretty(&external_scope_value(activity)).expect("scope JSON"),
+        )
+        .expect("scope document");
+    }
+
+    fn scope_approve_args(
+        case_id: impl Into<String>,
+        asset_id: impl Into<String>,
+        permission: PermissionArg,
+        external_scope: Option<PathBuf>,
+    ) -> ScopeApproveArgs {
+        ScopeApproveArgs {
+            case_id: case_id.into(),
+            asset_id: asset_id.into(),
+            permission: vec![permission],
+            confirmed_by: "e2e-operator".into(),
+            expires_at: Some((Utc::now() + Duration::hours(1)).to_rfc3339()),
+            authorization_reference: Some("E2E".into()),
+            external_scope,
+            notes: None,
+        }
+    }
 
     fn managed_qualification_preflight() -> RuntimePreflight {
         RuntimePreflight {
@@ -4260,6 +4579,367 @@ mod tests {
         for forbidden in ["password", "credential", "token", "metadata-json"] {
             assert!(!help.to_ascii_lowercase().contains(forbidden));
         }
+    }
+
+    #[test]
+    fn scope_approve_help_marks_every_external_permission_as_requiring_a_document() {
+        let help = Cli::try_parse_from(["ai-security-scanner", "scope", "approve", "--help"])
+            .expect_err("help exits through clap")
+            .to_string();
+
+        for permission in [
+            "passive-external-discovery",
+            "low-impact-external-connection",
+            "active-external-testing",
+        ] {
+            assert!(
+                help.contains(permission),
+                "help omitted {permission}: {help}"
+            );
+        }
+        assert!(help.contains("require --external-scope"), "{help}");
+        assert!(help.contains("--external-scope <PATH>"), "{help}");
+        assert!(
+            help.contains("Absolute path to a regular file explicitly selected by the user"),
+            "{help}"
+        );
+    }
+
+    #[test]
+    fn scope_approve_external_permissions_round_trip_canonical_scope_and_output() {
+        let fixture = CliScopeFixture::new();
+        let (case_id, asset_id) = fixture.discovered_domain();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let cases = [
+            (
+                PermissionArg::PassiveExternalDiscovery,
+                ScanPermission::PassiveExternalDiscovery,
+                "passive_public_discovery",
+                ExternalActivity::PassivePublicDiscovery,
+            ),
+            (
+                PermissionArg::LowImpactExternalConnection,
+                ScanPermission::LowImpactExternalConnection,
+                "low_impact_external",
+                ExternalActivity::LowImpactExternal,
+            ),
+            (
+                PermissionArg::ActiveExternalTesting,
+                ScanPermission::ActiveExternalTesting,
+                "active_external",
+                ExternalActivity::ActiveExternal,
+            ),
+        ];
+
+        for (index, (argument, permission, activity_name, activity)) in
+            cases.into_iter().enumerate()
+        {
+            let path = documents.path().join(format!("scope-{index}.json"));
+            write_external_scope(&path, activity_name);
+            execute_scope(
+                ScopeCommand::Approve(scope_approve_args(
+                    &case_id,
+                    &asset_id,
+                    argument,
+                    Some(path),
+                )),
+                &fixture.service(),
+                true,
+            )
+            .expect("external permission approval");
+
+            let stored = fixture.service().show_case(&case_id).expect("stored case");
+            let external = stored
+                .scope_grants
+                .iter()
+                .find(|grant| grant.permission == permission)
+                .and_then(|grant| grant.external_scope.as_ref())
+                .expect("canonical external scope grant");
+            assert_eq!(
+                external.target,
+                CanonicalTarget::Hostname("shop.example.test".into())
+            );
+            assert_eq!(external.ports, BTreeSet::from([443]));
+            assert_eq!(external.activity, activity);
+            assert_eq!(external.rate_policy.requests_per_second, 2);
+            assert!(!external.template_policy.allow_denial_of_service);
+            assert!(!external.template_policy.allow_credential_attacks);
+        }
+
+        let grants = fixture
+            .service()
+            .show_case(&case_id)
+            .expect("stored case")
+            .scope_grants;
+        assert_eq!(grants.len(), 3);
+        let output = scope_approval_output(grants);
+        let compact = serde_json::to_string(&output).expect("compact command output");
+        let human = serde_json::to_string_pretty(&output).expect("human command output");
+        for rendered in [&compact, &human] {
+            assert!(rendered.contains("external_scope"));
+            assert!(rendered.contains("shop.example.test"));
+            assert!(rendered.contains("requests_per_second"));
+            assert!(rendered.contains("allow_denial_of_service"));
+        }
+    }
+
+    #[test]
+    fn external_permission_without_document_fails_in_cli_before_case_lookup() {
+        let fixture = CliScopeFixture::new();
+        let error = execute_scope(
+            ScopeCommand::Approve(scope_approve_args(
+                "case-that-must-not-be-read",
+                "asset-that-must-not-be-read",
+                PermissionArg::LowImpactExternalConnection,
+                None,
+            )),
+            &fixture.service(),
+            true,
+        )
+        .expect_err("missing external scope must fail");
+
+        let message = error.to_string();
+        assert!(message.contains("external permission requires an explicit scope document"));
+        assert!(message.contains("--external-scope"));
+        assert!(!message.contains("case not found"));
+    }
+
+    #[test]
+    fn invalid_external_scope_files_fail_distinctly_before_case_lookup() {
+        let fixture = CliScopeFixture::new();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let missing = documents.path().join("missing.json");
+        let directory = documents.path().join("directory.json");
+        fs::create_dir(&directory).expect("non-regular scope fixture");
+        let malformed = documents.path().join("malformed.json");
+        fs::write(&malformed, b"{").expect("malformed scope fixture");
+        let unknown = documents.path().join("unknown.json");
+        let mut unknown_value = external_scope_value("low_impact_external");
+        unknown_value
+            .as_object_mut()
+            .expect("scope object")
+            .insert("unexpected_policy".into(), Value::Bool(true));
+        fs::write(
+            &unknown,
+            serde_json::to_vec_pretty(&unknown_value).expect("unknown-field JSON"),
+        )
+        .expect("unknown-field scope fixture");
+
+        let checks = [
+            (missing, "could not be inspected"),
+            (directory, "is not a regular file"),
+            (malformed, "is not valid JSON"),
+            (unknown, "unknown field `unexpected_policy`"),
+        ];
+        let mut messages = Vec::new();
+        for (path, expected) in checks {
+            let error = execute_scope(
+                ScopeCommand::Approve(scope_approve_args(
+                    "case-that-must-not-be-read",
+                    "asset-that-must-not-be-read",
+                    PermissionArg::LowImpactExternalConnection,
+                    Some(path.clone()),
+                )),
+                &fixture.service(),
+                true,
+            )
+            .expect_err("invalid external scope document must fail");
+            let message = error.to_string();
+            assert!(message.contains(&path.display().to_string()), "{message}");
+            assert!(message.contains(expected), "{message}");
+            assert!(!message.contains("case not found"), "{message}");
+            messages.push(message);
+        }
+        for left in 0..messages.len() {
+            for right in (left + 1)..messages.len() {
+                assert_ne!(messages[left], messages[right]);
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_scope_document_symlink_is_rejected_before_case_lookup() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = CliScopeFixture::new();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let target = documents.path().join("valid-target.json");
+        write_external_scope(&target, "low_impact_external");
+        let selected = documents.path().join("selected-symlink.json");
+        symlink(&target, &selected).expect("scope document symlink");
+
+        let error = execute_scope(
+            ScopeCommand::Approve(scope_approve_args(
+                "case-that-must-not-be-read",
+                "asset-that-must-not-be-read",
+                PermissionArg::LowImpactExternalConnection,
+                Some(selected.clone()),
+            )),
+            &fixture.service(),
+            true,
+        )
+        .expect_err("symlinked external scope document must fail");
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "invalid request: external scope document \"{}\" contains a symlink",
+                selected.display()
+            )
+        );
+        assert!(fixture.service().list_cases().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_scope_intermediate_directory_symlink_is_rejected_before_case_lookup() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = CliScopeFixture::new();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let resolved_directory = documents.path().join("resolved-directory");
+        fs::create_dir(&resolved_directory).expect("resolved scope directory");
+        let target = resolved_directory.join("valid-scope.json");
+        write_external_scope(&target, "low_impact_external");
+        let linked_directory = documents.path().join("linked-directory");
+        symlink(&resolved_directory, &linked_directory).expect("intermediate directory symlink");
+        let selected = linked_directory.join("valid-scope.json");
+
+        let error = execute_scope(
+            ScopeCommand::Approve(scope_approve_args(
+                "case-that-must-not-be-read",
+                "asset-that-must-not-be-read",
+                PermissionArg::LowImpactExternalConnection,
+                Some(selected.clone()),
+            )),
+            &fixture.service(),
+            true,
+        )
+        .expect_err("external scope beneath a symlinked directory must fail");
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "invalid request: external scope document \"{}\" contains a symlink",
+                selected.display()
+            )
+        );
+        assert!(fixture.service().list_cases().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_scope_document_replaced_by_symlink_before_open_is_not_followed() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = CliScopeFixture::new();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let selected = documents.path().join("selected-scope.json");
+        write_external_scope(&selected, "low_impact_external");
+        let target = documents.path().join("replacement-target.json");
+        write_external_scope(&target, "low_impact_external");
+
+        let selected_for_hook = selected.clone();
+        EXTERNAL_SCOPE_BEFORE_OPEN_HOOK.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new(move || {
+                fs::remove_file(&selected_for_hook).expect("remove inspected scope document");
+                symlink(&target, &selected_for_hook).expect("replace scope document with symlink");
+            }));
+        });
+
+        let error = execute_scope(
+            ScopeCommand::Approve(scope_approve_args(
+                "case-that-must-not-be-read",
+                "asset-that-must-not-be-read",
+                PermissionArg::LowImpactExternalConnection,
+                Some(selected.clone()),
+            )),
+            &fixture.service(),
+            true,
+        )
+        .expect_err("replacement symlink must not be followed");
+
+        let message = error.to_string();
+        assert!(
+            message.contains(&format!(
+                "external scope document \"{}\" could not be opened without following links",
+                selected.display()
+            )),
+            "{message}"
+        );
+        assert!(!message.contains("case not found"), "{message}");
+        assert!(fixture.service().list_cases().unwrap().is_empty());
+    }
+
+    #[test]
+    fn external_scope_activity_mismatch_is_still_refused_by_service() {
+        let fixture = CliScopeFixture::new();
+        let (case_id, asset_id) = fixture.discovered_domain();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let path = documents.path().join("mismatched.json");
+        write_external_scope(&path, "active_external");
+
+        let error = execute_scope(
+            ScopeCommand::Approve(scope_approve_args(
+                &case_id,
+                &asset_id,
+                PermissionArg::LowImpactExternalConnection,
+                Some(path),
+            )),
+            &fixture.service(),
+            true,
+        )
+        .expect_err("service must reject mismatched external activity");
+
+        assert!(
+            error
+                .to_string()
+                .contains("external activity does not match the approved scan permission")
+        );
+        assert!(
+            fixture
+                .service()
+                .show_case(&case_id)
+                .expect("stored case")
+                .scope_grants
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn external_scope_without_external_permission_keeps_service_error() {
+        let fixture = CliScopeFixture::new();
+        let (case_id, asset_id) = fixture.discovered_domain();
+        let documents = tempfile::tempdir().expect("scope document directory");
+        let path = documents.path().join("inventory.json");
+        write_external_scope(&path, "low_impact_external");
+
+        let error = execute_scope(
+            ScopeCommand::Approve(scope_approve_args(
+                &case_id,
+                &asset_id,
+                PermissionArg::InventoryRead,
+                Some(path),
+            )),
+            &fixture.service(),
+            true,
+        )
+        .expect_err("service must reject external scope without external permission");
+
+        assert!(
+            error
+                .to_string()
+                .contains("external scope details were supplied without an external permission")
+        );
+        assert!(
+            fixture
+                .service()
+                .show_case(&case_id)
+                .expect("stored case")
+                .scope_grants
+                .is_empty()
+        );
     }
 
     #[test]
