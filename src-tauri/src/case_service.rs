@@ -8665,9 +8665,7 @@ fn selected_engine_ids(
         engines
             .manifests()
             .iter()
-            .filter(|manifest| {
-                !compatible_authorized_assets(case, manifest, effective, now).is_empty()
-            })
+            .filter(|manifest| default_plan_includes_manifest(case, manifest, effective, now))
             .map(|manifest| manifest.id.clone())
             .collect::<Vec<_>>()
     } else {
@@ -8679,6 +8677,32 @@ fn selected_engine_ids(
         selected.insert(value);
     }
     Ok(selected.into_iter().collect())
+}
+
+/// Beginner default selection keeps engines that can read an authorized asset,
+/// plus engines blocked only by MCP configuration state. Engines that cannot
+/// read the asset kind stay out.
+fn default_plan_includes_manifest(
+    case: &AssessmentCase,
+    manifest: &EngineManifest,
+    effective: &[&ScopeGrant],
+    now: DateTime<Utc>,
+) -> bool {
+    if !compatible_authorized_assets(case, manifest, effective, now).is_empty() {
+        return true;
+    }
+    // Kind, declared-profile, and provider filters cannot change this answer:
+    // `local_input_compatibility` only returns MCP states for mcp-armor, and
+    // `mcp_configuration_not_executed_reason` already treats every other
+    // engine and every unsupported kind as not an MCP skip.
+    let incompatibilities = case
+        .assets
+        .iter()
+        .filter(|asset| asset.owner_confirmed && !asset.candidate)
+        .filter(|asset| asset_satisfies_engine_permissions(manifest, asset, effective, now))
+        .map(|asset| local_input_compatibility(case, manifest, asset))
+        .collect::<Vec<_>>();
+    mcp_configuration_not_executed_reason(&incompatibilities).is_some()
 }
 
 fn default_scan_admission_issues(
@@ -26647,7 +26671,7 @@ mod tests {
         let scoped = service.show_case(&created.id).unwrap();
         let now = Utc::now();
         let effective = effective_grants(&scoped, now);
-        let expected = fixture
+        let compatible = fixture
             .engines
             .manifests()
             .iter()
@@ -26657,9 +26681,16 @@ mod tests {
             .map(|manifest| manifest.id.clone())
             .collect::<BTreeSet<_>>();
         assert!(
-            expected.len() > 4,
+            compatible.len() > 4,
             "automatic dispatch must extend beyond legacy defaults"
         );
+        assert!(
+            !compatible.contains(MCP_ARMOR_ENGINE_ID),
+            "this repository fixture has no MCP configuration, so MCP Armor is not compatible-authorized"
+        );
+
+        let mut expected = compatible;
+        expected.insert(MCP_ARMOR_ENGINE_ID.to_owned());
 
         let plan = service
             .plan_scan(&created.id, ScanPlanRequest::default())
@@ -26675,6 +26706,69 @@ mod tests {
             )
             .collect::<BTreeSet<_>>();
         assert_eq!(actual, expected);
+        assert!(
+            actual.len() < fixture.engines.manifests().len(),
+            "automatic dispatch must not list every catalog engine on a repository-only case"
+        );
+    }
+
+    #[test]
+    fn default_plan_omits_engines_that_cannot_read_the_asset_kind() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+
+        let kubescape = fixture
+            .engines
+            .get("kubescape")
+            .expect("kubescape catalog entry");
+        assert!(
+            kubescape
+                .required_permissions
+                .contains(&ScanPermission::LocalArtifactRead)
+        );
+        assert!(
+            !kubescape
+                .supported_asset_kinds
+                .contains(&AssetKind::Repository)
+        );
+        assert!(
+            kubescape
+                .supported_asset_kinds
+                .contains(&AssetKind::KubernetesCluster)
+        );
+
+        let plan = service
+            .plan_scan(&created.id, ScanPlanRequest::default())
+            .unwrap();
+        let planned = plan
+            .executable
+            .iter()
+            .map(|execution| execution.manifest.id.as_str())
+            .chain(
+                plan.not_executed
+                    .iter()
+                    .map(|not_executed| not_executed.engine_id.as_str()),
+            )
+            .collect::<BTreeSet<_>>();
+        assert!(
+            !planned.contains("kubescape"),
+            "a local-artifact engine that cannot read a repository must stay out of the default plan"
+        );
+        for manifest in fixture.engines.manifests() {
+            if !manifest
+                .supported_asset_kinds
+                .contains(&AssetKind::Repository)
+            {
+                assert!(
+                    !planned.contains(manifest.id.as_str()),
+                    "{} does not read repositories and must stay out of a repository-only default plan",
+                    manifest.id
+                );
+            }
+        }
     }
 
     #[test]
@@ -29517,6 +29611,317 @@ mod tests {
         assert_eq!(skipped.reason_code, "mcp_configuration_absent");
         assert_eq!(skipped.explanation, MCP_CONFIGURATION_ABSENT_EXPLANATION);
         assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+    }
+
+    #[test]
+    fn default_plan_records_mcp_armor_when_discovery_finds_no_configuration() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Absent
+        );
+        assert!(
+            crate::mcp_armor_input::candidates_from_asset(asset)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            asset
+                .metadata
+                .get(crate::mcp_armor_input::MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY),
+            Some(&Value::Bool(true))
+        );
+
+        let plan = service
+            .plan_scan(&created.id, ScanPlanRequest::default())
+            .unwrap();
+        assert!(
+            plan.executable
+                .iter()
+                .all(|execution| execution.manifest.id != MCP_ARMOR_ENGINE_ID)
+        );
+        let skipped = plan
+            .not_executed
+            .iter()
+            .find(|not_executed| not_executed.engine_id == MCP_ARMOR_ENGINE_ID)
+            .expect("default plan must record MCP Armor when discovery found no configuration");
+        assert_eq!(skipped.reason_code, "mcp_configuration_absent");
+        assert_eq!(skipped.explanation, MCP_CONFIGURATION_ABSENT_EXPLANATION);
+        let engine_run = plan
+            .scan_run
+            .engine_runs
+            .iter()
+            .find(|engine_run| engine_run.engine_id == MCP_ARMOR_ENGINE_ID)
+            .expect("mcp-armor engine run");
+        assert_eq!(engine_run.status, EngineRunStatus::NotExecuted);
+        assert_eq!(engine_run.id, skipped.engine_run_id);
+    }
+
+    #[test]
+    fn default_plan_omits_mcp_armor_when_repository_lacks_local_artifact_read() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        service
+            .approve_scope(
+                &created.id,
+                ScopeApprovalRequest {
+                    asset_id,
+                    permissions: vec![ScanPermission::InventoryRead],
+                    confirmed_by: "Repository owner".into(),
+                    expires_at: None,
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .unwrap();
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert!(asset.owner_confirmed && !asset.candidate);
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Absent
+        );
+        assert!(
+            crate::mcp_armor_input::candidates_from_asset(asset)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            asset
+                .metadata
+                .get(crate::mcp_armor_input::MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY),
+            Some(&Value::Bool(true))
+        );
+        assert!(stored.scope_grants.iter().all(|grant| {
+            grant.asset_id != asset.id || grant.permission != ScanPermission::LocalArtifactRead
+        }));
+
+        let plan = service
+            .plan_scan(&created.id, ScanPlanRequest::default())
+            .unwrap();
+        let planned = plan
+            .executable
+            .iter()
+            .map(|execution| execution.manifest.id.as_str())
+            .chain(
+                plan.not_executed
+                    .iter()
+                    .map(|not_executed| not_executed.engine_id.as_str()),
+            )
+            .collect::<BTreeSet<_>>();
+        assert!(
+            planned.contains("httpx"),
+            "the authorized website still produces a default plan"
+        );
+        assert!(
+            !planned.contains(MCP_ARMOR_ENGINE_ID),
+            "a repository without local_artifact_read must not pull mcp-armor into the default plan"
+        );
+        assert!(
+            plan.not_executed.iter().all(|skipped| {
+                skipped.engine_id != MCP_ARMOR_ENGINE_ID
+                    || skipped.reason_code != "mcp_configuration_absent"
+            }),
+            "must not claim MCP configuration was absent on a repository nobody granted local_artifact_read to read"
+        );
+    }
+
+    #[test]
+    fn default_plan_omits_mcp_armor_when_repository_is_not_owner_confirmed() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let mut stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter_mut()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        asset.owner_confirmed = false;
+        asset.candidate = false;
+        fixture
+            .storage
+            .save_case(&mut stored, "test.unconfirmed_repository_with_grant")
+            .unwrap();
+
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert!(!asset.owner_confirmed);
+        assert!(!asset.candidate);
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Absent
+        );
+        assert!(
+            crate::mcp_armor_input::candidates_from_asset(asset)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            asset
+                .metadata
+                .get(crate::mcp_armor_input::MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY),
+            Some(&Value::Bool(true))
+        );
+        assert!(stored.scope_grants.iter().any(|grant| {
+            grant.asset_id == asset.id && grant.permission == ScanPermission::LocalArtifactRead
+        }));
+
+        let plan = service
+            .plan_scan(&created.id, ScanPlanRequest::default())
+            .unwrap();
+        let planned = plan
+            .executable
+            .iter()
+            .map(|execution| execution.manifest.id.as_str())
+            .chain(
+                plan.not_executed
+                    .iter()
+                    .map(|not_executed| not_executed.engine_id.as_str()),
+            )
+            .collect::<BTreeSet<_>>();
+        assert!(
+            planned.contains("httpx"),
+            "the authorized website still produces a default plan"
+        );
+        assert!(
+            !planned.contains(MCP_ARMOR_ENGINE_ID),
+            "a repository the owner has not confirmed must not pull mcp-armor into the default plan"
+        );
+        assert!(
+            plan.not_executed.iter().all(|skipped| {
+                skipped.engine_id != MCP_ARMOR_ENGINE_ID
+                    || skipped.reason_code != "mcp_configuration_absent"
+            }),
+            "must not claim MCP configuration was absent on a repository nobody confirmed"
+        );
+    }
+
+    #[test]
+    fn default_plan_omits_mcp_armor_when_repository_is_still_a_candidate() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let mut stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter_mut()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        asset.owner_confirmed = true;
+        asset.candidate = true;
+        fixture
+            .storage
+            .save_case(&mut stored, "test.candidate_repository_with_grant")
+            .unwrap();
+
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert!(asset.owner_confirmed);
+        assert!(asset.candidate);
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Absent
+        );
+        assert!(
+            crate::mcp_armor_input::candidates_from_asset(asset)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            asset
+                .metadata
+                .get(crate::mcp_armor_input::MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY),
+            Some(&Value::Bool(true))
+        );
+        assert!(stored.scope_grants.iter().any(|grant| {
+            grant.asset_id == asset.id && grant.permission == ScanPermission::LocalArtifactRead
+        }));
+
+        let plan = service
+            .plan_scan(&created.id, ScanPlanRequest::default())
+            .unwrap();
+        let planned = plan
+            .executable
+            .iter()
+            .map(|execution| execution.manifest.id.as_str())
+            .chain(
+                plan.not_executed
+                    .iter()
+                    .map(|not_executed| not_executed.engine_id.as_str()),
+            )
+            .collect::<BTreeSet<_>>();
+        assert!(
+            planned.contains("httpx"),
+            "the authorized website still produces a default plan"
+        );
+        assert!(
+            !planned.contains(MCP_ARMOR_ENGINE_ID),
+            "a repository that is still a candidate must not pull mcp-armor into the default plan"
+        );
+        assert!(
+            plan.not_executed.iter().all(|skipped| {
+                skipped.engine_id != MCP_ARMOR_ENGINE_ID
+                    || skipped.reason_code != "mcp_configuration_absent"
+            }),
+            "must not claim MCP configuration was absent on a repository that is still a candidate"
+        );
     }
 
     #[test]
