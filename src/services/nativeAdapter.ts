@@ -918,6 +918,7 @@ const managedRuntimeRecoveryActions: Partial<
 const managedRuntimeNonRetryableFailures = new Set<ManagedRuntimeSetupFailureReason>([
   "packaged_runtime_missing",
   "packaged_runtime_verification_failed",
+  "developer_build_without_packaged_runtime",
 ]);
 
 const managedRuntimeSetupPhases = new Set<ManagedRuntimeSetupPhase>([
@@ -942,6 +943,7 @@ const managedRuntimeSetupFailureReasons = new Set<ManagedRuntimeSetupFailureReas
   "windows_wsl_command_failed",
   "packaged_runtime_missing",
   "packaged_runtime_verification_failed",
+  "developer_build_without_packaged_runtime",
 ]);
 
 const managedRuntimeSetupNextActions = new Set<ManagedRuntimeSetupNextAction>([

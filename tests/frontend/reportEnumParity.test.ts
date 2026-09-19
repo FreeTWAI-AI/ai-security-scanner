@@ -280,6 +280,7 @@ test("the extractor reads real variants, not whatever the regex allows", () => {
   assert.deepEqual(rustVariants(managedRuntime, "ManagedRuntimeSetupFailureReason"), [
     "packaged_runtime_missing",
     "packaged_runtime_verification_failed",
+    "developer_build_without_packaged_runtime",
     "windows_wsl_not_installed",
     "windows_wsl_optional_feature_disabled",
     "windows_wsl_update_required",

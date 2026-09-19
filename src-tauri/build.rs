@@ -28,7 +28,13 @@ fn main() {
                 "release desktop or installer-cache build requires readable managed runtime manifest {}: {error}",
                 manifest_path.display()
             ),
-            Err(_) => String::new(),
+            Err(_) => {
+                println!(
+                    "cargo:warning=managed runtime recovery anchor disabled because {} is missing or unreadable; the resulting debug binary cannot recover scan tools from the private versions cache",
+                    manifest_path.display()
+                );
+                String::new()
+            }
         }
     } else {
         String::new()

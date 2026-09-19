@@ -605,6 +605,8 @@ pub enum ManagedRuntimeSetupFailureReason {
     PackagedRuntimeMissing,
     #[serde(rename = "packaged_runtime_verification_failed")]
     PackagedRuntimeVerificationFailed,
+    #[serde(rename = "developer_build_without_packaged_runtime")]
+    DeveloperBuildWithoutPackagedRuntime,
     #[serde(rename = "windows_wsl_not_installed")]
     WslNotInstalled,
     #[serde(rename = "windows_wsl_optional_feature_disabled")]
@@ -622,6 +624,9 @@ impl ManagedRuntimeSetupFailureReason {
         match self {
             Self::PackagedRuntimeMissing => "packaged_runtime_missing",
             Self::PackagedRuntimeVerificationFailed => "packaged_runtime_verification_failed",
+            Self::DeveloperBuildWithoutPackagedRuntime => {
+                "developer_build_without_packaged_runtime"
+            }
             Self::WslNotInstalled => "windows_wsl_not_installed",
             Self::WslOptionalFeatureDisabled => "windows_wsl_optional_feature_disabled",
             Self::WslUpdateRequired => "windows_wsl_update_required",
@@ -633,7 +638,9 @@ impl ManagedRuntimeSetupFailureReason {
     fn is_packaged_runtime_admission_failure(self) -> bool {
         matches!(
             self,
-            Self::PackagedRuntimeMissing | Self::PackagedRuntimeVerificationFailed
+            Self::PackagedRuntimeMissing
+                | Self::PackagedRuntimeVerificationFailed
+                | Self::DeveloperBuildWithoutPackagedRuntime
         )
     }
 
@@ -645,7 +652,14 @@ impl ManagedRuntimeSetupFailureReason {
             Self::PackagedRuntimeVerificationFailed => Some(
                 "The installed scan tools failed verification. Install the latest app version.",
             ),
-            _ => None,
+            Self::DeveloperBuildWithoutPackagedRuntime => Some(
+                "This developer build carries no packaged scan tools. Point it at a verified managed-runtime bundle override.",
+            ),
+            Self::WslNotInstalled
+            | Self::WslOptionalFeatureDisabled
+            | Self::WslUpdateRequired
+            | Self::RestartRequired
+            | Self::WslCommandFailed => None,
         }
     }
 }
@@ -832,9 +846,11 @@ impl ManagedRuntimeSetupController {
             .is_some_and(ManagedRuntimeSetupFailureReason::is_packaged_runtime_admission_failure)
             && !status.can_retry
         {
-            return Err(AppError::NotAvailable(
-                "verified scan tools are unavailable; install the latest app version".into(),
-            ));
+            let detail = status
+                .failure_reason
+                .and_then(ManagedRuntimeSetupFailureReason::packaged_runtime_admission_detail)
+                .unwrap_or("verified scan tools are unavailable; install the latest app version");
+            return Err(AppError::NotAvailable(detail.into()));
         }
         if self.prerequisite_repair_active.load(Ordering::Acquire) {
             return Err(AppError::Conflict(
@@ -2710,6 +2726,10 @@ pub(crate) enum PackagedManagedRuntimeAdmission {
     },
     Missing,
     VerificationFailed,
+    /// The running binary has no compiled recovery anchor and no packaged
+    /// resource tree. This is an unpackaged developer build, not a damaged
+    /// installation.
+    UnpackagedDeveloperBuild,
 }
 
 #[cfg(any(feature = "desktop", test))]
@@ -2730,6 +2750,9 @@ impl PackagedManagedRuntimeAdmission {
             Self::VerificationFailed => {
                 Some(ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed)
             }
+            Self::UnpackagedDeveloperBuild => {
+                Some(ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime)
+            }
         }
     }
 
@@ -2744,7 +2767,10 @@ impl PackagedManagedRuntimeAdmission {
                 manifest_sha256: manager.manifest_sha256(),
                 packaged_failure_reason: *packaged_failure_reason,
             }),
-            Self::Verified(_) | Self::Missing | Self::VerificationFailed => None,
+            Self::Verified(_)
+            | Self::Missing
+            | Self::VerificationFailed
+            | Self::UnpackagedDeveloperBuild => None,
         }
     }
 }
@@ -2796,8 +2822,16 @@ fn admit_packaged_managed_runtime_with_recovery_digest(
         Err(_) => PackagedManagedRuntimeAdmission::VerificationFailed,
     };
 
+    let expected_manifest_sha256 = expected_manifest_sha256.filter(|digest| {
+        validate_sha256(digest, "packaged managed runtime manifest digest anchor").is_ok()
+    });
     let Some(expected_manifest_sha256) = expected_manifest_sha256 else {
-        return rejected;
+        return match rejected {
+            PackagedManagedRuntimeAdmission::Missing => {
+                PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild
+            }
+            other => other,
+        };
     };
     let packaged_failure_reason = rejected
         .failure_reason()
@@ -9874,7 +9908,8 @@ impl WindowsWslPrerequisiteFailure {
         }
         match self.reason {
             ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing
-            | ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed => {
+            | ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed
+            | ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime => {
                 unreachable!("packaged-runtime failures returned above")
             }
             ManagedRuntimeSetupFailureReason::WslNotInstalled => format!(
@@ -14558,7 +14593,8 @@ mod tests {
                 panic!("rejected fixture unexpectedly admitted a runtime manager");
             }
             PackagedManagedRuntimeAdmission::Missing
-            | PackagedManagedRuntimeAdmission::VerificationFailed => {}
+            | PackagedManagedRuntimeAdmission::VerificationFailed
+            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild => {}
         }
 
         let controller =
@@ -14573,11 +14609,16 @@ mod tests {
         assert!(!first.can_cancel);
         assert!(!first.can_retry);
         assert!(first.next_action.is_none());
+        let expected_detail = expected_reason
+            .packaged_runtime_admission_detail()
+            .expect("admission failures have copy");
+        assert_eq!(first.detail, expected_detail);
 
         let begin_error = controller
             .begin()
             .expect_err("terminal admission failure cannot begin setup");
         assert!(matches!(begin_error, AppError::NotAvailable(_)));
+        assert!(begin_error.to_string().contains(expected_detail));
         assert_eq!(
             controller.status().expect("status after rejected begin"),
             first
@@ -14598,17 +14639,67 @@ mod tests {
         let resources = temporary.path().join("missing-runtime-bundle");
         fs::create_dir(&resources).expect("empty resource directory");
         let private_path = temporary.path().to_string_lossy().into_owned();
+        let packaged_anchor = sha256_bytes(b"packaged-runtime-admission-anchor");
 
-        let admission = admit_packaged_managed_runtime(&app_data, &resources);
+        let admission = admit_packaged_managed_runtime_with_recovery_digest(
+            &app_data,
+            &resources,
+            Some(&packaged_anchor),
+        );
         assert_redacted_terminal_packaged_runtime_admission(
             admission,
             ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing,
             &[&private_path],
         );
+        assert_eq!(
+            ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing
+                .packaged_runtime_admission_detail(),
+            Some("The installed scan tools are unavailable. Install the latest app version.")
+        );
         assert!(
             !app_data.exists(),
             "a missing package must not initialize managed runtime state"
         );
+    }
+
+    #[test]
+    fn unpackaged_developer_build_without_packaged_runtime_has_distinct_non_install_copy() {
+        let temporary = tempfile::tempdir().expect("temporary admission fixture");
+        let app_data = temporary.path().join("private-app-data");
+        let resources = temporary.path().join("missing-runtime-bundle");
+        fs::create_dir(&resources).expect("empty resource directory");
+        let private_path = temporary.path().to_string_lossy().into_owned();
+
+        let admission =
+            admit_packaged_managed_runtime_with_recovery_digest(&app_data, &resources, None);
+        assert_redacted_terminal_packaged_runtime_admission(
+            admission,
+            ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime,
+            &[&private_path],
+        );
+        let detail = ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime
+            .packaged_runtime_admission_detail()
+            .expect("developer-build admission copy");
+        let lowered = detail.to_ascii_lowercase();
+        assert!(
+            !lowered.contains("install the")
+                && !lowered.contains("reinstall")
+                && !lowered.contains("latest app version")
+                && !lowered.contains("compatible app version"),
+            "developer-build copy prescribed an install: {detail}"
+        );
+        assert!(
+            !app_data.exists(),
+            "an unpackaged developer build must not initialize managed runtime state"
+        );
+
+        let production = admit_packaged_managed_runtime(&app_data, &resources);
+        let expected_production = if packaged_managed_runtime_manifest_digest_anchor().is_some() {
+            ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing
+        } else {
+            ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime
+        };
+        assert_eq!(production.failure_reason(), Some(expected_production));
     }
 
     #[test]
@@ -14622,11 +14713,21 @@ mod tests {
             .expect("invalid packaged manifest");
         let private_path = temporary.path().to_string_lossy().into_owned();
 
-        let admission = admit_packaged_managed_runtime(&app_data, &resources);
+        let packaged_anchor = sha256_bytes(b"packaged-runtime-admission-anchor");
+        let admission = admit_packaged_managed_runtime_with_recovery_digest(
+            &app_data,
+            &resources,
+            Some(&packaged_anchor),
+        );
         assert_redacted_terminal_packaged_runtime_admission(
             admission,
             ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed,
             &[&private_path, rejected_bytes, "DO-NOT-LEAK-REJECTED-BYTES"],
+        );
+        assert_eq!(
+            ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed
+                .packaged_runtime_admission_detail(),
+            Some("The installed scan tools failed verification. Install the latest app version.")
         );
     }
 
@@ -14674,7 +14775,8 @@ mod tests {
                 panic!("a missing packaged tree cannot be the verified source")
             }
             PackagedManagedRuntimeAdmission::Missing
-            | PackagedManagedRuntimeAdmission::VerificationFailed => {
+            | PackagedManagedRuntimeAdmission::VerificationFailed
+            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild => {
                 panic!("the exact intact private copy was not recovered")
             }
         };
@@ -14737,7 +14839,8 @@ mod tests {
                 panic!("tampered packaged bytes were admitted as verified")
             }
             PackagedManagedRuntimeAdmission::Missing
-            | PackagedManagedRuntimeAdmission::VerificationFailed => {
+            | PackagedManagedRuntimeAdmission::VerificationFailed
+            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild => {
                 panic!("the exact intact private copy was not recovered")
             }
         };
@@ -14777,7 +14880,23 @@ mod tests {
         let private_path = app_data.to_string_lossy().into_owned();
         fs::remove_dir_all(&resources).expect("remove packaged runtime tree");
 
-        for recovery_digest in [None, Some(wrong_digest.as_str()), Some(malformed_digest)] {
+        let admission = admit_packaged_managed_runtime_with_recovery_digest(
+            &app_data,
+            &resources,
+            Some(wrong_digest.as_str()),
+        );
+        assert_redacted_terminal_packaged_runtime_admission(
+            admission,
+            ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing,
+            &[
+                &private_path,
+                wrong_digest.as_str(),
+                malformed_digest,
+                "managed-podman-driver",
+            ],
+        );
+
+        for recovery_digest in [None, Some(malformed_digest)] {
             let admission = admit_packaged_managed_runtime_with_recovery_digest(
                 &app_data,
                 &resources,
@@ -14785,7 +14904,7 @@ mod tests {
             );
             assert_redacted_terminal_packaged_runtime_admission(
                 admission,
-                ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing,
+                ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime,
                 &[
                     &private_path,
                     wrong_digest.as_str(),
@@ -14884,7 +15003,8 @@ mod tests {
                 panic!("healthy packaged resources must remain the primary source")
             }
             PackagedManagedRuntimeAdmission::Missing
-            | PackagedManagedRuntimeAdmission::VerificationFailed => {
+            | PackagedManagedRuntimeAdmission::VerificationFailed
+            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild => {
                 panic!("healthy packaged resources were unexpectedly rejected")
             }
         }
@@ -14926,6 +15046,55 @@ mod tests {
             &[legacy_digest.as_str()],
         );
         assert_eq!(fixture.commands.calls(), Vec::<Vec<String>>::new());
+    }
+
+    #[test]
+    fn every_setup_failure_reason_has_user_facing_copy() {
+        fn copy_for(reason: ManagedRuntimeSetupFailureReason) -> String {
+            match reason {
+                ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing
+                | ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed
+                | ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime => reason
+                    .packaged_runtime_admission_detail()
+                    .expect("packaged-runtime admission failures have copy")
+                    .into(),
+                ManagedRuntimeSetupFailureReason::WslNotInstalled
+                | ManagedRuntimeSetupFailureReason::WslOptionalFeatureDisabled
+                | ManagedRuntimeSetupFailureReason::WslUpdateRequired
+                | ManagedRuntimeSetupFailureReason::RestartRequired
+                | ManagedRuntimeSetupFailureReason::WslCommandFailed => {
+                    WindowsWslPrerequisiteFailure {
+                        reason,
+                        action: ManagedRuntimeSetupNextAction::RetryWslCheck,
+                        exit_code: None,
+                    }
+                    .detail()
+                }
+            }
+        }
+
+        for reason in [
+            ManagedRuntimeSetupFailureReason::PackagedRuntimeMissing,
+            ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed,
+            ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime,
+            ManagedRuntimeSetupFailureReason::WslNotInstalled,
+            ManagedRuntimeSetupFailureReason::WslOptionalFeatureDisabled,
+            ManagedRuntimeSetupFailureReason::WslUpdateRequired,
+            ManagedRuntimeSetupFailureReason::RestartRequired,
+            ManagedRuntimeSetupFailureReason::WslCommandFailed,
+        ] {
+            let copy = copy_for(reason);
+            assert!(!copy.is_empty(), "{reason:?} has empty copy");
+            assert!(
+                !copy.contains(reason.as_str()),
+                "{reason:?} leaked its raw code into copy: {copy}"
+            );
+            assert_eq!(
+                reason.packaged_runtime_admission_detail().is_some(),
+                reason.is_packaged_runtime_admission_failure(),
+                "{reason:?} admission-copy presence must match the admission-failure set"
+            );
+        }
     }
 
     #[test]

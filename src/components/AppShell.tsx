@@ -15,6 +15,7 @@ import {
 import { completePageTransition } from "../pageNavigation";
 import {
   hasUnconfirmedManagedRuntimeCompletion,
+  isDeveloperBuildWithoutPackagedRuntime,
   isManagedRuntimePackageAdmissionFailure,
 } from "../runtimeSetupPresentation";
 import type {
@@ -185,6 +186,7 @@ export function AppShell({
   const exactBytes = (value: number): string =>
     t(value === 1 ? "common.byte" : "common.bytes", { value: formatNumber(value) });
   const runtimeSetupNonRetryable = isManagedRuntimePackageAdmissionFailure(runtimeSetup);
+  const developerBuildUnavailable = isDeveloperBuildWithoutPackagedRuntime(runtimeSetup);
   const runtimeSetupWorking = !runtimeSetupNonRetryable && (
     runtimeBusy
     || runtimeSetup?.active === true
@@ -196,7 +198,9 @@ export function AppShell({
       : classifyRuntimeIssue(runtime?.prerequisite, runtime?.detail, runtimeSetup?.detail)
   ];
   const runtimeGuidance: TranslationKey = runtimeSetupNonRetryable
-    ? "runtime.phase.failed.nonRetryable.detail"
+    ? (developerBuildUnavailable
+      ? "runtime.phase.failed.developerBuild.detail"
+      : "runtime.phase.failed.nonRetryable.detail")
     : runtimeSetup?.nextAction
       ? runtimeRecoveryKeys[runtimeSetup.nextAction]
       : runtimeIssue;
@@ -217,7 +221,9 @@ export function AppShell({
     && runtimeSetup?.phase === "failed"
     && !runtimeSetup.nextAction;
   const runtimeGuidanceTitle: TranslationKey = runtimeSetupNonRetryable
-    ? "runtime.phase.failed.nonRetryable.label"
+    ? (developerBuildUnavailable
+      ? "runtime.phase.failed.developerBuild.label"
+      : "runtime.phase.failed.nonRetryable.label")
     : genericSetupFailure
       ? "runtime.phase.failed.generic.label"
       : "runtime.nextStep";
@@ -237,7 +243,9 @@ export function AppShell({
     : runtime?.available
       ? "runtime.badge.ready"
       : runtimeSetupNonRetryable
-        ? "runtime.phase.failed.nonRetryable.label"
+        ? (developerBuildUnavailable
+          ? "runtime.phase.failed.developerBuild.label"
+          : "runtime.phase.failed.nonRetryable.label")
         : runtimeSetupWorking
           ? "runtime.badge.preparing"
           : runtimeSetup?.phase === "failed"

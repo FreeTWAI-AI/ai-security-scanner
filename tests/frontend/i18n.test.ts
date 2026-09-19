@@ -207,6 +207,7 @@ test("every managed-runtime warning stays concise and action-led", () => {
     "runtime.phase.failed.detail",
     "runtime.phase.failed.generic.detail",
     "runtime.phase.failed.nonRetryable.detail",
+    "runtime.phase.failed.developerBuild.detail",
     "runtime.phase.cancelled.detail",
   ];
 
@@ -221,6 +222,15 @@ test("every managed-runtime warning stays concise and action-led", () => {
     assert.doesNotMatch(chinese, /保存.*結果|不受影響/u, `${key} should avoid defensive reassurance`);
     assert.doesNotMatch(chinese, /localhost|TCP/u, `${key} should not advertise an unrelated connection utility`);
   }
+
+  assert.doesNotMatch(
+    i18n.translate("en", "runtime.phase.failed.developerBuild.detail"),
+    /install|reinstall/iu,
+  );
+  assert.doesNotMatch(
+    i18n.translate("zh-TW", "runtime.phase.failed.developerBuild.detail"),
+    /安裝|重裝/u,
+  );
 
   assert.equal(
     i18n.translate("en", "runtime.phase.cancelled.detail"),

@@ -182,6 +182,10 @@ fn ensure_verified_managed_runtime_for_setup(state: &AppState) -> AppResult<()> 
     if state.managed_runtime().is_some() {
         return Ok(());
     }
+    let status = state.managed_runtime_setup().status()?;
+    if !status.can_retry && status.failure_reason.is_some() && status.next_action.is_none() {
+        return Err(AppError::NotAvailable(status.detail));
+    }
     Err(AppError::NotAvailable(
         "verified scan tools are unavailable; install the latest app version".into(),
     ))
@@ -7632,6 +7636,10 @@ mod tests {
             (
                 PackagedManagedRuntimeAdmission::VerificationFailed,
                 ManagedRuntimeSetupFailureReason::PackagedRuntimeVerificationFailed,
+            ),
+            (
+                PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild,
+                ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime,
             ),
         ] {
             let (_directory, state) = test_state();

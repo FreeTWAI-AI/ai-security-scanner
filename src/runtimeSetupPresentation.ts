@@ -16,6 +16,7 @@ const terminalSetupPhases = new Set(["completed", "failed", "cancelled"]);
 const packageAdmissionFailureReasons = new Set([
   "packaged_runtime_missing",
   "packaged_runtime_verification_failed",
+  "developer_build_without_packaged_runtime",
 ]);
 
 export interface ManagedRuntimeSetupRequestBaseline {
@@ -27,6 +28,10 @@ export const hasUnconfirmedManagedRuntimeCompletion = (
   runtimeAvailable: boolean | undefined,
   setupPhase: ManagedRuntimeSetupStatus["phase"] | undefined,
 ): boolean => runtimeAvailable !== true && setupPhase === "completed";
+
+export const isDeveloperBuildWithoutPackagedRuntime = (
+  status: Pick<ManagedRuntimeSetupStatus, "failureReason"> | undefined,
+): boolean => status?.failureReason === "developer_build_without_packaged_runtime";
 
 /** Only immutable packaged-runtime admission failures are terminal without Retry. */
 export const isManagedRuntimePackageAdmissionFailure = (

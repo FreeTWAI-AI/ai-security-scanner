@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   hasUnconfirmedManagedRuntimeCompletion,
   hasManagedRuntimeSetupRequestStarted,
+  isDeveloperBuildWithoutPackagedRuntime,
   isManagedRuntimePackageAdmissionFailure,
   resolveRuntimeSetupPresentation,
 } from "../../src/runtimeSetupPresentation.ts";
@@ -149,6 +150,34 @@ test("an exact packaged-runtime admission failure degrades gracefully without an
     source.indexOf("scannerIssues:", source.indexOf("nonRetryableTitle:")),
   );
   assert.doesNotMatch(nonRetryableCopy, /WSL|Podman|gateway|manifest|provenance|package/iu);
+});
+
+test("an unpackaged developer build is non-retryable and does not prescribe install", () => {
+  const developerBuild = {
+    active: false,
+    prerequisiteRepairActive: false,
+    phase: "failed" as const,
+    canRetry: false,
+    failureReason: "developer_build_without_packaged_runtime" as const,
+    nextAction: undefined,
+  };
+  const state = resolveRuntimeSetupPresentation({
+    mode: "native",
+    runtimeAvailable: false,
+    status: developerBuild,
+  });
+
+  assert.equal(isManagedRuntimePackageAdmissionFailure(developerBuild), true);
+  assert.equal(isDeveloperBuildWithoutPackagedRuntime(developerBuild), true);
+  assert.equal(state.setupNonRetryable, true);
+  for (const phrase of [
+    "This developer build has no scan tools",
+    "Point it at a verified app bundle that includes them.",
+    "這個開發版未內建掃描工具",
+  ]) assert.ok(source.includes(phrase), phrase);
+  const description = source.match(/developerBuildDescription: "([^"]+)"/u)?.[1] ?? "";
+  assert.equal(description, "Point it at a verified app bundle that includes them.");
+  assert.doesNotMatch(description, /install|reinstall/iu);
 });
 
 test("canRetry false alone never masquerades as a package admission failure", () => {

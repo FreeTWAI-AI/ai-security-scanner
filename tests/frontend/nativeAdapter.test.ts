@@ -1311,6 +1311,7 @@ test("managed runtime setup adapter preserves only the bounded non-retryable pac
   for (const failureReason of [
     "packaged_runtime_missing",
     "packaged_runtime_verification_failed",
+    "developer_build_without_packaged_runtime",
   ] as const) {
     const adapted = adaptManagedRuntimeSetupStatus(runtimeSetupDto({
       can_retry: false,

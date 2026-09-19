@@ -77,6 +77,24 @@ test("a check that can never run gives the required version action", () => {
   expect(container.querySelector(".runtime-assistant__status")).toBeNull();
 });
 
+test("a developer build without scan tools does not prescribe install", () => {
+  const { container } = renderAssistant({
+    status: setupStatus({
+      phase: "failed",
+      active: false,
+      canRetry: false,
+      canCancel: false,
+      failureReason: "developer_build_without_packaged_runtime",
+      nextAction: undefined,
+    }),
+  });
+
+  expect(heading(container)).toBe("This developer build has no scan tools");
+  expect(explanation(container)).toContain("verified app bundle");
+  expect(explanation(container)).not.toMatch(/install|reinstall/iu);
+  expect(actionButtons(container)).toHaveLength(0);
+});
+
 test("a failure that can never succeed offers nothing to retry", () => {
   const { container } = renderAssistant({ status: packagedAdmissionFailure });
 
