@@ -9,12 +9,16 @@ use crate::error::{AppError, AppResult};
 use crate::job_manager::JobManager;
 use crate::managed_network::{ManagedNetworkReconciliationSummary, ManagedNetworkRegistry};
 use crate::managed_runtime::{
-    ManagedRuntimeManager, ManagedRuntimePhase, ManagedRuntimeSetupController,
-    ManagedRuntimeStatus, PackagedManagedRuntimeAdmission,
+    ManagedRuntimeManager, ManagedRuntimeSetupController, ManagedRuntimeStatus,
+    PackagedManagedRuntimeAdmission,
 };
 use crate::process_lease::DataDirectoryExclusiveLease;
 use crate::registry::EngineRegistry;
-use crate::runtime_health_monitor::{RuntimeHealthMonitor, RuntimeHealthObservation};
+use crate::runtime_health_monitor::{
+    RuntimeHealthMonitor, RuntimeHealthObservation, is_available_compatibility_runtime,
+    managed_runtime_health_observation, managed_runtime_health_precludes_fallback,
+    select_recorded_managed_runtime_health, select_runtime_health,
+};
 use crate::source_authorization::SourceAuthorizationBindings;
 use crate::source_authorization::discovery::ProviderDiscoveryJobs;
 use crate::source_authorization::session::ProviderAuthorizationSessions;
@@ -196,14 +200,23 @@ impl AppState {
     }
 
     pub fn record_managed_runtime_health(&self, status: &ManagedRuntimeStatus) {
-        self.runtime_health.record_observation(RuntimeHealth {
-            provider: status.provider.clone(),
-            available: status.available,
-            phase: status.phase.as_str().into(),
-            version: Some(status.runtime_version.clone()),
-            prerequisite: status.prerequisite.clone(),
-            detail: status.detail.clone(),
-        });
+        let observation = select_recorded_managed_runtime_health(
+            managed_runtime_health_observation(status),
+            self.runtime_health.cached(),
+        );
+        match observation {
+            RuntimeHealthObservation::Settled(health)
+                if !status.available && is_available_compatibility_runtime(&health) =>
+            {
+                self.runtime_health.replace_cached(health);
+            }
+            RuntimeHealthObservation::Settled(health) => {
+                self.runtime_health.record_observation(health);
+            }
+            RuntimeHealthObservation::Reconciling(health) => {
+                self.runtime_health.replace_cached(health);
+            }
+        }
     }
 
     pub fn case_service(&self) -> CaseService<'_> {
@@ -305,72 +318,22 @@ fn checking_runtime_health(provider: &str) -> RuntimeHealth {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RuntimeHealthConfidence {
-    Settled,
-    Reconciling,
-}
-
-impl RuntimeHealthConfidence {
-    fn observe(self, health: RuntimeHealth) -> RuntimeHealthObservation {
-        match self {
-            Self::Settled => RuntimeHealthObservation::Settled(health),
-            Self::Reconciling => RuntimeHealthObservation::Reconciling(health),
-        }
-    }
-}
-
-fn managed_runtime_health_confidence(phase: ManagedRuntimePhase) -> RuntimeHealthConfidence {
-    match phase {
-        ManagedRuntimePhase::Running
-        | ManagedRuntimePhase::NotInstalled
-        | ManagedRuntimePhase::Installed
-        | ManagedRuntimePhase::Stopped
-        | ManagedRuntimePhase::Corrupt
-        | ManagedRuntimePhase::Unsupported => RuntimeHealthConfidence::Settled,
-        ManagedRuntimePhase::Starting => RuntimeHealthConfidence::Reconciling,
-    }
-}
-
-fn detect_runtime_health(
-    managed_runtime: Option<&ManagedRuntimeManager>,
-) -> RuntimeHealthObservation {
-    if let Some(manager) = managed_runtime {
-        return match manager.status() {
-            Ok(status) => {
-                let confidence = managed_runtime_health_confidence(status.phase);
-                confidence.observe(RuntimeHealth {
-                    provider: status.provider,
-                    available: status.available,
-                    phase: status.phase.as_str().into(),
-                    version: Some(status.runtime_version),
-                    prerequisite: status.prerequisite,
-                    detail: status.detail,
-                })
-            }
-            Err(error) => RuntimeHealthObservation::Reconciling(RuntimeHealth {
-                provider: "managed_local".into(),
-                available: false,
-                phase: "error".into(),
-                version: None,
-                prerequisite: None,
-                detail: error.to_string(),
-            }),
-        };
-    }
-
+fn detect_compatibility_runtime_health() -> RuntimeHealthObservation {
     match ProcessContainerRuntime::detect().and_then(|runtime| {
         use crate::container_runtime::ContainerRuntime as _;
         runtime.preflight()
     }) {
-        Ok(preflight) => RuntimeHealthObservation::Settled(RuntimeHealth {
-            provider: format!("{:?}", preflight.provider).to_ascii_lowercase(),
-            available: true,
-            phase: "running".into(),
-            version: Some(preflight.server_version),
-            prerequisite: None,
-            detail: "compatibility container service is available".into(),
-        }),
+        Ok(preflight) => {
+            let provider = format!("{:?}", preflight.provider).to_ascii_lowercase();
+            RuntimeHealthObservation::Settled(RuntimeHealth {
+                provider,
+                available: true,
+                phase: "running".into(),
+                version: Some(preflight.server_version),
+                prerequisite: None,
+                detail: "compatibility container service is available".into(),
+            })
+        }
         Err(error) => RuntimeHealthObservation::Settled(RuntimeHealth {
             provider: "none".into(),
             available: false,
@@ -380,6 +343,31 @@ fn detect_runtime_health(
             detail: error.to_string(),
         }),
     }
+}
+
+fn detect_runtime_health(
+    managed_runtime: Option<&ManagedRuntimeManager>,
+) -> RuntimeHealthObservation {
+    let managed = managed_runtime.map(|manager| match manager.status() {
+        Ok(status) => managed_runtime_health_observation(&status),
+        Err(error) => RuntimeHealthObservation::Reconciling(RuntimeHealth {
+            provider: "managed_local".into(),
+            available: false,
+            phase: "error".into(),
+            version: None,
+            prerequisite: None,
+            detail: error.to_string(),
+        }),
+    });
+
+    if managed
+        .as_ref()
+        .is_some_and(managed_runtime_health_precludes_fallback)
+    {
+        return managed.expect("a conclusive managed observation is present");
+    }
+
+    select_runtime_health(managed, detect_compatibility_runtime_health())
 }
 
 fn ensure_private_child(parent: &Path, name: &str) -> AppResult<PathBuf> {
@@ -416,47 +404,4 @@ fn restrict_directory(path: &Path) -> AppResult<()> {
 #[cfg(not(unix))]
 fn restrict_directory(_path: &Path) -> AppResult<()> {
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_starting_managed_runtime_health_is_reconciling() {
-        let expectations = [
-            (
-                ManagedRuntimePhase::NotInstalled,
-                RuntimeHealthConfidence::Settled,
-            ),
-            (
-                ManagedRuntimePhase::Installed,
-                RuntimeHealthConfidence::Settled,
-            ),
-            (
-                ManagedRuntimePhase::Stopped,
-                RuntimeHealthConfidence::Settled,
-            ),
-            (
-                ManagedRuntimePhase::Starting,
-                RuntimeHealthConfidence::Reconciling,
-            ),
-            (
-                ManagedRuntimePhase::Running,
-                RuntimeHealthConfidence::Settled,
-            ),
-            (
-                ManagedRuntimePhase::Corrupt,
-                RuntimeHealthConfidence::Settled,
-            ),
-            (
-                ManagedRuntimePhase::Unsupported,
-                RuntimeHealthConfidence::Settled,
-            ),
-        ];
-
-        for (phase, expected) in expectations {
-            assert_eq!(managed_runtime_health_confidence(phase), expected);
-        }
-    }
 }

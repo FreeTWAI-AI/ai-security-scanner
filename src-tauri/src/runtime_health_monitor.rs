@@ -1,4 +1,6 @@
 use crate::domain::RuntimeHealth;
+#[cfg(any(feature = "desktop", test))]
+use crate::managed_runtime::{ManagedRuntimePhase, ManagedRuntimeStatus};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -17,6 +19,112 @@ pub enum RuntimeHealthObservation {
     /// bounded status budget. The reading is publishable copy, but it must not
     /// suppress the next probe: the condition it reports resolves on its own.
     Reconciling(RuntimeHealth),
+}
+
+#[cfg(any(feature = "desktop", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeHealthConfidence {
+    Settled,
+    Reconciling,
+}
+
+#[cfg(any(feature = "desktop", test))]
+impl RuntimeHealthConfidence {
+    fn observe(self, health: RuntimeHealth) -> RuntimeHealthObservation {
+        match self {
+            Self::Settled => RuntimeHealthObservation::Settled(health),
+            Self::Reconciling => RuntimeHealthObservation::Reconciling(health),
+        }
+    }
+}
+
+#[cfg(any(feature = "desktop", test))]
+fn managed_runtime_health_confidence(phase: ManagedRuntimePhase) -> RuntimeHealthConfidence {
+    match phase {
+        ManagedRuntimePhase::Running
+        | ManagedRuntimePhase::NotInstalled
+        | ManagedRuntimePhase::Installed
+        | ManagedRuntimePhase::Stopped
+        | ManagedRuntimePhase::Corrupt
+        | ManagedRuntimePhase::Unsupported => RuntimeHealthConfidence::Settled,
+        ManagedRuntimePhase::Starting => RuntimeHealthConfidence::Reconciling,
+    }
+}
+
+#[cfg(any(feature = "desktop", test))]
+pub(crate) fn managed_runtime_health_observation(
+    status: &ManagedRuntimeStatus,
+) -> RuntimeHealthObservation {
+    managed_runtime_health_confidence(status.phase).observe(RuntimeHealth {
+        provider: status.provider.clone(),
+        available: status.available,
+        phase: status.phase.as_str().into(),
+        version: Some(status.runtime_version.clone()),
+        prerequisite: status.prerequisite.clone(),
+        detail: status.detail.clone(),
+    })
+}
+
+#[cfg(any(feature = "desktop", test))]
+pub(crate) fn managed_runtime_health_precludes_fallback(
+    observation: &RuntimeHealthObservation,
+) -> bool {
+    match observation {
+        RuntimeHealthObservation::Settled(health) => health.available,
+        RuntimeHealthObservation::Reconciling(_) => true,
+    }
+}
+
+#[cfg(any(feature = "desktop", test))]
+pub(crate) fn select_runtime_health(
+    managed: Option<RuntimeHealthObservation>,
+    compatibility: RuntimeHealthObservation,
+) -> RuntimeHealthObservation {
+    match managed {
+        Some(observation) if managed_runtime_health_precludes_fallback(&observation) => observation,
+        Some(_) => describe_compatibility_fallback(compatibility),
+        None => compatibility,
+    }
+}
+
+#[cfg(any(feature = "desktop", test))]
+fn describe_compatibility_fallback(
+    observation: RuntimeHealthObservation,
+) -> RuntimeHealthObservation {
+    let describe = |mut health: RuntimeHealth| {
+        if health.available {
+            health.detail = format!(
+                "advanced isolated runtime is unavailable and is not in use; scans will run with the {} compatibility runtime",
+                health.provider
+            );
+        }
+        health
+    };
+    match observation {
+        RuntimeHealthObservation::Settled(health) => {
+            RuntimeHealthObservation::Settled(describe(health))
+        }
+        RuntimeHealthObservation::Reconciling(health) => {
+            RuntimeHealthObservation::Reconciling(describe(health))
+        }
+    }
+}
+
+#[cfg(any(feature = "desktop", test))]
+pub(crate) fn is_available_compatibility_runtime(health: &RuntimeHealth) -> bool {
+    health.available && matches!(health.provider.as_str(), "docker" | "podman")
+}
+
+#[cfg(any(feature = "desktop", test))]
+pub(crate) fn select_recorded_managed_runtime_health(
+    managed: RuntimeHealthObservation,
+    cached: RuntimeHealth,
+) -> RuntimeHealthObservation {
+    if is_available_compatibility_runtime(&cached) {
+        select_runtime_health(Some(managed), RuntimeHealthObservation::Settled(cached))
+    } else {
+        managed
+    }
 }
 
 #[derive(Debug)]
@@ -151,6 +259,250 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
+
+    fn runtime_health(provider: &str, available: bool, phase: &str, detail: &str) -> RuntimeHealth {
+        RuntimeHealth {
+            provider: provider.into(),
+            available,
+            phase: phase.into(),
+            version: Some(format!("{provider}-version")),
+            prerequisite: Some(format!("{provider}-prerequisite")),
+            detail: detail.into(),
+        }
+    }
+
+    fn managed_runtime_status(phase: ManagedRuntimePhase) -> ManagedRuntimeStatus {
+        ManagedRuntimeStatus {
+            provider: "managed_local".into(),
+            phase,
+            available: matches!(phase, ManagedRuntimePhase::Running),
+            runtime_version: "managed-version".into(),
+            manifest_sha256: "a".repeat(64),
+            machine_image_sha256: None,
+            operating_system: None,
+            architecture: None,
+            machine_provider: None,
+            prerequisite: None,
+            detail: phase.as_str().into(),
+        }
+    }
+
+    #[test]
+    fn managed_unavailable_reports_the_available_compatibility_runtime() {
+        let managed = RuntimeHealthObservation::Settled(runtime_health(
+            "managed_local",
+            false,
+            "unsupported",
+            "managed runtime is unavailable",
+        ));
+        let compatibility = RuntimeHealthObservation::Settled(runtime_health(
+            "docker",
+            true,
+            "running",
+            "docker service is available",
+        ));
+
+        let RuntimeHealthObservation::Settled(reported) =
+            select_runtime_health(Some(managed), compatibility)
+        else {
+            panic!("an available compatibility runtime must be a settled reading");
+        };
+
+        assert!(reported.available);
+        assert_eq!(reported.provider, "docker");
+        assert_ne!(reported.provider, "managed_local");
+        assert!(
+            reported
+                .detail
+                .contains("advanced isolated runtime is unavailable and is not in use")
+        );
+    }
+
+    #[test]
+    fn managed_available_reading_wins_unchanged() {
+        let managed = runtime_health(
+            "managed_local",
+            true,
+            "running",
+            "managed runtime is available",
+        );
+        let expected = managed.clone();
+        let compatibility = RuntimeHealthObservation::Settled(runtime_health(
+            "docker",
+            true,
+            "running",
+            "docker service is available",
+        ));
+
+        let RuntimeHealthObservation::Settled(reported) = select_runtime_health(
+            Some(RuntimeHealthObservation::Settled(managed)),
+            compatibility,
+        ) else {
+            panic!("an available managed runtime must be a settled reading");
+        };
+
+        assert_eq!(reported.provider, expected.provider);
+        assert_eq!(reported.available, expected.available);
+        assert_eq!(reported.phase, expected.phase);
+        assert_eq!(reported.version, expected.version);
+        assert_eq!(reported.prerequisite, expected.prerequisite);
+        assert_eq!(reported.detail, expected.detail);
+    }
+
+    #[test]
+    fn managed_and_compatibility_unavailable_reports_unavailable() {
+        let managed = RuntimeHealthObservation::Settled(runtime_health(
+            "managed_local",
+            false,
+            "unsupported",
+            "managed runtime is unavailable",
+        ));
+        let compatibility_detail = "no compatible runtime was detected";
+        let compatibility = RuntimeHealthObservation::Settled(runtime_health(
+            "none",
+            false,
+            "unavailable",
+            compatibility_detail,
+        ));
+
+        let RuntimeHealthObservation::Settled(reported) =
+            select_runtime_health(Some(managed), compatibility)
+        else {
+            panic!("two completed unavailable readings must stay settled");
+        };
+
+        assert!(!reported.available);
+        assert_eq!(reported.provider, "none");
+        assert_eq!(reported.phase, "unavailable");
+        assert_eq!(reported.detail, compatibility_detail);
+    }
+
+    #[test]
+    fn managed_starting_stays_reconciling_without_compatibility_demotion() {
+        let managed_detail = "managed runtime is still starting";
+        let managed = RuntimeHealthObservation::Reconciling(runtime_health(
+            "managed_local",
+            false,
+            "starting",
+            managed_detail,
+        ));
+        let compatibility = RuntimeHealthObservation::Settled(runtime_health(
+            "docker",
+            true,
+            "running",
+            "docker service is available",
+        ));
+
+        let RuntimeHealthObservation::Reconciling(reported) =
+            select_runtime_health(Some(managed), compatibility)
+        else {
+            panic!("a starting managed runtime must remain reconciling");
+        };
+
+        assert!(!reported.available);
+        assert_eq!(reported.provider, "managed_local");
+        assert_eq!(reported.phase, "starting");
+        assert_eq!(reported.detail, managed_detail);
+    }
+
+    #[test]
+    fn managed_failure_recording_preserves_known_available_compatibility_runtime() {
+        let managed = RuntimeHealthObservation::Settled(runtime_health(
+            "managed_local",
+            false,
+            "unsupported",
+            "managed runtime setup failed",
+        ));
+        let cached = runtime_health("podman", true, "running", "podman service is available");
+
+        let RuntimeHealthObservation::Settled(recorded) =
+            select_recorded_managed_runtime_health(managed, cached)
+        else {
+            panic!("a known available compatibility runtime must stay settled");
+        };
+
+        assert!(recorded.available);
+        assert_eq!(recorded.provider, "podman");
+        assert!(
+            recorded
+                .detail
+                .contains("advanced isolated runtime is unavailable and is not in use")
+        );
+    }
+
+    #[test]
+    fn managed_success_recording_replaces_known_available_compatibility_runtime() {
+        let managed = runtime_health(
+            "managed_local",
+            true,
+            "running",
+            "managed runtime setup completed",
+        );
+        let expected = managed.clone();
+        let cached = runtime_health("docker", true, "running", "docker service is available");
+
+        let RuntimeHealthObservation::Settled(recorded) = select_recorded_managed_runtime_health(
+            RuntimeHealthObservation::Settled(managed),
+            cached,
+        ) else {
+            panic!("a successful managed setup must be a settled reading");
+        };
+
+        assert_eq!(recorded.provider, expected.provider);
+        assert_eq!(recorded.available, expected.available);
+        assert_eq!(recorded.phase, expected.phase);
+        assert_eq!(recorded.version, expected.version);
+        assert_eq!(recorded.prerequisite, expected.prerequisite);
+        assert_eq!(recorded.detail, expected.detail);
+    }
+
+    #[test]
+    fn only_starting_managed_runtime_health_is_reconciling() {
+        let expectations = [
+            (
+                ManagedRuntimePhase::NotInstalled,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Installed,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Stopped,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Starting,
+                RuntimeHealthConfidence::Reconciling,
+            ),
+            (
+                ManagedRuntimePhase::Running,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Corrupt,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Unsupported,
+                RuntimeHealthConfidence::Settled,
+            ),
+        ];
+
+        for (phase, expected) in expectations {
+            assert_eq!(managed_runtime_health_confidence(phase), expected);
+            let observation = managed_runtime_health_observation(&managed_runtime_status(phase));
+            match expected {
+                RuntimeHealthConfidence::Settled => {
+                    assert!(matches!(observation, RuntimeHealthObservation::Settled(_)))
+                }
+                RuntimeHealthConfidence::Reconciling => assert!(matches!(
+                    observation,
+                    RuntimeHealthObservation::Reconciling(_)
+                )),
+            }
+        }
+    }
 
     fn health(phase: &str, available: bool) -> RuntimeHealth {
         RuntimeHealth {
