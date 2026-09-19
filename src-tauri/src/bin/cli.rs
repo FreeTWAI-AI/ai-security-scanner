@@ -622,8 +622,11 @@ enum ScanCommand {
     Status(ScanStatusArgs),
     Pause(ScanTransitionArgs),
     Resume(ScanTransitionArgs),
-    /// Cancel a persisted plan only when every engine run is still queued and
-    /// never started. Started or interrupted runs require desktop scan controls.
+    /// Request cancellation for a persisted plan whose engine runs are queued
+    /// or not_executed with no started_at value. Only queued work changes to
+    /// cancelled; a plan with nothing queued is refused. Preparing, running, or
+    /// paused work requires desktop scan controls. Runs that already reached an
+    /// outcome are also refused.
     Cancel(ScanTransitionArgs),
 }
 
@@ -1973,16 +1976,104 @@ fn cancel_never_started_scan(
         .iter()
         .find(|run| run.id == run_id)
         .ok_or_else(|| AppError::InvalidRequest(format!("scan run not found: {run_id}")))?;
-    let never_started = !run.engine_runs.is_empty()
-        && run.engine_runs.iter().all(|engine_run| {
-            engine_run.status == EngineRunStatus::Queued
-                && engine_run.phase == "queued"
-                && engine_run.started_at.is_none()
-        });
-    if !never_started {
+    if run
+        .engine_runs
+        .iter()
+        .any(|engine_run| engine_run_status_has_live_work(&engine_run.status))
+    {
         return Err(out_of_process_scan_control_error("cancel", case_id, run_id));
     }
+    if run
+        .engine_runs
+        .iter()
+        .any(|engine_run| engine_run_status_has_outcome(&engine_run.status))
+    {
+        let observed_statuses = run
+            .engine_runs
+            .iter()
+            .map(|engine_run| engine_run_status_name(&engine_run.status))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(scan_cancel_outcome_error(
+            case_id,
+            run_id,
+            &observed_statuses,
+        ));
+    }
+    if let Some(engine_run) = run
+        .engine_runs
+        .iter()
+        .find(|engine_run| engine_run.started_at.is_some())
+    {
+        return Err(never_started_scan_cancel_declined_error(
+            case_id,
+            run_id,
+            &format!(
+                "engine run {} has status {} and a recorded started_at value",
+                engine_run.id,
+                engine_run_status_name(&engine_run.status)
+            ),
+        ));
+    }
     service.cancel_scan(case_id, run_id)
+}
+
+fn engine_run_status_has_live_work(status: &EngineRunStatus) -> bool {
+    match status {
+        EngineRunStatus::Preparing | EngineRunStatus::Running | EngineRunStatus::Paused => true,
+        EngineRunStatus::NotExecuted
+        | EngineRunStatus::Queued
+        | EngineRunStatus::Completed
+        | EngineRunStatus::PartiallyCompleted
+        | EngineRunStatus::Failed
+        | EngineRunStatus::Cancelled => false,
+    }
+}
+
+fn engine_run_status_has_outcome(status: &EngineRunStatus) -> bool {
+    match status {
+        EngineRunStatus::Completed
+        | EngineRunStatus::PartiallyCompleted
+        | EngineRunStatus::Failed
+        | EngineRunStatus::Cancelled => true,
+        EngineRunStatus::NotExecuted
+        | EngineRunStatus::Queued
+        | EngineRunStatus::Preparing
+        | EngineRunStatus::Running
+        | EngineRunStatus::Paused => false,
+    }
+}
+
+fn engine_run_status_name(status: &EngineRunStatus) -> &'static str {
+    match status {
+        EngineRunStatus::NotExecuted => "not_executed",
+        EngineRunStatus::Queued => "queued",
+        EngineRunStatus::Preparing => "preparing",
+        EngineRunStatus::Running => "running",
+        EngineRunStatus::Paused => "paused",
+        EngineRunStatus::Completed => "completed",
+        EngineRunStatus::PartiallyCompleted => "partially_completed",
+        EngineRunStatus::Failed => "failed",
+        EngineRunStatus::Cancelled => "cancelled",
+    }
+}
+
+fn never_started_scan_cancel_declined_error(
+    case_id: &str,
+    run_id: &str,
+    observed: &str,
+) -> AppError {
+    AppError::NotAvailable(format!(
+        "scan cancel declined for case {case_id} run {run_id}: {observed}; CLI cancellation requires every engine run to be queued or not_executed with no recorded start time"
+    ))
+}
+
+fn scan_cancel_outcome_error(case_id: &str, run_id: &str, observed_statuses: &str) -> AppError {
+    AppError::NotAvailable(format!(
+        "scan cancel declined for case {case_id} run {run_id}: the run already reached an outcome; observed engine run statuses: {observed_statuses}"
+    ))
 }
 
 fn out_of_process_scan_control_error(action: &str, case_id: &str, run_id: &str) -> AppError {
@@ -4026,6 +4117,239 @@ mod tests {
     }
 
     #[test]
+    fn cli_cancel_refuses_a_second_cancel_as_an_already_cancelled_outcome() {
+        let fixture = CliScopeFixture::new();
+        let case_id =
+            fixture.authorized_repository_case("CLI double cancellation", "double-cancel-outcome");
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("plan");
+        let run_id = plan.scan_run.id;
+
+        execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect("first cancellation");
+        let before = serde_json::to_value(service.show_case(&case_id).expect("cancelled case"))
+            .expect("cancelled case JSON");
+
+        let error = execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect_err("second cancellation must be refused");
+        let AppError::NotAvailable(message) = error else {
+            panic!("second cancellation did not return NotAvailable");
+        };
+        assert!(message.contains("already reached an outcome"), "{message}");
+        assert!(message.contains("cancelled"), "{message}");
+        assert!(!message.contains("desktop scan controls"), "{message}");
+        assert_eq!(
+            serde_json::to_value(service.show_case(&case_id).expect("unchanged case"))
+                .expect("unchanged case JSON"),
+            before
+        );
+    }
+
+    #[test]
+    fn mixed_queued_and_not_executed_plan_can_be_cancelled_then_replanned() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture
+            .authorized_repository_case("CLI mixed-plan cancellation", "cancel-mixed-replan");
+        let service = fixture.service();
+        let first = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into(), "mcp-armor".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("mixed plan");
+        let first_run_id = first.scan_run.id.clone();
+        assert_eq!(first.executable.len(), 1);
+        assert_eq!(first.executable[0].manifest.id, "gitleaks");
+        assert_eq!(first.not_executed.len(), 1);
+        assert_eq!(first.not_executed[0].engine_id, "mcp-armor");
+        assert_eq!(
+            first
+                .scan_run
+                .engine_runs
+                .iter()
+                .find(|engine_run| engine_run.engine_id == "gitleaks")
+                .expect("gitleaks engine run")
+                .status,
+            EngineRunStatus::Queued
+        );
+        assert_eq!(
+            first
+                .scan_run
+                .engine_runs
+                .iter()
+                .find(|engine_run| engine_run.engine_id == "mcp-armor")
+                .expect("mcp-armor engine run")
+                .status,
+            EngineRunStatus::NotExecuted
+        );
+
+        execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: first_run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect("mixed plan cancellation");
+
+        let cancelled = service.show_case(&case_id).expect("cancelled case");
+        assert_ne!(cancelled.status, CaseStatus::Scanning);
+        let cancelled_run = cancelled
+            .scan_runs
+            .iter()
+            .find(|run| run.id == first_run_id)
+            .expect("cancelled run");
+        assert_eq!(
+            cancelled_run
+                .engine_runs
+                .iter()
+                .find(|engine_run| engine_run.engine_id == "gitleaks")
+                .expect("cancelled gitleaks engine run")
+                .status,
+            EngineRunStatus::Cancelled
+        );
+        assert_eq!(
+            cancelled_run
+                .engine_runs
+                .iter()
+                .find(|engine_run| engine_run.engine_id == "mcp-armor")
+                .expect("not-executed mcp-armor engine run")
+                .status,
+            EngineRunStatus::NotExecuted
+        );
+
+        let second = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["trivy".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("second plan");
+        assert_eq!(second.executable.len(), 1);
+        assert_eq!(second.executable[0].manifest.id, "trivy");
+    }
+
+    #[test]
+    fn cli_cancel_refuses_cancelled_and_not_executed_as_an_outcome() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture.authorized_repository_case(
+            "CLI mixed cancellation outcome",
+            "cancelled-not-executed-outcome",
+        );
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into(), "mcp-armor".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("mixed plan");
+        let run_id = plan.scan_run.id;
+
+        execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect("mixed plan cancellation");
+
+        let error = execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs { case_id, run_id }),
+            &service,
+            true,
+        )
+        .expect_err("cancelled and not-executed run must be refused as an outcome");
+        let AppError::NotAvailable(message) = error else {
+            panic!("mixed outcome did not return NotAvailable");
+        };
+        assert!(message.contains("already reached an outcome"), "{message}");
+        assert!(message.contains("cancelled"), "{message}");
+        assert!(message.contains("not_executed"), "{message}");
+        assert!(!message.contains("desktop scan controls"), "{message}");
+    }
+
+    #[test]
+    fn all_not_executed_plan_is_refused_without_mutation() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture
+            .authorized_repository_case("CLI not-executed cancellation", "cancel-not-executed");
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["mcp-armor".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("not-executed plan");
+        let run_id = plan.scan_run.id.clone();
+        assert!(plan.executable.is_empty());
+        assert_eq!(plan.not_executed.len(), 1);
+        assert!(
+            plan.scan_run
+                .engine_runs
+                .iter()
+                .all(|engine_run| engine_run.status == EngineRunStatus::NotExecuted)
+        );
+        let before = serde_json::to_value(service.show_case(&case_id).expect("planned case"))
+            .expect("planned case JSON");
+
+        let error = execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id,
+            }),
+            &service,
+            true,
+        )
+        .expect_err("all-not-executed plan has nothing to cancel");
+        assert_eq!(
+            error.to_string(),
+            "invalid request: scan has no engine runs eligible to cancel"
+        );
+
+        assert_eq!(
+            serde_json::to_value(service.show_case(&case_id).expect("unchanged case"))
+                .expect("unchanged case JSON"),
+            before
+        );
+    }
+
+    #[test]
     fn cli_cancel_refuses_started_and_interrupted_runs_without_mutation() {
         let fixture = CliScopeFixture::new();
         for (index, (status, phase)) in [
@@ -4093,6 +4417,188 @@ mod tests {
             .expect("unchanged run JSON");
             assert_eq!(after, before);
         }
+    }
+
+    #[test]
+    fn cli_cancel_treats_running_and_completed_as_live_work() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture.authorized_repository_case(
+            "CLI live and completed cancellation",
+            "running-completed-cancel",
+        );
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into(), "trivy".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("plan");
+        let run_id = plan.scan_run.id;
+        let mut mixed = service.show_case(&case_id).expect("planned case");
+        let engine_runs = &mut mixed.scan_runs[0].engine_runs;
+        assert_eq!(engine_runs.len(), 2);
+        engine_runs[0].status = EngineRunStatus::Running;
+        engine_runs[0].phase = "running".into();
+        engine_runs[0].started_at = Some(Utc::now());
+        engine_runs[1].status = EngineRunStatus::Completed;
+        engine_runs[1].phase = "completed".into();
+        engine_runs[1].started_at = Some(Utc::now());
+        engine_runs[1].finished_at = Some(Utc::now());
+        fixture
+            .storage
+            .save_case(&mut mixed, "test.scan.running_and_completed")
+            .expect("mixed live and completed fixture");
+
+        let error = execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect_err("live work must take precedence over completed work");
+        assert_eq!(
+            error.to_string(),
+            out_of_process_scan_control_error("cancel", &case_id, &run_id).to_string()
+        );
+    }
+
+    #[test]
+    fn cli_cancel_refuses_terminal_engine_runs_without_mutation() {
+        let fixture = CliScopeFixture::new();
+        for (index, (status, phase)) in [
+            (EngineRunStatus::Completed, "completed"),
+            (EngineRunStatus::PartiallyCompleted, "results_partial"),
+            (EngineRunStatus::Failed, "failed"),
+            (EngineRunStatus::Cancelled, "cancelled"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let status_name = engine_run_status_name(&status);
+            let case_id = fixture.authorized_repository_case(
+                &format!("CLI terminal cancellation {index}"),
+                &format!("terminal-cancel-{index}"),
+            );
+            let service = fixture.service();
+            let plan = service
+                .plan_scan(
+                    &case_id,
+                    ScanPlanRequest {
+                        engine_ids: vec!["gitleaks".into()],
+                        engine_asset_routes: Vec::new(),
+                    },
+                )
+                .expect("plan");
+            let run_id = plan.scan_run.id;
+            let mut terminal = service.show_case(&case_id).expect("planned case");
+            let engine_run = &mut terminal.scan_runs[0].engine_runs[0];
+            engine_run.status = status;
+            engine_run.phase = phase.into();
+            engine_run.started_at = Some(Utc::now());
+            engine_run.finished_at = Some(Utc::now());
+            fixture
+                .storage
+                .save_case(&mut terminal, "test.scan.terminal")
+                .expect("terminal fixture");
+            let before = serde_json::to_value(
+                terminal
+                    .scan_runs
+                    .iter()
+                    .find(|run| run.id == run_id)
+                    .expect("terminal run"),
+            )
+            .expect("terminal run JSON");
+
+            let error = execute_scan(
+                ScanCommand::Cancel(ScanTransitionArgs {
+                    case_id: case_id.clone(),
+                    run_id: run_id.clone(),
+                }),
+                &service,
+                true,
+            )
+            .expect_err("a run that produced an outcome cannot be cancelled");
+            let AppError::NotAvailable(message) = error else {
+                panic!("terminal run did not return NotAvailable");
+            };
+            assert!(message.contains("already reached an outcome"), "{message}");
+            assert!(message.contains(status_name), "{message}");
+            assert!(!message.contains("desktop scan controls"), "{message}");
+            let after = service.show_case(&case_id).expect("unchanged case");
+            let after = serde_json::to_value(
+                after
+                    .scan_runs
+                    .iter()
+                    .find(|run| run.id == run_id)
+                    .expect("unchanged run"),
+            )
+            .expect("unchanged run JSON");
+            assert_eq!(after, before);
+        }
+    }
+
+    #[test]
+    fn cli_cancel_reports_inconsistent_queued_start_time_without_desktop_wording() {
+        let fixture = CliScopeFixture::new();
+        let case_id =
+            fixture.authorized_repository_case("CLI inconsistent queued run", "queued-with-start");
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("plan");
+        let run_id = plan.scan_run.id;
+        let mut inconsistent = service.show_case(&case_id).expect("planned case");
+        inconsistent.scan_runs[0].engine_runs[0].started_at = Some(Utc::now());
+        fixture
+            .storage
+            .save_case(&mut inconsistent, "test.scan.inconsistent_queued")
+            .expect("inconsistent queued fixture");
+        let before = serde_json::to_value(
+            inconsistent
+                .scan_runs
+                .iter()
+                .find(|run| run.id == run_id)
+                .expect("inconsistent queued run"),
+        )
+        .expect("inconsistent queued run JSON");
+
+        let error = execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect_err("queued run with a start time must be refused");
+        let AppError::NotAvailable(message) = error else {
+            panic!("inconsistent queued run did not return NotAvailable");
+        };
+        assert!(message.contains("status queued"), "{message}");
+        assert!(message.contains("recorded started_at value"), "{message}");
+        assert!(!message.contains("desktop scan controls"), "{message}");
+
+        let after = service.show_case(&case_id).expect("unchanged case");
+        let after = serde_json::to_value(
+            after
+                .scan_runs
+                .iter()
+                .find(|run| run.id == run_id)
+                .expect("unchanged run"),
+        )
+        .expect("unchanged run JSON");
+        assert_eq!(after, before);
     }
 
     #[test]
@@ -4928,10 +5434,16 @@ mod tests {
             .expect_err("help exits through clap")
             .to_string();
 
-        assert!(help.contains("every engine run is still queued"), "{help}");
-        assert!(help.contains("never started"), "{help}");
-        assert!(help.contains("Started or interrupted runs"), "{help}");
+        assert!(help.contains("queued or not_executed"), "{help}");
+        assert!(help.contains("no started_at value"), "{help}");
+        assert!(
+            help.contains("Only queued work changes to cancelled"),
+            "{help}"
+        );
+        assert!(help.contains("nothing queued is refused"), "{help}");
+        assert!(help.contains("Preparing, running, or paused"), "{help}");
         assert!(help.contains("desktop scan controls"), "{help}");
+        assert!(help.contains("already reached an outcome"), "{help}");
     }
 
     #[test]
