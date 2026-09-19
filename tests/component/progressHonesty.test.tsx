@@ -68,6 +68,22 @@ const run = (
   ...overrides,
 });
 
+/** Real finished desktop run 754d8c1d: stored mean 98, one check still at 85. */
+const finishedPartialScan = (): ScanRun => run(
+  [
+    engine("checkov", "completed", { progress: 100 }),
+    engine("gitleaks", "completed", { progress: 100 }),
+    engine("grype", "completed", { progress: 100 }),
+    engine("kics", "completed", { progress: 100 }),
+    engine("semgrep", "completed", { progress: 100 }),
+    engine("syft", "completed", { progress: 100 }),
+    engine("trivy", "partial", { progress: 85 }),
+    engine("trufflehog", "completed", { progress: 100 }),
+  ],
+  "partial",
+  { progress: 98 },
+);
+
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
   id: "finding-1",
   caseId: "case-1",
@@ -303,6 +319,26 @@ test("a check that never ran is still accounted for on screen", () => {
 
   // And it is present as its own row, not only as a number in a tally.
   expect(container.querySelector(".engine-not-executed")).not.toBeNull();
+});
+
+test("a finished scan shows 100% processed on first render without a reload", () => {
+  const { container } = renderProgress(finishedPartialScan());
+
+  const overview = container.querySelector(".run-overview");
+  expect(overview?.querySelector("h2")?.textContent).toBe("100% processed");
+  expect(overview?.textContent).not.toContain("98% processed");
+  expect(overview?.querySelector("[role='progressbar']")?.getAttribute("aria-valuenow")).toBe("100");
+  expect(overview?.querySelector(".progress-fill")?.getAttribute("style")).toContain("width: 100%");
+
+  const trivy = engineRow(container, "trivy");
+  expect(trivy.querySelector("[role='progressbar']")?.getAttribute("aria-valuenow")).toBe("85");
+});
+
+test("the run-history row for a finished scan shows the same terminal percentage", () => {
+  const { container } = renderProgress(finishedPartialScan());
+
+  expect(container.querySelector(".history-row b")?.textContent).toBe("100%");
+  expect(container.querySelector(".history-row")?.textContent).not.toContain("98%");
 });
 
 test("a Traditional Chinese reader sees a translated technical warning", () => {

@@ -17,6 +17,7 @@ import {
 } from "../localhostTcpPresentation";
 import { scanRequestOutcomeBeginnerSummary } from "../scanRequestOutcomePresentation";
 import { scanRunIdentityPresentation } from "../scanRunIdentityPresentation";
+import { scanRunOverallProgress } from "../scanRunProgress";
 import {
   buildScanActivity,
   type ScanActivityEvent,
@@ -778,6 +779,7 @@ export function ProgressPage({
   };
   const startRunIds = useRef<{ caseId?: string; ids: Set<string> } | undefined>(undefined);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0];
+  const selectedRunOverallProgress = selectedRun ? scanRunOverallProgress(selectedRun) : 0;
   const exactLocalhostQuickScan = Boolean(
     selectedRun && isExactBuiltInLocalhostQuickScanRun(selectedRun),
   );
@@ -1345,7 +1347,7 @@ export function ProgressPage({
           </div>
           {!blocked && !sharedInfrastructureFailure && !requestOutcomeSummary && (
             <>
-              <h2>{text(copy.processed, { percent: formatNumber(selectedRun.progress) })}</h2>
+              <h2>{text(copy.processed, { percent: formatNumber(selectedRunOverallProgress) })}</h2>
               <p>
                 {text(copy.runSummary, {
                   total: formatNumber(selectedRun.totalAssetCount),
@@ -1372,7 +1374,7 @@ export function ProgressPage({
                 {activeTimingStatus ? ` · ${activeTimingStatus}` : ""}
                 {` · ${text(copy.lastSaved, { time: showDateTime(activity?.lastProgressAt ?? selectedRun.finishedAt ?? selectedRun.startedAt) })}`}
               </p>
-              <ProgressBar value={selectedRun.progress} label={text(copy.overallProgress)} tone={selectedRun.status === "failed" ? "danger" : selectedRun.status === "partial" ? "warning" : "accent"} />
+              <ProgressBar value={selectedRunOverallProgress} label={text(copy.overallProgress)} tone={selectedRun.status === "failed" ? "danger" : selectedRun.status === "partial" ? "warning" : "accent"} />
             </>
           )}
         </div>
@@ -1752,7 +1754,7 @@ export function ProgressPage({
                       : runStatusMeta[run.status].label}
                   tone={historyRequestOutcome || historyBlocked ? "warning" : historySharedFailure ? "danger" : runStatusMeta[run.status].tone}
                 />
-                <b>{historyBlocked || historySharedFailure ? text(copy.historyNotStarted) : `${formatNumber(run.progress)}%`}</b>
+                <b>{historyBlocked || historySharedFailure ? text(copy.historyNotStarted) : `${formatNumber(scanRunOverallProgress(run))}%`}</b>
               </button>
             );
           })}

@@ -94,6 +94,7 @@ import {
   isExactBuiltInLocalhostQuickScanEngine,
   isExactBuiltInLocalhostQuickScanRun,
 } from "../localhostQuickScan";
+import { scanRunOverallProgress } from "../scanRunProgress";
 import { useCaseById } from "../useCases";
 import type { UseCaseId } from "../useCases";
 
@@ -2608,9 +2609,7 @@ export const adaptNativeCase = (
       verificationBaselineRunId: run.verification_baseline_run_id ?? undefined,
       requestOutcome,
       status,
-      progress: engineRuns.length > 0
-        ? Math.round(engineRuns.reduce((total, engineRun) => total + engineRun.progress, 0) / engineRuns.length)
-        : 0,
+      progress: scanRunOverallProgress({ status, engineRuns }),
       startedAt: run.engine_runs.map((engineRun) => engineRun.started_at).filter((value): value is string => Boolean(value)).sort()[0] ?? run.created_at,
       finishedAt: run.completed_at ?? undefined,
       lastProgressAt: runIndex === 0 && ["queued", "running", "paused"].includes(status)
