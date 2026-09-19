@@ -19,11 +19,10 @@ use ai_security_scanner_lib::container_runtime::{
 use ai_security_scanner_lib::correlation::correlation_report;
 use ai_security_scanner_lib::demo::build_demo_case;
 use ai_security_scanner_lib::discovery::run_connector;
-#[cfg(test)]
-use ai_security_scanner_lib::domain::EngineRunStatus;
 use ai_security_scanner_lib::domain::{
     AssessmentActivity, CaseStatus, CreateCaseRequest, DataClass, DistributionMode, EngineManifest,
-    FindingStatus, ScanPermission, ScopeGrant, SourceConnectionStatus, SourceKind, new_id,
+    EngineRunStatus, FindingStatus, ScanPermission, ScopeGrant, SourceConnectionStatus, SourceKind,
+    new_id,
 };
 use ai_security_scanner_lib::error::{AppError, AppResult};
 use ai_security_scanner_lib::export::{ExportOptions, RedactionProfile, verify_case_bundle};
@@ -623,6 +622,8 @@ enum ScanCommand {
     Status(ScanStatusArgs),
     Pause(ScanTransitionArgs),
     Resume(ScanTransitionArgs),
+    /// Cancel a persisted plan only when every engine run is still queued and
+    /// never started. Started or interrupted runs require desktop scan controls.
     Cancel(ScanTransitionArgs),
 }
 
@@ -1370,6 +1371,9 @@ fn command_requires_exclusive_data_directory(command: &Command) -> bool {
         Command::Case {
             command: CaseCommand::Delete { .. } | CaseCommand::DeleteArtifacts { .. },
         } => true,
+        Command::Scan {
+            command: ScanCommand::Cancel(_),
+        } => true,
         Command::Runtime {
             command: RuntimeCommand::Cleanup { .. },
         } => true,
@@ -1951,14 +1955,34 @@ fn execute_scan(
             ));
         }
         ScanCommand::Cancel(args) => {
-            return Err(out_of_process_scan_control_error(
-                "cancel",
-                &args.case_id,
-                &args.run_id,
-            ));
+            let case = cancel_never_started_scan(service, &args.case_id, &args.run_id)?;
+            print_value(&case, json_output)?;
         }
     }
     Ok(())
+}
+
+fn cancel_never_started_scan(
+    service: &CaseService<'_>,
+    case_id: &str,
+    run_id: &str,
+) -> AppResult<ai_security_scanner_lib::domain::AssessmentCase> {
+    let case = service.show_case(case_id)?;
+    let run = case
+        .scan_runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .ok_or_else(|| AppError::InvalidRequest(format!("scan run not found: {run_id}")))?;
+    let never_started = !run.engine_runs.is_empty()
+        && run.engine_runs.iter().all(|engine_run| {
+            engine_run.status == EngineRunStatus::Queued
+                && engine_run.phase == "queued"
+                && engine_run.started_at.is_none()
+        });
+    if !never_started {
+        return Err(out_of_process_scan_control_error("cancel", case_id, run_id));
+    }
+    service.cancel_scan(case_id, run_id)
 }
 
 fn out_of_process_scan_control_error(action: &str, case_id: &str, run_id: &str) -> AppError {
@@ -3698,6 +3722,41 @@ mod tests {
                 .id
         }
 
+        fn authorized_repository_case(&self, title: &str, workspace_name: &str) -> String {
+            let case_id = self.create_case(title);
+            let selected = self.workspace(workspace_name);
+            let service = self.service();
+            let attached = attach_workspace_source(
+                &service,
+                &self.artifact_root,
+                &case_id,
+                &format!("workspace-source-{workspace_name}"),
+                "Selected repository",
+                &selected,
+                WorkspaceInputProfile::RepositoryWorkingTree,
+            )
+            .expect("workspace attachment");
+            let asset_id = attached["asset_id"]
+                .as_str()
+                .expect("workspace asset id")
+                .to_owned();
+            service
+                .approve_scope(
+                    &case_id,
+                    ScopeApprovalRequest {
+                        asset_id,
+                        permissions: vec![ScanPermission::LocalArtifactRead],
+                        confirmed_by: "cli-test-operator".into(),
+                        expires_at: Some(Utc::now() + Duration::hours(1)),
+                        authorization_reference: None,
+                        notes: None,
+                        external_scope: None,
+                    },
+                )
+                .expect("local artifact approval");
+            case_id
+        }
+
         fn workspace(&self, name: &str) -> PathBuf {
             let path = self._directory.path().join("working-trees").join(name);
             fs::create_dir_all(path.join("src")).expect("working tree");
@@ -3904,6 +3963,218 @@ mod tests {
         assert_eq!(plan.executable.len(), 1);
         assert_eq!(plan.executable[0].manifest.id, "gitleaks");
         assert_eq!(plan.executable[0].assets[0].id, asset.id);
+    }
+
+    #[test]
+    fn queued_plan_can_be_cancelled_then_replanned_with_a_different_engine() {
+        let fixture = CliScopeFixture::new();
+        let case_id =
+            fixture.authorized_repository_case("CLI queued-plan cancellation", "cancel-replan");
+        let service = fixture.service();
+        let first = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("first plan");
+        let first_run_id = first.scan_run.id.clone();
+        assert_eq!(first.executable.len(), 1);
+        assert!(
+            first
+                .scan_run
+                .engine_runs
+                .iter()
+                .all(|engine_run| engine_run.status == EngineRunStatus::Queued)
+        );
+
+        execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: first_run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect("queued plan cancellation");
+
+        let cancelled = service.show_case(&case_id).expect("cancelled case");
+        let cancelled_run = cancelled
+            .scan_runs
+            .iter()
+            .find(|run| run.id == first_run_id)
+            .expect("cancelled run");
+        assert!(
+            cancelled_run
+                .engine_runs
+                .iter()
+                .all(|engine_run| engine_run.status == EngineRunStatus::Cancelled)
+        );
+        let second = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["trivy".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("second plan");
+        assert_eq!(second.executable.len(), 1);
+        assert_eq!(second.executable[0].manifest.id, "trivy");
+    }
+
+    #[test]
+    fn cli_cancel_refuses_started_and_interrupted_runs_without_mutation() {
+        let fixture = CliScopeFixture::new();
+        for (index, (status, phase)) in [
+            (EngineRunStatus::Preparing, "preflight_preparing"),
+            (EngineRunStatus::Running, "running"),
+            (EngineRunStatus::Paused, "interrupted_restart"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let case_id = fixture.authorized_repository_case(
+                &format!("CLI started cancellation {index}"),
+                &format!("started-cancel-{index}"),
+            );
+            let service = fixture.service();
+            let plan = service
+                .plan_scan(
+                    &case_id,
+                    ScanPlanRequest {
+                        engine_ids: vec!["gitleaks".into()],
+                        engine_asset_routes: Vec::new(),
+                    },
+                )
+                .expect("plan");
+            let run_id = plan.scan_run.id;
+            let mut started = service.show_case(&case_id).expect("planned case");
+            let engine_run = &mut started.scan_runs[0].engine_runs[0];
+            engine_run.status = status;
+            engine_run.phase = phase.into();
+            engine_run.started_at = Some(Utc::now());
+            fixture
+                .storage
+                .save_case(&mut started, "test.scan.started")
+                .expect("started fixture");
+            let before = serde_json::to_value(
+                started
+                    .scan_runs
+                    .iter()
+                    .find(|run| run.id == run_id)
+                    .expect("started run"),
+            )
+            .expect("started run JSON");
+
+            let error = execute_scan(
+                ScanCommand::Cancel(ScanTransitionArgs {
+                    case_id: case_id.clone(),
+                    run_id: run_id.clone(),
+                }),
+                &service,
+                true,
+            )
+            .expect_err("started or interrupted run must require desktop control");
+            assert_eq!(
+                error.to_string(),
+                out_of_process_scan_control_error("cancel", &case_id, &run_id).to_string()
+            );
+            let after = service.show_case(&case_id).expect("unchanged case");
+            let after = serde_json::to_value(
+                after
+                    .scan_runs
+                    .iter()
+                    .find(|run| run.id == run_id)
+                    .expect("unchanged run"),
+            )
+            .expect("unchanged run JSON");
+            assert_eq!(after, before);
+        }
+    }
+
+    #[test]
+    fn pause_and_resume_still_refuse_a_never_started_plan() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture
+            .authorized_repository_case("CLI queued pause and resume", "queued-pause-resume");
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("plan");
+        let run_id = plan.scan_run.id.clone();
+        let before = serde_json::to_value(&plan.scan_run).expect("planned run JSON");
+
+        for command in [
+            ScanCommand::Pause(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+            ScanCommand::Resume(ScanTransitionArgs {
+                case_id: case_id.clone(),
+                run_id: run_id.clone(),
+            }),
+        ] {
+            let error = execute_scan(command, &service, true)
+                .expect_err("pause and resume remain desktop-only");
+            let AppError::NotAvailable(message) = error else {
+                panic!("queued plan control did not return NotAvailable");
+            };
+            assert!(message.contains("use the desktop scan controls"));
+        }
+
+        let after = service.show_case(&case_id).expect("unchanged case");
+        let after = after
+            .scan_runs
+            .iter()
+            .find(|run| run.id == run_id)
+            .expect("unchanged run");
+        assert_eq!(serde_json::to_value(after).expect("run JSON"), before);
+    }
+
+    #[test]
+    fn cli_cancel_rejects_a_run_id_from_another_case() {
+        let fixture = CliScopeFixture::new();
+        let planned_case_id = fixture.authorized_repository_case("CLI run owner", "run-owner");
+        let other_case_id = fixture.create_case("CLI wrong run owner");
+        let service = fixture.service();
+        let plan = service
+            .plan_scan(
+                &planned_case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("plan");
+        let run_id = plan.scan_run.id;
+
+        let error = execute_scan(
+            ScanCommand::Cancel(ScanTransitionArgs {
+                case_id: other_case_id,
+                run_id: run_id.clone(),
+            }),
+            &service,
+            true,
+        )
+        .expect_err("a run cannot be cancelled through another case");
+        assert!(error.to_string().contains("scan run not found"));
+        assert!(error.to_string().contains(&run_id));
+        let unchanged = service
+            .show_case(&planned_case_id)
+            .expect("planned case remains");
+        assert_eq!(
+            unchanged.scan_runs[0].engine_runs[0].status,
+            EngineRunStatus::Queued
+        );
     }
 
     #[test]
@@ -4584,6 +4855,16 @@ mod tests {
             "run-1",
         ])
         .unwrap();
+        let cancel = Cli::try_parse_from([
+            "ai-security-scanner",
+            "scan",
+            "cancel",
+            "--case-id",
+            "case-1",
+            "--run-id",
+            "run-1",
+        ])
+        .unwrap();
         let install =
             Cli::try_parse_from(["ai-security-scanner", "runtime", "managed", "install"]).unwrap();
         let qualify =
@@ -4601,6 +4882,7 @@ mod tests {
 
         assert!(command_requires_exclusive_data_directory(&delete.command));
         assert!(command_requires_exclusive_data_directory(&cleanup.command));
+        assert!(command_requires_exclusive_data_directory(&cancel.command));
         assert!(command_requires_exclusive_data_directory(&install.command));
         assert!(command_requires_exclusive_data_directory(&qualify.command));
         assert!(command_requires_exclusive_data_directory(
@@ -4612,6 +4894,44 @@ mod tests {
         assert!(!command_is_managed_runtime_status(&install.command));
         assert!(!command_is_managed_runtime_status(&qualify.command));
         assert!(!command_is_managed_runtime_status(&doctor.command));
+    }
+
+    #[tokio::test]
+    async fn cli_cancel_fails_closed_when_the_data_directory_lease_is_owned() {
+        let temporary = tempfile::tempdir().expect("temporary data directory");
+        let held = DataDirectoryExclusiveLease::acquire(temporary.path()).expect("first lease");
+        let expected = DataDirectoryExclusiveLease::acquire(temporary.path())
+            .expect_err("second lease must be refused")
+            .to_string();
+        let cli = Cli {
+            data_dir: Some(temporary.path().to_path_buf()),
+            managed_runtime_bundle: None,
+            json: true,
+            command: Command::Scan {
+                command: ScanCommand::Cancel(ScanTransitionArgs {
+                    case_id: "case-1".into(),
+                    run_id: "run-1".into(),
+                }),
+            },
+        };
+
+        let error = execute(cli, GlobalOptionSources::default())
+            .await
+            .expect_err("owned data directory must block CLI cancellation");
+        assert_eq!(error.to_string(), expected);
+        drop(held);
+    }
+
+    #[test]
+    fn scan_cancel_help_limits_cli_cancellation_to_never_started_plans() {
+        let help = Cli::try_parse_from(["ai-security-scanner", "scan", "cancel", "--help"])
+            .expect_err("help exits through clap")
+            .to_string();
+
+        assert!(help.contains("every engine run is still queued"), "{help}");
+        assert!(help.contains("never started"), "{help}");
+        assert!(help.contains("Started or interrupted runs"), "{help}");
+        assert!(help.contains("desktop scan controls"), "{help}");
     }
 
     #[test]

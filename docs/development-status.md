@@ -37,8 +37,8 @@ and local image identifiers are not substitutes for a published digest or an aut
 
 The latest recorded local baseline for these lanes completed successfully:
 
-- Rust core and CLI: 1,721 tests.
-- Frontend unit tests: 695 tests.
+- Rust core and CLI: 1,752 tests.
+- Frontend unit tests: 696 tests.
 - Component rendering: 322 tests across 20 files.
 - CI document and contract tests: 80 tests.
 - Engine catalog validation: 8 tests.
