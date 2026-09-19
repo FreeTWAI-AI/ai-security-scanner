@@ -17,9 +17,11 @@ import test from "node:test";
 
 import {
   REQUIRED_VERIFICATIONS,
+  formatRefreshOutcomeLine,
   prReasons,
   refreshEngine,
   refreshEngines,
+  zeroChangeOutcome,
 } from "../../scripts/upstream-refresh-lib.mjs";
 import { validateEngineInputHashes } from "../../scripts/validate-engine-input-hashes.mjs";
 import { main as proposeMain } from "../../scripts/upstream-propose.mjs";
@@ -62,7 +64,13 @@ function passedVerification(overrides = {}) {
   }));
 }
 
-function createFixture({ engineIds = ["sample"], absentCheckout = false, baselineFilesByEngine = {} } = {}) {
+function createFixture({
+  engineIds = ["sample"],
+  absentCheckout = false,
+  matchingCheckout = false,
+  lockRevisionByEngine = {},
+  baselineFilesByEngine = {},
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), "upstream-refresh-test-"));
   mkdirSync(join(root, "engines", "images"), { recursive: true });
   const repositories = [];
@@ -77,14 +85,16 @@ function createFixture({ engineIds = ["sample"], absentCheckout = false, baselin
       mkdirSync(checkout, { recursive: true });
       writeFileSync(join(checkout, "adapter.txt"), "pinned adapter\n");
       pinned = commit(checkout, "pinned");
-      writeFileSync(join(checkout, "adapter.txt"), "refreshed adapter\n");
-      run("git", ["add", "adapter.txt"], { cwd: checkout });
-      run("git", [
-        "-c", "user.name=Refresh Test",
-        "-c", "user.email=refresh-test@invalid",
-        "commit", "--quiet", "-m", "candidate",
-      ], { cwd: checkout });
-      candidate = run("git", ["rev-parse", "HEAD"], { cwd: checkout });
+      if (!matchingCheckout) {
+        writeFileSync(join(checkout, "adapter.txt"), "refreshed adapter\n");
+        run("git", ["add", "adapter.txt"], { cwd: checkout });
+        run("git", [
+          "-c", "user.name=Refresh Test",
+          "-c", "user.email=refresh-test@invalid",
+          "commit", "--quiet", "-m", "candidate",
+        ], { cwd: checkout });
+        candidate = run("git", ["rev-parse", "HEAD"], { cwd: checkout });
+      }
     }
     const engineDirectory = join(root, "engines", "images", engineId);
     mkdirSync(engineDirectory, { recursive: true });
@@ -129,7 +139,7 @@ function createFixture({ engineIds = ["sample"], absentCheckout = false, baselin
       id: `example/${engineId}`,
       path: checkoutRelative,
       remote: plan.source.repository,
-      revision: candidate ?? pinned,
+      revision: lockRevisionByEngine[engineId] ?? candidate ?? pinned,
     });
     revisions.set(engineId, { pinned, candidate });
   }
@@ -372,14 +382,172 @@ test("an absent upstream checkout is unavailable rather than no drift", async ()
       driftStatus: result.proposal.drift.status,
       driftSummary: result.proposal.drift.summary,
       outcome: result.proposal.outcome,
+      eligible: result.proposal.pr_eligible,
     }, {
       checkoutStatus: "unavailable",
       checkoutComparison: "unavailable",
       driftStatus: "unavailable",
       driftSummary: "At least one offline source was unavailable; this is not a no-drift result.",
-      outcome: "no_change",
+      outcome: "drift_unavailable",
+      eligible: false,
     });
+    assert.notEqual(result.proposal.outcome, "no_change");
+    assert.equal(
+      result.proposal.pr_ineligibility_reasons[0],
+      "The local research checkout is absent; upstream drift could not be inspected there; this is not a no-drift result. Restore the missing offline source or re-pin the plan manually.",
+    );
   } finally {
+    setup.cleanup();
+  }
+});
+
+test("a zero-change refresh reports no_change only when drift is none", async () => {
+  const driftedLockRevision = "a".repeat(40);
+  const cases = [
+    { name: "none", setup: () => createFixture({ matchingCheckout: true }) },
+    {
+      name: "detected",
+      setup: () => createFixture({
+        absentCheckout: true,
+        lockRevisionByEngine: { sample: driftedLockRevision },
+      }),
+    },
+    { name: "unavailable", setup: () => createFixture({ absentCheckout: true }) },
+  ];
+  const observed = [];
+  try {
+    for (const fixture of cases) {
+      const setup = fixture.setup();
+      observed.push({ setup });
+      const result = await refreshEngine({
+        root: setup.root,
+        engineId: "sample",
+        policy: policy([["sample", "eligible"]]),
+        now: fixedNow,
+        bundleRoot: setup.bundleRoot,
+      });
+      Object.assign(observed.at(-1), {
+        drift: result.proposal.drift.status,
+        outcome: result.proposal.outcome,
+        eligible: result.proposal.pr_eligible,
+        produced: result.proposal.changes.produced,
+        line: `sample: ${formatRefreshOutcomeLine(result.proposal)}`,
+        reason: result.proposal.pr_ineligibility_reasons[0],
+        checkout: result.proposal.inputs.local_research_checkout,
+        lock: result.proposal.inputs.upstream_lock,
+        pin: result.proposal.drift.pinned_revision,
+      });
+    }
+    const [none, detected, unavailable] = observed;
+    const cliSource = readFileSync(join(repositoryRoot, "scripts", "upstream-refresh.mjs"), "utf8");
+    assert.deepEqual({
+      none: {
+        drift: none.drift,
+        outcome: none.outcome,
+        eligible: none.eligible,
+        produced: none.produced,
+        line: none.line,
+      },
+      detected: {
+        drift: detected.drift,
+        outcome: detected.outcome,
+        eligible: detected.eligible,
+        produced: detected.produced,
+        lockComparison: detected.lock.comparison,
+        checkoutStatus: detected.checkout.status,
+      },
+      unavailable: {
+        drift: unavailable.drift,
+        outcome: unavailable.outcome,
+        eligible: unavailable.eligible,
+        produced: unavailable.produced,
+        checkoutStatus: unavailable.checkout.status,
+      },
+      detectedIsNotNoChange: detected.outcome !== "no_change",
+      unavailableIsNotNoChange: unavailable.outcome !== "no_change",
+      cliPrintsFormatter: cliSource.includes("formatRefreshOutcomeLine(result.proposal)"),
+    }, {
+      none: {
+        drift: "none",
+        outcome: "no_change",
+        eligible: false,
+        produced: false,
+        line: "sample: no_change",
+      },
+      detected: {
+        drift: "detected",
+        outcome: "drift_detected_but_no_proposal",
+        eligible: false,
+        produced: false,
+        lockComparison: "different",
+        checkoutStatus: "unavailable",
+      },
+      unavailable: {
+        drift: "unavailable",
+        outcome: "drift_unavailable",
+        eligible: false,
+        produced: false,
+        checkoutStatus: "unavailable",
+      },
+      detectedIsNotNoChange: true,
+      unavailableIsNotNoChange: true,
+      cliPrintsFormatter: true,
+    });
+    assert.equal(
+      detected.line,
+      `sample: drift_detected_but_no_proposal — Upstream lock revision ${driftedLockRevision} differs from the plan pin ${detected.pin}; the local research checkout is absent; upstream drift could not be inspected there. Re-pin the plan after inspecting a local checkout.`,
+    );
+    assert.equal(
+      unavailable.line,
+      "sample: drift_unavailable — The local research checkout is absent; upstream drift could not be inspected there; this is not a no-drift result. Restore the missing offline source or re-pin the plan manually.",
+    );
+    assert.equal(detected.reason, detected.line.slice("sample: drift_detected_but_no_proposal — ".length));
+    assert.equal(unavailable.reason, unavailable.line.slice("sample: drift_unavailable — ".length));
+    assert.match(detected.reason, /re-pin the plan after inspecting a local checkout/i);
+    assert.match(unavailable.reason, /restore the missing offline source or re-pin the plan manually/i);
+  } finally {
+    for (const entry of observed) entry.setup?.cleanup();
+  }
+});
+
+test("zeroChangeOutcome throws on an unrecognized or missing drift status instead of reporting no_change", () => {
+  for (const drift of [{ status: "surprise" }, {}, null, undefined]) {
+    assert.throws(() => zeroChangeOutcome(drift));
+  }
+});
+
+test("refreshEngines exits 1 when a proposal outcome is not in the known set", async () => {
+  const setup = createFixture();
+  // refreshEngine only emits known outcomes; rewrite the proposal during
+  // JSON.stringify so the defence-in-depth exit-code guard can run.
+  const stringify = JSON.stringify;
+  JSON.stringify = function patchUnrecognizedOutcome(value, replacer, space) {
+    if (
+      value
+      && typeof value === "object"
+      && Object.hasOwn(value, "pr_eligible")
+      && Object.hasOwn(value, "bundle_path")
+      && Object.hasOwn(value, "outcome")
+    ) {
+      value.outcome = "surprise";
+    }
+    return stringify.call(this, value, replacer, space);
+  };
+  try {
+    const run = await refreshEngines({
+      root: setup.root,
+      engineIds: ["sample"],
+      policy: policy([["sample", "eligible"]]),
+      now: fixedNow,
+      bundleRoot: setup.bundleRoot,
+      verificationRunner: () => passedVerification(),
+    });
+    assert.equal(run.results[0].error, undefined);
+    assert.equal(run.results[0].proposal.policy.status, "eligible");
+    assert.equal(run.results[0].proposal.outcome, "surprise");
+    assert.equal(run.exitCode, 1);
+  } finally {
+    JSON.stringify = stringify;
     setup.cleanup();
   }
 });
@@ -543,7 +711,7 @@ test("a provenance refresh remains refused for a frozen engine and names frozen"
 });
 
 test("a provenance refresh with no baselined gaps produces no change and states why", async () => {
-  const setup = createFixture();
+  const setup = createFixture({ matchingCheckout: true });
   try {
     const result = await refreshEngine({
       root: setup.root,
@@ -998,6 +1166,82 @@ test("upstream:propose records explicit decisions and remains structurally unabl
       () => proposeMain(["--no-open-pr", "--bundle", undecidedBundle, "--open-pr"], { write() {} }),
       { message: "Choose either --open-pr or --no-open-pr, not both." },
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("upstream:propose refuses drifted or unrecognized outcomes instead of treating them as no_change", () => {
+  const root = mkdtempSync(join(tmpdir(), "upstream-propose-outcome-"));
+  try {
+    const makeBundle = (name, overrides) => {
+      const bundle = join(root, name);
+      mkdirSync(bundle);
+      const patch = "diff --git a/file b/file\n";
+      const proposal = {
+        generated_at: fixedNow.toISOString(),
+        refresh_kind: "revision",
+        engine: { id: "sample" },
+        provider: { selected: "mechanical", path_class: "formal_default" },
+        policy: { status: "eligible" },
+        changes: { produced: true, files: ["engines/images/sample/plan.json"] },
+        verification: passedVerification(),
+        artifacts: [{ path: "changes.patch", sha256: sha256(patch) }],
+        pr_eligible: true,
+        ...overrides,
+      };
+      writeFileSync(join(bundle, "proposal.json"), `${JSON.stringify(proposal)}\n`);
+      writeFileSync(join(bundle, "changes.patch"), patch);
+      writeFileSync(join(bundle, "report.md"), "# Review\n");
+      return bundle;
+    };
+    const captured = [];
+    for (const [name, overrides] of [
+      ["no-change", { outcome: "no_change", pr_eligible: false, changes: { produced: false, files: [] } }],
+      ["detected", {
+        outcome: "drift_detected_but_no_proposal",
+        pr_eligible: true,
+        changes: { produced: false, files: [] },
+      }],
+      ["unavailable", {
+        outcome: "drift_unavailable",
+        pr_eligible: true,
+        changes: { produced: false, files: [] },
+      }],
+      ["unrecognized", { outcome: "surprise", pr_eligible: true }],
+    ]) {
+      let stdout = "";
+      const status = proposeMain(["--bundle", makeBundle(name, overrides), "--open-pr"], {
+        write(value) { stdout += value; },
+      });
+      captured.push({
+        name,
+        status,
+        eligible: stdout.includes("PR eligible: yes\n"),
+        reasons: stdout.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2)),
+      });
+    }
+    assert.deepEqual(captured.map(({ name, status, eligible }) => ({ name, status, eligible })), [
+      { name: "no-change", status: 1, eligible: false },
+      { name: "detected", status: 1, eligible: false },
+      { name: "unavailable", status: 1, eligible: false },
+      { name: "unrecognized", status: 1, eligible: false },
+    ]);
+    assert.equal(captured[0].reasons.includes("The refresh reported no adapter change."), true);
+    assert.equal(
+      captured[1].reasons.includes("Upstream drift was detected but no adapter change was produced; this bundle may not become a PR."),
+      true,
+    );
+    assert.equal(
+      captured[2].reasons.includes("Offline drift could not be inspected; this bundle may not become a PR."),
+      true,
+    );
+    assert.equal(
+      captured[3].reasons.includes("Unrecognized proposal outcome surprise; refusing the PR."),
+      true,
+    );
+    assert.equal(captured[1].reasons.includes("The refresh reported no adapter change."), false);
+    assert.equal(captured[2].reasons.includes("The refresh reported no adapter change."), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

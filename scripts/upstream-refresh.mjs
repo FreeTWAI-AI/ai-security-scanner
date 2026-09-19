@@ -3,7 +3,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { refreshEngines } from "./upstream-refresh-lib.mjs";
+import { formatRefreshOutcomeLine, refreshEngines } from "./upstream-refresh-lib.mjs";
 
 export const REFRESH_USAGE = `Usage: npm run upstream:refresh -- --engine <id> [options]
 
@@ -50,7 +50,7 @@ export async function main(argv = process.argv.slice(2), io = console) {
       io.error(`Refresh failed for ${result.engineId}: ${result.error.message}`);
       continue;
     }
-    io.log(`${result.proposal.engine.id}: ${result.proposal.outcome}`);
+    io.log(`${result.proposal.engine.id}: ${formatRefreshOutcomeLine(result.proposal)}`);
     io.log(`Bundle: ${result.bundlePath}`);
     io.log(`PR eligible: ${result.proposal.pr_eligible ? "yes" : "no"}`);
     for (const reason of result.proposal.pr_ineligibility_reasons) io.log(`- ${reason}`);

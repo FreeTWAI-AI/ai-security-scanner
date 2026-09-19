@@ -27,6 +27,18 @@ export const REQUIRED_VERIFICATIONS = Object.freeze([
 
 const POLICY_STATUSES = new Set(["eligible", "frozen", "experimental"]);
 const REFRESH_KINDS = new Set(["revision", "provenance"]);
+const REFRESH_OUTCOMES = new Set([
+  "ready",
+  "no_change",
+  "drift_detected_but_no_proposal",
+  "drift_unavailable",
+  "failed",
+  "verification_failed",
+  "experimental",
+  "frozen",
+  "unsupported",
+]);
+const FAILED_REFRESH_OUTCOMES = new Set(["failed", "verification_failed"]);
 const ENGINE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -867,10 +879,80 @@ function allocateBundle(root, engineId, generatedAt, explicitBundleRoot) {
   throw new Error("Could not allocate a unique refresh bundle path.");
 }
 
-export function prReasons({ policy, changes, verifications, providerError, refreshKind = "revision", noChangeReason }) {
+function unpunctuated(value) {
+  return typeof value === "string" && value.endsWith(".") ? value.slice(0, -1) : value;
+}
+
+function joinClauses(clauses) {
+  return clauses.map((clause, index) => {
+    if (index === 0 || clause.length === 0) return clause;
+    const first = clause[0];
+    return first >= "A" && first <= "Z" ? `${first.toLowerCase()}${clause.slice(1)}` : clause;
+  }).join("; ");
+}
+
+function offlineSourceClauses(drift, inputs) {
+  const checkout = inputs?.local_research_checkout ?? {};
+  const lock = inputs?.upstream_lock ?? {};
+  const pin = drift?.pinned_revision ?? inputs?.plan?.source_revision ?? null;
+  const clauses = [];
+  if (checkout.comparison === "different") {
+    clauses.push(`local research checkout revision ${checkout.revision} differs from the plan pin ${pin}`);
+  }
+  if (lock.comparison === "different") {
+    clauses.push(`upstream lock revision ${lock.revision} differs from the plan pin ${pin}`);
+  }
+  if (checkout.status === "unavailable") {
+    clauses.push(unpunctuated(checkout.reason) || "the local research checkout is unavailable");
+  }
+  if (lock.status === "unavailable") {
+    clauses.push(unpunctuated(lock.reason) || "the upstream lock is unavailable");
+  }
+  return clauses;
+}
+
+export function zeroChangeBlocker(drift, inputs) {
+  const clauses = offlineSourceClauses(drift, inputs);
+  const observed = clauses.length > 0
+    ? joinClauses(clauses)
+    : unpunctuated(drift?.summary) || "offline sources could not confirm the pin";
+  const lead = `${observed[0].toUpperCase()}${observed.slice(1)}`;
+  if (drift?.status === "detected") {
+    return `${lead}. Re-pin the plan after inspecting a local checkout.`;
+  }
+  if (drift?.status === "unavailable") {
+    return `${lead}; this is not a no-drift result. Restore the missing offline source or re-pin the plan manually.`;
+  }
+  return null;
+}
+
+export function zeroChangeOutcome(drift) {
+  const status = drift?.status;
+  if (status === "none") return "no_change";
+  if (status === "detected") return "drift_detected_but_no_proposal";
+  if (status === "unavailable") return "drift_unavailable";
+  throw new Error(`Unrecognized drift status ${status}; refusing to report no_change.`);
+}
+
+export function formatRefreshOutcomeLine(proposal) {
+  if (proposal.outcome === "drift_detected_but_no_proposal" || proposal.outcome === "drift_unavailable") {
+    const blocker = zeroChangeBlocker(proposal.drift, proposal.inputs);
+    return blocker ? `${proposal.outcome} — ${blocker}` : proposal.outcome;
+  }
+  return proposal.outcome;
+}
+
+export function prReasons({ policy, changes, verifications, providerError, refreshKind = "revision", noChangeReason, drift, inputs }) {
   const reasons = [];
   if (policy.status !== "eligible") reasons.push(`Policy status is ${policy.status}: ${policy.reason}`);
-  if (changes.size === 0) reasons.push(noChangeReason ?? "No adapter change was produced.");
+  if (changes.size === 0) {
+    const driftBlocker = policy.status === "frozen" || policy.status === "unsupported"
+      ? null
+      : zeroChangeBlocker(drift, inputs);
+    if (driftBlocker) reasons.push(driftBlocker);
+    if (noChangeReason && noChangeReason !== driftBlocker) reasons.push(noChangeReason);
+    if (!driftBlocker && !noChangeReason) reasons.push("No adapter change was produced.");
+  }
   if (providerError) reasons.push(`The selected provider failed: ${providerError}`);
   for (const check of verifications) {
     if (check.status === "failed") {
@@ -1081,12 +1163,14 @@ export async function refreshEngine({
     providerError,
     refreshKind,
     noChangeReason: provider.noChangeReason,
+    drift: resolved.drift,
+    inputs: resolved.inputs,
   });
   const prEligible = reasons.length === 0;
   const outcome = resolved.policy.status === "experimental"
     ? "experimental"
     : providerError ? "failed"
-      : provider.changes.size === 0 ? "no_change"
+      : provider.changes.size === 0 ? zeroChangeOutcome(resolved.drift)
         : prEligible ? "ready" : "verification_failed";
   const files = [...provider.changes.keys()].sort();
   const proposal = {
@@ -1136,7 +1220,9 @@ export async function refreshEngines(options) {
     const { proposal } = result;
     if (proposal.policy.status === "experimental") return false;
     if (proposal.policy.status === "frozen" || proposal.policy.status === "unsupported") return true;
-    return proposal.outcome === "failed" || proposal.outcome === "verification_failed";
+    if (FAILED_REFRESH_OUTCOMES.has(proposal.outcome)) return true;
+    if (!REFRESH_OUTCOMES.has(proposal.outcome)) return true;
+    return false;
   }) ? 1 : 0;
   return { results, exitCode };
 }

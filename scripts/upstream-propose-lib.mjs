@@ -48,6 +48,18 @@ function providerPathLabel(pathClass) {
   return "unclassified path";
 }
 
+const KNOWN_PROPOSAL_OUTCOMES = new Set([
+  "ready",
+  "no_change",
+  "drift_detected_but_no_proposal",
+  "drift_unavailable",
+  "failed",
+  "verification_failed",
+  "experimental",
+  "frozen",
+  "unsupported",
+]);
+
 export function evaluateBundleForPr({ bundlePath, decision = "undecided" }) {
   const absolute = resolve(bundlePath);
   const proposalPath = lstatSync(absolute).isDirectory() ? resolve(absolute, "proposal.json") : absolute;
@@ -82,6 +94,15 @@ export function evaluateBundleForPr({ bundlePath, decision = "undecided" }) {
   const recordedPatchDigest = proposal?.artifacts?.find?.(({ path }) => path === "changes.patch")?.sha256;
   if (!patchBytes || recordedPatchDigest !== sha256(patchBytes)) reasons.push("changes.patch does not match its recorded SHA-256 digest.");
   if (!existsSync(resolve(directory, "report.md"))) reasons.push("report.md is missing.");
+  if (proposal?.outcome === "no_change") {
+    reasons.push("The refresh reported no adapter change.");
+  } else if (proposal?.outcome === "drift_detected_but_no_proposal") {
+    reasons.push("Upstream drift was detected but no adapter change was produced; this bundle may not become a PR.");
+  } else if (proposal?.outcome === "drift_unavailable") {
+    reasons.push("Offline drift could not be inspected; this bundle may not become a PR.");
+  } else if (proposal?.outcome != null && !KNOWN_PROPOSAL_OUTCOMES.has(proposal.outcome)) {
+    reasons.push(`Unrecognized proposal outcome ${proposal.outcome}; refusing the PR.`);
+  }
   if (proposal?.pr_eligible !== true) reasons.push("The refresh pipeline did not mark this proposal PR-eligible.");
   const uniqueReasons = [...new Set(reasons)];
   const eligible = uniqueReasons.length === 0;
