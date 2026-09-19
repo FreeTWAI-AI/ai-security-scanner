@@ -45,10 +45,20 @@ const MAX_OUTPUT_DEPTH: usize = 32;
 const MAX_RUNTIME_COMMAND_OUTPUT_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_RUNTIME_SECURITY_OPTIONS_BYTES: usize = 8 * 1024;
 const MAX_RUNTIME_EXECUTION_INFO_BYTES: usize = 16 * 1024;
+#[doc(hidden)]
+pub const RELEASE_APPROVED_LOCAL_IMAGE_DIRECTORY_ENVIRONMENT_VARIABLE: &str =
+    "AI_SECURITY_SCANNER_RELEASE_APPROVED_LOCAL_IMAGE_DIRECTORY";
 const RUNTIME_COMMAND_TIMEOUT: StdDuration = StdDuration::from_secs(30);
+// Loading a release archive can transfer and unpack several hundred MB into a
+// provider VM. Keep it independent of short control-plane commands and pulls.
+const LOCAL_PINNED_IMAGE_LOAD_TIMEOUT: StdDuration = StdDuration::from_secs(15 * 60);
 // A cold pull transfers and unpacks the release-pinned image inside the provider VM;
 // keep that data-plane deadline separate from short control-plane commands.
 const PINNED_IMAGE_PULL_TIMEOUT: StdDuration = StdDuration::from_secs(10 * 60);
+const MAX_OCI_LAYOUT_DOCUMENT_BYTES: u64 = 16 * 1024;
+const MAX_OCI_INDEX_DOCUMENT_BYTES: u64 = 1024 * 1024;
+const MAX_OCI_MANIFEST_DOCUMENT_BYTES: u64 = 4 * 1024 * 1024;
+const OCI_IMAGE_MANIFEST_MEDIA_TYPE: &str = "application/vnd.oci.image.manifest.v1+json";
 const RUNTIME_PIPE_DRAIN_TIMEOUT: StdDuration = StdDuration::from_secs(2);
 const CONTAINER_CAPTURE_DRAIN_TIMEOUT: StdDuration = StdDuration::from_secs(30);
 /// The one sentence a host-deadline timeout is recorded as.
@@ -233,6 +243,27 @@ impl RuntimeCommandContext {
         command.args(args);
         self.apply(&mut command);
         bounded_command_output_until(&mut command, maximum, deadline)
+    }
+
+    fn output_with_stdin(
+        &self,
+        args: &[OsString],
+        stdin: File,
+        maximum: u64,
+        timeout: StdDuration,
+    ) -> io::Result<std::process::Output> {
+        let deadline = std::time::Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(runtime_command_deadline_error)?;
+        #[cfg(windows)]
+        let _execution_guard = self.acquire_windows_execution_guard(deadline, &|| false)?;
+        if std::time::Instant::now() >= deadline {
+            return Err(runtime_command_deadline_error());
+        }
+        let mut command = Command::new(&self.binary);
+        command.args(args).stdin(Stdio::from(stdin));
+        self.apply(&mut command);
+        bounded_command_output_with_configured_stdin_until(&mut command, maximum, deadline)
     }
 
     #[cfg(windows)]
@@ -1605,6 +1636,7 @@ pub trait ContainerRuntime: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ProcessContainerRuntime {
     context: RuntimeCommandContext,
+    release_approved_local_image_directory: Option<PathBuf>,
     // A runtime value is resolved immediately before a scan batch is
     // persisted, then that exact value is moved into the worker. Keep the
     // successful prepare-time proof attached to that immutable command
@@ -1725,6 +1757,7 @@ enum DirectRuntimeOperation {
     RuntimeExecutionPreflight,
     ManagedNetworkPreflight,
     LocalPinnedImageInspection,
+    LocalPinnedImageLoad,
     PinnedImagePull,
     ContainerPause,
     ContainerUnpause,
@@ -1742,6 +1775,7 @@ impl DirectRuntimeOperation {
             Self::RuntimeExecutionPreflight => "runtime execution preflight",
             Self::ManagedNetworkPreflight => "managed network preflight",
             Self::LocalPinnedImageInspection => "local pinned image inspection",
+            Self::LocalPinnedImageLoad => "local pinned image load",
             Self::PinnedImagePull => "pinned image pull",
             Self::ContainerPause => "container pause",
             Self::ContainerUnpause => "container unpause",
@@ -1754,6 +1788,7 @@ impl DirectRuntimeOperation {
 
     fn timeout(self) -> StdDuration {
         match self {
+            Self::LocalPinnedImageLoad => LOCAL_PINNED_IMAGE_LOAD_TIMEOUT,
             Self::PinnedImagePull => PINNED_IMAGE_PULL_TIMEOUT,
             _ => RUNTIME_COMMAND_TIMEOUT,
         }
@@ -2002,10 +2037,16 @@ fn bounded_command_output_until(
     maximum: u64,
     deadline: std::time::Instant,
 ) -> io::Result<std::process::Output> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    command.stdin(Stdio::null());
+    bounded_command_output_with_configured_stdin_until(command, maximum, deadline)
+}
+
+fn bounded_command_output_with_configured_stdin_until(
+    command: &mut Command,
+    maximum: u64,
+    deadline: std::time::Instant,
+) -> io::Result<std::process::Output> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
     if std::time::Instant::now() >= deadline {
         return Err(runtime_command_deadline_error());
     }
@@ -2515,6 +2556,8 @@ impl ProcessContainerRuntime {
     pub fn new(provider: RuntimeProvider, binary: impl Into<PathBuf>) -> AppResult<Self> {
         Ok(Self {
             context: RuntimeCommandContext::compatibility(provider, binary.into())?,
+            release_approved_local_image_directory:
+                release_approved_local_image_directory_from_environment(),
             preflight_cache: Arc::default(),
             #[cfg(test)]
             test_execution_timeout: None,
@@ -2526,6 +2569,8 @@ impl ProcessContainerRuntime {
     pub fn from_managed(command: crate::managed_runtime::ManagedRuntimeCommand) -> AppResult<Self> {
         Ok(Self {
             context: RuntimeCommandContext::managed(command)?,
+            release_approved_local_image_directory:
+                release_approved_local_image_directory_from_environment(),
             preflight_cache: Arc::default(),
             #[cfg(test)]
             test_execution_timeout: None,
@@ -2537,12 +2582,22 @@ impl ProcessContainerRuntime {
     pub fn from_command_context(context: RuntimeCommandContext) -> Self {
         Self {
             context,
+            release_approved_local_image_directory:
+                release_approved_local_image_directory_from_environment(),
             preflight_cache: Arc::default(),
             #[cfg(test)]
             test_execution_timeout: None,
             #[cfg(test)]
             test_capture_drain_timeout: None,
         }
+    }
+
+    pub fn with_release_approved_local_image_directory(
+        mut self,
+        directory: Option<PathBuf>,
+    ) -> Self {
+        self.release_approved_local_image_directory = directory;
+        self
     }
 
     #[cfg(all(test, unix))]
@@ -2677,6 +2732,32 @@ impl ProcessContainerRuntime {
             .collect::<Vec<_>>();
         self.context
             .output(&args, MAX_RUNTIME_COMMAND_OUTPUT_BYTES, timeout)
+            .map_err(|error| {
+                AppError::Runtime(format!(
+                    "{} via {} could not be executed directly: {error}",
+                    operation.label(),
+                    self.context.binary.display()
+                ))
+            })
+    }
+
+    fn direct_output_with_stdin(
+        &self,
+        operation: DirectRuntimeOperation,
+        args: impl IntoIterator<Item = impl AsRef<OsStr>>,
+        stdin: File,
+    ) -> AppResult<std::process::Output> {
+        let args = args
+            .into_iter()
+            .map(|value| value.as_ref().to_os_string())
+            .collect::<Vec<_>>();
+        self.context
+            .output_with_stdin(
+                &args,
+                stdin,
+                MAX_RUNTIME_COMMAND_OUTPUT_BYTES,
+                operation.timeout(),
+            )
             .map_err(|error| {
                 AppError::Runtime(format!(
                     "{} via {} could not be executed directly: {error}",
@@ -2941,6 +3022,26 @@ impl ContainerRuntime for ProcessContainerRuntime {
         )?;
         if inspect.status.success() {
             return Ok(());
+        }
+        if let Some(directory) = self.release_approved_local_image_directory.as_deref()
+            && let Some(archive) = verified_release_approved_oci_archive(directory, image)?
+        {
+            let operation = DirectRuntimeOperation::LocalPinnedImageLoad;
+            let output = self.direct_output_with_stdin(operation, ["load"], archive)?;
+            if !output.status.success() {
+                return Err(process_failure(operation.label(), &output));
+            }
+            let inspect = self.direct_output(
+                DirectRuntimeOperation::LocalPinnedImageInspection,
+                ["image", "inspect", reference.as_str()],
+            )?;
+            if inspect.status.success() {
+                return Ok(());
+            }
+            return Err(AppError::Runtime(
+                "local pinned image load completed without making the exact pinned digest available"
+                    .into(),
+            ));
         }
         let operation = DirectRuntimeOperation::PinnedImagePull;
         let output = self.direct_output(operation, ["pull", reference.as_str()])?;
@@ -4086,6 +4187,183 @@ fn valid_sha256_digest(value: &str) -> bool {
     })
 }
 
+fn release_approved_local_image_directory_from_environment() -> Option<PathBuf> {
+    std::env::var_os(RELEASE_APPROVED_LOCAL_IMAGE_DIRECTORY_ENVIRONMENT_VARIABLE)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+fn verified_release_approved_oci_archive(
+    directory: &Path,
+    image: &PinnedImage,
+) -> AppResult<Option<File>> {
+    let digest_hex = image
+        .digest()
+        .strip_prefix("sha256:")
+        .expect("PinnedImage always contains a validated sha256 digest");
+    let archive_path = directory.join("sha256").join(format!("{digest_hex}.tar"));
+    let metadata = match fs::symlink_metadata(&archive_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(AppError::Runtime(
+            "local pinned image load source entry must be a regular OCI archive".into(),
+        ));
+    }
+
+    let mut archive_file = File::open(&archive_path)?;
+    verify_oci_archive_manifest(&mut archive_file, image.digest())?;
+    archive_file.seek(SeekFrom::Start(0))?;
+    Ok(Some(archive_file))
+}
+
+fn verify_oci_archive_manifest(archive_file: &mut File, pinned_digest: &str) -> AppResult<()> {
+    let digest_hex = pinned_digest
+        .strip_prefix("sha256:")
+        .expect("PinnedImage always contains a validated sha256 digest");
+    let manifest_path = PathBuf::from(format!("blobs/sha256/{digest_hex}"));
+    let mut layout_document = None;
+    let mut index_document = None;
+    let mut manifest_document = None;
+    let mut archive = tar::Archive::new(archive_file);
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let destination = if path == Path::new("oci-layout") {
+            Some((&mut layout_document, MAX_OCI_LAYOUT_DOCUMENT_BYTES))
+        } else if path == Path::new("index.json") {
+            Some((&mut index_document, MAX_OCI_INDEX_DOCUMENT_BYTES))
+        } else if path == manifest_path {
+            Some((&mut manifest_document, MAX_OCI_MANIFEST_DOCUMENT_BYTES))
+        } else {
+            None
+        };
+        let Some((document, maximum)) = destination else {
+            continue;
+        };
+        if document.is_some() {
+            return Err(AppError::Runtime(
+                "local pinned image load rejected an OCI archive with duplicate required entries"
+                    .into(),
+            ));
+        }
+        let entry_type = entry.header().entry_type();
+        if entry_type != tar::EntryType::Regular && entry_type != tar::EntryType::Continuous {
+            return Err(AppError::Runtime(
+                "local pinned image load rejected a non-regular required OCI archive entry".into(),
+            ));
+        }
+        if entry.size() > maximum {
+            return Err(AppError::Runtime(
+                "local pinned image load rejected an oversized OCI metadata document".into(),
+            ));
+        }
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        entry.read_to_end(&mut bytes)?;
+        *document = Some(bytes);
+    }
+
+    let layout: serde_json::Value =
+        serde_json::from_slice(layout_document.as_deref().ok_or_else(|| {
+            AppError::Runtime("local pinned image load source is missing oci-layout".into())
+        })?)
+        .map_err(|error| {
+            AppError::Runtime(format!(
+                "local pinned image load source has invalid oci-layout JSON: {error}"
+            ))
+        })?;
+    if layout
+        .get("imageLayoutVersion")
+        .and_then(|value| value.as_str())
+        != Some("1.0.0")
+    {
+        return Err(AppError::Runtime(
+            "local pinned image load source has an unsupported OCI image layout version".into(),
+        ));
+    }
+
+    let index: serde_json::Value =
+        serde_json::from_slice(index_document.as_deref().ok_or_else(|| {
+            AppError::Runtime("local pinned image load source is missing index.json".into())
+        })?)
+        .map_err(|error| {
+            AppError::Runtime(format!(
+                "local pinned image load source has invalid index.json: {error}"
+            ))
+        })?;
+    let pinned_manifest_descriptor = index
+        .get("manifests")
+        .and_then(|value| value.as_array())
+        .and_then(|manifests| {
+            manifests.iter().find(|descriptor| {
+                descriptor.get("digest").and_then(|value| value.as_str()) == Some(pinned_digest)
+            })
+        });
+    if index.get("schemaVersion").and_then(|value| value.as_u64()) != Some(2)
+        || pinned_manifest_descriptor.is_none()
+    {
+        return Err(AppError::Runtime(
+            "local pinned image load source index does not name the pinned manifest digest".into(),
+        ));
+    }
+    let pinned_manifest_descriptor = pinned_manifest_descriptor.expect("descriptor was checked");
+    let pinned_media_type = pinned_manifest_descriptor
+        .get("mediaType")
+        .and_then(|value| value.as_str());
+    if !matches!(
+        pinned_media_type,
+        Some(OCI_IMAGE_MANIFEST_MEDIA_TYPE | "application/vnd.oci.image.index.v1+json")
+    ) {
+        return Err(AppError::Runtime(
+            "local pinned image load source index does not identify an OCI image manifest".into(),
+        ));
+    }
+
+    // For a multi-arch pin, verifying the content-addressed index is sufficient:
+    // it names child manifests by digest, and the runtime verifies them during load.
+    // Do not duplicate that traversal here.
+
+    let manifest_document = manifest_document.as_deref().ok_or_else(|| {
+        AppError::Runtime(
+            "local pinned image load source is missing the pinned manifest blob".into(),
+        )
+    })?;
+    let observed_digest = format!("sha256:{}", hex::encode(Sha256::digest(manifest_document)));
+    if observed_digest != pinned_digest {
+        return Err(AppError::Runtime(
+            "local pinned image load source manifest bytes do not match the pinned digest".into(),
+        ));
+    }
+    if pinned_manifest_descriptor
+        .get("size")
+        .and_then(|value| value.as_u64())
+        != Some(manifest_document.len() as u64)
+    {
+        return Err(AppError::Runtime(
+            "local pinned image load source manifest size does not match its OCI descriptor".into(),
+        ));
+    }
+    let manifest: serde_json::Value =
+        serde_json::from_slice(manifest_document).map_err(|error| {
+            AppError::Runtime(format!(
+                "local pinned image load source has invalid manifest JSON: {error}"
+            ))
+        })?;
+    if manifest
+        .get("schemaVersion")
+        .and_then(|value| value.as_u64())
+        != Some(2)
+    {
+        return Err(AppError::Runtime(
+            "local pinned image load source manifest has an unsupported schema version".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn rootless_user_mapping_for_ids(uid: u32, gid: u32) -> AppResult<RootlessContainerUser> {
     if uid == 0 {
         return Err(AppError::NotAuthorized(
@@ -4220,6 +4498,59 @@ mod tests {
     #[cfg(unix)]
     use std::time::Instant;
 
+    #[cfg(unix)]
+    fn write_release_approved_oci_archive_with_media_type(
+        source: &Path,
+        pinned_digest: &str,
+        manifest: &[u8],
+        descriptor_media_type: &str,
+    ) {
+        let digest_hex = pinned_digest
+            .strip_prefix("sha256:")
+            .expect("test digest uses sha256");
+        let archive_directory = source.join("sha256");
+        fs::create_dir_all(&archive_directory).expect("create OCI archive directory");
+        let archive_file = File::create(archive_directory.join(format!("{digest_hex}.tar")))
+            .expect("create OCI archive");
+        let mut archive = tar::Builder::new(archive_file);
+        let index = serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 2,
+            "manifests": [{
+                "mediaType": descriptor_media_type,
+                "digest": pinned_digest,
+                "size": manifest.len(),
+            }],
+        }))
+        .expect("serialize OCI index");
+        for (path, contents) in [
+            (
+                "oci-layout".to_owned(),
+                br#"{"imageLayoutVersion":"1.0.0"}"#.as_slice(),
+            ),
+            ("index.json".to_owned(), index.as_slice()),
+            (format!("blobs/sha256/{digest_hex}"), manifest),
+        ] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, path, contents)
+                .expect("append OCI archive entry");
+        }
+        archive.finish().expect("finish OCI archive");
+    }
+
+    #[cfg(unix)]
+    fn write_release_approved_oci_archive(source: &Path, pinned_digest: &str, manifest: &[u8]) {
+        write_release_approved_oci_archive_with_media_type(
+            source,
+            pinned_digest,
+            manifest,
+            OCI_IMAGE_MANIFEST_MEDIA_TYPE,
+        );
+    }
+
     #[test]
     fn compatibility_runtime_rejects_an_arbitrary_managed_local_binary() {
         let assert_rejected = |error: AppError| {
@@ -4249,6 +4580,10 @@ mod tests {
 
     #[test]
     fn direct_runtime_operations_keep_image_pull_timeout_separate() {
+        assert_eq!(
+            DirectRuntimeOperation::LocalPinnedImageLoad.timeout(),
+            StdDuration::from_secs(15 * 60)
+        );
         assert_eq!(
             DirectRuntimeOperation::PinnedImagePull.timeout(),
             StdDuration::from_secs(10 * 60)
@@ -4367,12 +4702,14 @@ mod tests {
 script_root=${0%/*}
 printf '%s\n' "$1" >> "$script_root/subcommands.log"
 if [ "$1" = image ] && [ "$2" = inspect ]; then exit 0; fi
+if [ "$1" = load ]; then exit 0; fi
 if [ "$1" = pull ]; then exit 0; fi
 exit 29
 "#,
         );
         let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
-            .expect("construct compatibility runtime");
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(None);
         let image = PinnedImage::new(
             "ghcr.io/example/private",
             &format!("sha256:{}", "a".repeat(64)),
@@ -4384,6 +4721,10 @@ exit 29
         let invocations = fs::read_to_string(log).expect("runtime invocation log");
         assert!(invocations.lines().any(|subcommand| subcommand == "image"));
         assert!(
+            !invocations.lines().any(|subcommand| subcommand == "load"),
+            "an already present digest must never be loaded"
+        );
+        assert!(
             !invocations.lines().any(|subcommand| subcommand == "pull"),
             "a locally present digest must never contact the registry"
         );
@@ -4391,7 +4732,193 @@ exit 29
 
     #[cfg(unix)]
     #[test]
-    fn pull_fetches_the_pinned_image_when_the_digest_is_absent() {
+    fn pull_loads_verified_release_approved_archive_and_skips_registry_when_digest_becomes_present()
+    {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        let source = temp.path().join("release-images");
+        let manifest = br#"{"schemaVersion":2}"#;
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(manifest)));
+        write_release_approved_oci_archive(&source, &digest, manifest);
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+  if [ -f "$script_root/image-loaded" ]; then exit 0; fi
+  exit 1
+fi
+if [ "$1" = load ]; then
+  touch "$script_root/image-loaded"
+  exit 0
+fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new("ghcr.io/example/private", &digest).expect("pinned image");
+
+        runtime
+            .pull(&image)
+            .expect("verified local archive makes the digest available");
+
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert_eq!(
+            invocations.lines().collect::<Vec<_>>(),
+            vec!["image", "load", "image"]
+        );
+        assert!(
+            !invocations.lines().any(|subcommand| subcommand == "pull"),
+            "a successfully loaded digest must never contact the registry"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_loads_verified_release_approved_multi_arch_index_and_skips_registry() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        let source = temp.path().join("release-images");
+        let index_document = br#"{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}"#;
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(index_document)));
+        write_release_approved_oci_archive_with_media_type(
+            &source,
+            &digest,
+            index_document,
+            "application/vnd.oci.image.index.v1+json",
+        );
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then
+  if [ -f "$script_root/image-loaded" ]; then exit 0; fi
+  exit 1
+fi
+if [ "$1" = load ]; then
+  touch "$script_root/image-loaded"
+  exit 0
+fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new("ghcr.io/example/private", &digest).expect("pinned image");
+
+        runtime
+            .pull(&image)
+            .expect("verified multi-arch index archive makes the digest available");
+
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert_eq!(
+            invocations.lines().collect::<Vec<_>>(),
+            vec!["image", "load", "image"]
+        );
+        assert!(
+            !invocations.lines().any(|subcommand| subcommand == "pull"),
+            "a successfully loaded multi-arch digest must never contact the registry"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_rejects_release_approved_archive_with_unrelated_descriptor_media_type() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        let source = temp.path().join("release-images");
+        let manifest = br#"{"schemaVersion":2}"#;
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(manifest)));
+        write_release_approved_oci_archive_with_media_type(
+            &source,
+            &digest,
+            manifest,
+            "application/vnd.example.unrelated+json",
+        );
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = load ]; then exit 0; fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new("ghcr.io/example/private", &digest).expect("pinned image");
+
+        let error = runtime
+            .pull(&image)
+            .expect_err("an unrelated descriptor media type must be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not identify an OCI image manifest")
+        );
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert_eq!(invocations.lines().collect::<Vec<_>>(), vec!["image"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_does_not_accept_successful_local_load_without_pinned_digest() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        let source = temp.path().join("release-images");
+        let manifest = br#"{"schemaVersion":2}"#;
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(manifest)));
+        write_release_approved_oci_archive(&source, &digest, manifest);
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = load ]; then exit 0; fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new("ghcr.io/example/private", &digest).expect("pinned image");
+        let reference = image.reference();
+
+        let error = runtime
+            .pull(&image)
+            .expect_err("a successful load must still prove the pinned digest");
+
+        let message = error.to_string();
+        assert!(message.contains("local pinned image load"));
+        assert!(!message.contains(&reference));
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert_eq!(
+            invocations.lines().collect::<Vec<_>>(),
+            vec!["image", "load", "image"]
+        );
+        assert!(!invocations.lines().any(|subcommand| subcommand == "pull"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_contacts_registry_when_release_approved_local_image_source_is_not_configured() {
         let temp = tempfile::tempdir().expect("temporary runtime");
         let binary = temp.path().join("podman-fixture");
         let log = temp.path().join("subcommands.log");
@@ -4406,7 +4933,8 @@ exit 29
 "#,
         );
         let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
-            .expect("construct compatibility runtime");
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(None);
         let image = PinnedImage::new(
             "ghcr.io/example/private",
             &format!("sha256:{}", "b".repeat(64)),
@@ -4420,6 +4948,118 @@ exit 29
             invocations.lines().any(|subcommand| subcommand == "pull"),
             "an absent digest must be fetched"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_contacts_registry_when_release_approved_local_image_source_has_no_digest_entry() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        let source = temp.path().join("release-images");
+        fs::create_dir(&source).expect("create empty local image source");
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new(
+            "ghcr.io/example/private",
+            &format!("sha256:{}", "d".repeat(64)),
+        )
+        .expect("pinned image");
+
+        runtime
+            .pull(&image)
+            .expect("a missing local source entry falls through to pull");
+
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert_eq!(
+            invocations.lines().collect::<Vec<_>>(),
+            vec!["image", "pull"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_rejects_local_archive_when_manifest_bytes_do_not_match_pinned_digest_without_loading() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        let source = temp.path().join("release-images");
+        let expected_manifest = br#"{"schemaVersion":2,"expected":true}"#;
+        let substituted_manifest = br#"{"schemaVersion":2,"expected":false}"#;
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(expected_manifest)));
+        write_release_approved_oci_archive(&source, &digest, substituted_manifest);
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = load ]; then exit 0; fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new("ghcr.io/example/private", &digest).expect("pinned image");
+
+        let error = runtime
+            .pull(&image)
+            .expect_err("substituted manifest bytes must be rejected before load");
+
+        assert!(error.to_string().contains("manifest bytes do not match"));
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert_eq!(invocations.lines().collect::<Vec<_>>(), vec!["image"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_pinned_image_load_failure_names_operation_without_echoing_pinned_reference() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let source = temp.path().join("release-images");
+        let manifest = br#"{"schemaVersion":2}"#;
+        let digest = format!("sha256:{}", hex::encode(Sha256::digest(manifest)));
+        write_release_approved_oci_archive(&source, &digest, manifest);
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = load ]; then
+  printf '%s\n' 'archive import was rejected' >&2
+  exit 1
+fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(Some(source));
+        let image = PinnedImage::new("ghcr.io/example/private", &digest).expect("pinned image");
+        let reference = image.reference();
+
+        let error = runtime
+            .pull(&image)
+            .expect_err("failed local load is reported");
+        let message = error.to_string();
+
+        assert!(message.contains("local pinned image load"));
+        assert!(!message.contains(&reference));
     }
 
     #[cfg(unix)]
@@ -4441,7 +5081,8 @@ exit 29
 "#,
         );
         let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
-            .expect("construct compatibility runtime");
+            .expect("construct compatibility runtime")
+            .with_release_approved_local_image_directory(None);
         let image = PinnedImage::new(
             "ghcr.io/example/private",
             &format!("sha256:{}", "c".repeat(64)),

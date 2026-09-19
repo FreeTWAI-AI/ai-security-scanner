@@ -99,6 +99,14 @@ struct Cli {
     )]
     managed_runtime_bundle: Option<PathBuf>,
 
+    /// Use digest-keyed OCI archives from a release-approved local image directory.
+    #[arg(
+        long,
+        global = true,
+        env = "AI_SECURITY_SCANNER_RELEASE_APPROVED_LOCAL_IMAGE_DIRECTORY"
+    )]
+    release_approved_local_image_directory: Option<PathBuf>,
+
     /// Emit compact machine-readable JSON.
     #[arg(long, global = true)]
     json: bool,
@@ -919,6 +927,12 @@ struct GlobalOptionSources {
     managed_runtime_bundle: Option<ValueSource>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RuntimeSourceOverrides<'a> {
+    managed_runtime_bundle: Option<&'a Path>,
+    release_approved_local_image_directory: Option<&'a Path>,
+}
+
 #[derive(Debug, Serialize)]
 struct ProductUninstallCoordinatorEnvelope {
     schema_version: &'static str,
@@ -979,6 +993,7 @@ async fn execute(cli: Cli, option_sources: GlobalOptionSources) -> AppResult<u8>
     }
 
     let managed_runtime_bundle = cli.managed_runtime_bundle;
+    let release_approved_local_image_directory = cli.release_approved_local_image_directory;
     let data_dir_was_overridden = cli.data_dir.is_some();
     let data_dir = resolve_data_dir(cli.data_dir)?;
     let _product_data_guard: Option<_> = if data_dir_was_overridden {
@@ -1004,6 +1019,7 @@ async fn execute(cli: Cli, option_sources: GlobalOptionSources) -> AppResult<u8>
             &data_dir,
             &data_dir.join("artifacts"),
             managed_runtime_bundle.as_deref(),
+            release_approved_local_image_directory.as_deref(),
             ManagedRuntimeCliCommand::Status,
             cli.json,
         )
@@ -1055,7 +1071,13 @@ async fn execute(cli: Cli, option_sources: GlobalOptionSources) -> AppResult<u8>
             print_value(&comparison, cli.json)?;
         }
         Command::Engine { command } => {
-            execute_engine(command, &engines, &adapters, cli.json)?;
+            execute_engine(
+                command,
+                &engines,
+                &adapters,
+                release_approved_local_image_directory.as_deref(),
+                cli.json,
+            )?;
         }
         Command::Runtime { command } => {
             execute_runtime(
@@ -1064,7 +1086,11 @@ async fn execute(cli: Cli, option_sources: GlobalOptionSources) -> AppResult<u8>
                 &engines,
                 &data_dir,
                 &artifact_root,
-                managed_runtime_bundle.as_deref(),
+                RuntimeSourceOverrides {
+                    managed_runtime_bundle: managed_runtime_bundle.as_deref(),
+                    release_approved_local_image_directory: release_approved_local_image_directory
+                        .as_deref(),
+                },
                 cli.json,
             )
             .await?;
@@ -2158,6 +2184,7 @@ fn execute_engine(
     command: EngineCommand,
     engines: &EngineRegistry,
     adapters: &ai_security_scanner_lib::adapter::AdapterRegistry,
+    release_approved_local_image_directory: Option<&Path>,
     json_output: bool,
 ) -> AppResult<()> {
     match command {
@@ -2189,7 +2216,10 @@ fn execute_engine(
                 )));
             }
             let image = PinnedImage::from_manifest(manifest)?;
-            let runtime = ProcessContainerRuntime::detect()?;
+            let runtime = ProcessContainerRuntime::detect()?
+                .with_release_approved_local_image_directory(
+                    release_approved_local_image_directory.map(Path::to_path_buf),
+                );
             let preflight = runtime.preflight()?;
             runtime.pull(&image)?;
             print_value(
@@ -2213,7 +2243,7 @@ async fn execute_runtime(
     engines: &EngineRegistry,
     data_dir: &Path,
     artifact_root: &Path,
-    managed_runtime_bundle: Option<&Path>,
+    source_overrides: RuntimeSourceOverrides<'_>,
     json_output: bool,
 ) -> AppResult<()> {
     match command {
@@ -2221,7 +2251,8 @@ async fn execute_runtime(
             execute_managed_runtime_cli_command(
                 data_dir,
                 artifact_root,
-                managed_runtime_bundle,
+                source_overrides.managed_runtime_bundle,
+                source_overrides.release_approved_local_image_directory,
                 command,
                 json_output,
             )
@@ -2235,7 +2266,8 @@ async fn execute_runtime(
                 args.case_id.as_deref(),
                 args.run_id.as_deref(),
             )?;
-            let managed_runtime = inspect_managed_runtime(data_dir, managed_runtime_bundle).await;
+            let managed_runtime =
+                inspect_managed_runtime(data_dir, source_overrides.managed_runtime_bundle).await;
             let compatibility_runtime = detect_runtime().await;
             print_value(
                 &json!({
@@ -2510,14 +2542,22 @@ async fn execute_managed_runtime_cli_command(
     data_dir: &Path,
     artifact_root: &Path,
     managed_runtime_bundle: Option<&Path>,
+    release_approved_local_image_directory: Option<&Path>,
     command: ManagedRuntimeCliCommand,
     json_output: bool,
 ) -> AppResult<()> {
     let data_dir = data_dir.to_path_buf();
     let artifact_root = artifact_root.to_path_buf();
     let bundle = managed_runtime_bundle.map(Path::to_path_buf);
+    let local_images = release_approved_local_image_directory.map(Path::to_path_buf);
     let value = tokio::task::spawn_blocking(move || {
-        execute_managed_runtime_command(&data_dir, &artifact_root, bundle.as_deref(), command)
+        execute_managed_runtime_command(
+            &data_dir,
+            &artifact_root,
+            bundle.as_deref(),
+            local_images.as_deref(),
+            command,
+        )
     })
     .await
     .map_err(|error| {
@@ -2877,6 +2917,7 @@ fn execute_managed_runtime_command(
     data_dir: &Path,
     artifact_root: &Path,
     bundle_override: Option<&Path>,
+    release_approved_local_image_directory: Option<&Path>,
     command: ManagedRuntimeCliCommand,
 ) -> AppResult<Value> {
     let manager = open_managed_runtime_manager(data_dir, bundle_override)?;
@@ -2897,7 +2938,11 @@ fn execute_managed_runtime_command(
         }
         ManagedRuntimeCliCommand::Update => serde_json::to_value(manager.update()?),
         ManagedRuntimeCliCommand::Qualify => {
-            return execute_managed_runtime_qualification(&manager, artifact_root);
+            return execute_managed_runtime_qualification(
+                &manager,
+                artifact_root,
+                release_approved_local_image_directory,
+            );
         }
         ManagedRuntimeCliCommand::QualifyEgress => {
             return execute_managed_egress_gateway_qualification(&manager, artifact_root);
@@ -2925,8 +2970,12 @@ fn execute_managed_runtime_command(
 fn execute_managed_runtime_qualification(
     manager: &ManagedRuntimeManager,
     artifact_root: &Path,
+    release_approved_local_image_directory: Option<&Path>,
 ) -> AppResult<Value> {
-    let runtime = ProcessContainerRuntime::from_managed(manager.start()?)?;
+    let runtime = ProcessContainerRuntime::from_managed(manager.start()?)?
+        .with_release_approved_local_image_directory(
+            release_approved_local_image_directory.map(Path::to_path_buf),
+        );
     let preflight = runtime.preflight()?;
     let engines = EngineRegistry::load_builtin()?;
     let canonical_artifact_root = canonical_private_artifact_root(artifact_root)?;
@@ -5636,6 +5685,23 @@ mod tests {
         assert!(!command_is_managed_runtime_status(&doctor.command));
     }
 
+    #[test]
+    fn cli_accepts_a_release_approved_local_image_directory_override() {
+        let cli = Cli::try_parse_from([
+            "ai-security-scanner",
+            "--release-approved-local-image-directory",
+            "/release-images",
+            "engine",
+            "list",
+        ])
+        .expect("parse local image directory override");
+
+        assert_eq!(
+            cli.release_approved_local_image_directory,
+            Some(PathBuf::from("/release-images"))
+        );
+    }
+
     #[tokio::test]
     async fn cli_cancel_fails_closed_when_the_data_directory_lease_is_owned() {
         let temporary = tempfile::tempdir().expect("temporary data directory");
@@ -5646,6 +5712,7 @@ mod tests {
         let cli = Cli {
             data_dir: Some(temporary.path().to_path_buf()),
             managed_runtime_bundle: None,
+            release_approved_local_image_directory: None,
             json: true,
             command: Command::Scan {
                 command: ScanCommand::Cancel(ScanTransitionArgs {

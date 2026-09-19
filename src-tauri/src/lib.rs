@@ -83,6 +83,8 @@ const DATA_DIRECTORY_ENVIRONMENT_VARIABLE: &str = "AI_SECURITY_SCANNER_DATA_DIR"
 #[cfg(feature = "desktop")]
 const MANAGED_RUNTIME_BUNDLE_ENVIRONMENT_VARIABLE: &str =
     "AI_SECURITY_SCANNER_MANAGED_RUNTIME_BUNDLE";
+pub const RELEASE_APPROVED_LOCAL_IMAGE_DIRECTORY_ENVIRONMENT_VARIABLE: &str =
+    container_runtime::RELEASE_APPROVED_LOCAL_IMAGE_DIRECTORY_ENVIRONMENT_VARIABLE;
 
 #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 fn select_environment_path(
