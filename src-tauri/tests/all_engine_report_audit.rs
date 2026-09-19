@@ -154,6 +154,10 @@ fn fixture(engine: &str, outcomes: EngineOutcomes) -> (&'static [u8], &'static s
             include_bytes!("fixtures/adapters/kube-bench.json"),
             "kube-bench.json",
         ),
+        "mcp-armor" => (
+            include_bytes!("../../docs/research/fixtures/mcp-armor/config-findings.json"),
+            "mcp-armor.json",
+        ),
         other => panic!("missing fixture for {other}"),
     }
 }
@@ -756,6 +760,11 @@ fn all_engines_in_one_report<T>(
         b"resource \"fixture\" \"audit\" {}\n",
     )
     .unwrap();
+    fs::write(
+        selected.join("repo/mcp.json"),
+        include_bytes!("../../engines/images/mcp-armor/testdata/workspace/mcp.json"),
+    )
+    .unwrap();
     write_oci_layout(&selected.join("oci"));
     fs::create_dir_all(selected.join("manifests")).unwrap();
     fs::write(
@@ -951,6 +960,7 @@ fn all_engines_in_one_report<T>(
         ("semgrep", repo),
         ("checkov", repo),
         ("kics", repo),
+        ("mcp-armor", repo),
         ("kubescape", manifests),
         ("kube-bench", node),
         ("cloudquery", &aws),
@@ -989,7 +999,7 @@ fn all_engines_in_one_report<T>(
         "unroutable engines: {:?}",
         plan.not_executed
     );
-    assert_eq!(plan.executable.len(), 24);
+    assert_eq!(plan.executable.len(), 25);
     assert!(
         plan.executable
             .iter()
@@ -2000,10 +2010,11 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     "the limits list humanized an identifier: {wrong}"
                 );
             }
-            // Twenty-one engines shared one execution timeout and the list
+            // Twenty-two engines shared one execution timeout and the list
             // printed it once per engine. A limit is a policy and who it
-            // covers: forty lines carried eleven distinct policies.
+            // covers: forty-one lines carried twelve distinct policies.
             for right in [
+                "<strong>Execution timeout:</strong> 900 seconds",
                 "<strong>Execution timeout:</strong> 3600 seconds",
                 "Checkov, CloudQuery, Cloudsplaining, Gitleaks, Grype, KICS, kube-bench",
                 "<strong>Execution timeout:</strong> 7200 seconds",
@@ -2016,7 +2027,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             }
             assert_eq!(
                 limits.matches("Execution timeout:").count(),
-                3,
+                4,
                 "one execution timeout per distinct value, not per engine"
             );
             // Where a limit came from is a property of the grant, and it was
@@ -2062,7 +2073,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             }
             assert!(subjects_seen >= 5, "the audit lost the limit subjects");
             assert!(
-                limits.matches("<li>").count() - limits.matches("<strong>From the ").count() <= 12,
+                limits.matches("<li>").count() - limits.matches("<strong>From the ").count() <= 13,
                 "the limits list is repeating a policy per holder"
             );
             // A limit that names itself needs no holder after it.
@@ -2565,18 +2576,24 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 assert!(asset.starts_with("— "), "{asset}");
             }
 
-            let first_card = &problems[problems.find("<article id=\"f").expect("a card")..];
-            let first_card = &first_card[..first_card.find("</article>").expect("card end")];
-            let collapsed_at = first_card
+            let grype_impact =
+                "Grype reported a critical-severity condition on the assessed asset.";
+            let grype_impact_at = problems.find(grype_impact).expect("Grype finding impact");
+            let grype_card_at = problems[..grype_impact_at]
+                .rfind("<article id=\"f")
+                .expect("Grype finding card");
+            let grype_card = &problems[grype_card_at..];
+            let grype_card = &grype_card[..grype_card.find("</article>").expect("card end")];
+            let collapsed_at = grype_card
                 .find("<details class=\"technical finding-technical\">")
                 .expect("collapsed block");
             for open_text in [
-                "Grype reported a critical-severity condition on the assessed asset.",
+                grype_impact,
                 "Upgrade the affected component to a fixed version",
                 "Container security engineer",
                 "https://nvd.nist.gov/vuln/detail/CVE-2025-0002",
             ] {
-                let at = first_card
+                let at = grype_card
                     .find(open_text)
                     .unwrap_or_else(|| panic!("card omitted {open_text}"));
                 assert!(at < collapsed_at, "{open_text} must stay in the open");
@@ -2586,7 +2603,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "Related framework coordinates",
                 "ISO/IEC 27001",
             ] {
-                let at = first_card
+                let at = grype_card
                     .find(retained)
                     .unwrap_or_else(|| panic!("card dropped {retained}"));
                 assert!(
@@ -3523,7 +3540,7 @@ fn aidefend_view(
 /// the audit above cannot reach any of it: coordinates are withheld from a
 /// case that declares a non-AI assessment, which is exactly what the
 /// IT-environment run declares. So the AI half of the mapping is exercised
-/// here -- catalog, adapter, report layer and export -- on the same 21 checks.
+/// here -- catalog, adapter, report layer and export -- on the same 22 checks.
 #[test]
 fn the_ai_framework_follows_the_case_answers_and_nothing_else() {
     let withheld = aidefend_view(
@@ -3593,7 +3610,7 @@ fn the_ai_framework_follows_the_case_answers_and_nothing_else() {
     // for it -- and an absent coordinate has to read as unknown, not as "no
     // control relates to this".
     for view in [&withheld, &declared, &no_artifact] {
-        assert_eq!(view.mapped + view.unmapped, 45);
+        assert_eq!(view.mapped + view.unmapped, 47);
         assert_eq!(
             view.mapping_states.get("no_packaged_catalog_relationship"),
             Some(&view.unmapped),
@@ -3621,19 +3638,19 @@ fn the_ai_framework_follows_the_case_answers_and_nothing_else() {
         assert!(!view.zh_html.contains("未保留本輪的框架座標。"));
         assert!(
             view.limitations.iter().any(|limitation| limitation
-                == "1 of 45 selected-run findings has no relationship in the packaged mapping catalog. Its framework position is unknown, not absent."),
+                == "1 of 47 selected-run findings has no relationship in the packaged mapping catalog. Its framework position is unknown, not absent."),
             "{:#?}",
             view.limitations
         );
     }
     // Declaring an AI system adds coordinates to findings the catalog had
     // already placed, so it moves no finding across the line.
-    assert_eq!((withheld.mapped, withheld.unmapped), (44, 1));
-    assert_eq!((declared.mapped, declared.unmapped), (44, 1));
+    assert_eq!((withheld.mapped, withheld.unmapped), (46, 1));
+    assert_eq!((declared.mapped, declared.unmapped), (46, 1));
 
-    // None of this is detection. The same 21 checks found the same problems
+    // None of this is detection. The same 22 checks found the same problems
     // in all three runs; only the coordinates the report may name changed.
-    assert_eq!(withheld.finding_titles.len(), 45);
+    assert_eq!(withheld.finding_titles.len(), 47);
     assert_eq!(declared.finding_titles, withheld.finding_titles);
     assert_eq!(no_artifact.finding_titles, withheld.finding_titles);
 }

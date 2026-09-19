@@ -6,7 +6,7 @@
   "support_until": "2026-12-12",
   "maintenance_owner": "teddashh/ai-security-scanner maintainers",
   "update_procedure": "docs/engine-maintenance.md",
-  "publish_state": "publication_in_progress",
+  "publish_state": "published_managed_artifact",
   "source": {
     "repository": "https://github.com/aira-security/mcp-armor",
     "revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
@@ -17,7 +17,7 @@
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
     "tag": "1.0.2-config-only.1",
-    "digest": null
+    "digest": "sha256:f8dcf9b774e0f90cfbe32d81b1dc04c6b1d61538fa9829ca28c674d78440dfdc"
   },
   "build_recipe": {
     "source_revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
@@ -125,7 +125,7 @@
     "primary_format": "json",
     "path": "/output/mcp-armor.json",
     "media_type": "application/json",
-    "adapter_state": "workspace_unreleased"
+    "adapter_state": "released"
   },
   "license": {
     "disposition": "allow",
@@ -162,8 +162,20 @@
     "input_fixture": "engines/images/mcp-armor/testdata/workspace/mcp.json",
     "result": "one exact read-only synthetic configuration produced a complete two-check terminal JSON envelope and one excessive-permission finding under network=none; live and model dependency imports were absent"
   },
-  "publication": null,
-  "blockers": [
-    "the reviewed publication workflow has not yet produced and verified the immutable multi-platform image digest"
-  ]
+  "publication": {
+    "workflow_run": "https://github.com/teddashh/ai-security-scanner/actions/runs/34810830035",
+    "source_revision": "16dfb80c7e45a1ccfa7d6d7d60cc41fae45c455c",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "platform_digests": {
+      "linux/amd64": "sha256:2188bc5fc4b4c1cb2e8862a32c53f0d8af24ad5967150ddc6be867e3c48118c3",
+      "linux/arm64": "sha256:d203df4079916cf46337ecf7f983ac27f3eb09f34e04058bca948b8f5038eb89"
+    },
+    "anonymous_pull_verified": true,
+    "evidence_artifact": "mcp-armor-image-evidence-34810830035-1",
+    "managed_smoke_evidence_sha256": "sha256:8d796b2eb0d1e817f36ea1bec34ace60c5c495c26d8c4e8dffbdf24f199e492f"
+  },
+  "blockers": []
 }

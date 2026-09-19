@@ -3188,7 +3188,12 @@
     "homepage_url": "https://github.com/aira-security/mcp-armor",
     "license_spdx": "Apache-2.0",
     "distribution_mode": "pull_pinned_image",
-    "image": null,
+    "image": {
+      "repository": "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
+      "tag": "1.0.2-config-only.1",
+      "digest": "sha256:f8dcf9b774e0f90cfbe32d81b1dc04c6b1d61538fa9829ca28c674d78440dfdc",
+      "signature_identity": null
+    },
     "source_revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
     "engine_version": "1.0.2",
     "rule_version": "6af4cee4665ab6242f02a88952f9127b6a04922a",
@@ -3219,7 +3224,7 @@
       "--output",
       "/output"
     ],
-    "status": "experimental",
+    "status": "integrated",
     "notices": [
       "This release remains non-dispatchable while its reviewed publication workflow builds and verifies the immutable multi-platform image. Its pinned recipe, restricted launcher, and typed single-file selection have already passed local container smoke tests.",
       "The selected slice runs only MCP Armor's existing hardcoded-secret and excessive-tool-permission checks against one exact configuration snapshot. It does not discover, start, or contact MCP servers and does not claim live tool, resource, prompt-injection, or rug-pull coverage.",
@@ -3237,8 +3242,8 @@
         "source_revision": "6af4cee4665ab6242f02a88952f9127b6a04922a",
         "source_ref": "v1.0.2",
         "acquisition_source": "https://github.com/aira-security/mcp-armor/commit/6af4cee4665ab6242f02a88952f9127b6a04922a",
-        "artifact_source_revision": null,
-        "source_association": "source_build_required"
+        "artifact_source_revision": "16dfb80c7e45a1ccfa7d6d7d60cc41fae45c455c",
+        "source_association": "attested_match"
       },
       "rules": {
         "mode": "embedded",
@@ -3256,8 +3261,8 @@
         "id": "ai-security-scanner:mcp-armor",
         "version": "0.2.0",
         "acquisition_source": "workspace://src-tauri/src/adapters/mod.rs",
-        "source_revision": null,
-        "release_state": "workspace_unreleased"
+        "source_revision": "0707ec170a9fd1d0f7f23500dbb232045d7ac5ba",
+        "release_state": "released"
       }
     },
     "compatibility": {
@@ -3265,11 +3270,9 @@
       "support_until": "2026-12-12",
       "maintenance_owner": "teddashh/ai-security-scanner maintainers",
       "update_procedure": "docs/engine-maintenance.md",
-      "runnable": false,
+      "runnable": true,
       "artifact_state": "managed_build_plan",
-      "blocked_by": [
-        "the reviewed publication workflow has not yet produced and verified the immutable multi-platform image digest"
-      ],
+      "blocked_by": [],
       "knowledge_input": {
         "kind": "runtime_bound",
         "identifier": "one MCP configuration file selected from the repository snapshot",
@@ -3289,7 +3292,7 @@
         "primary_format": "json",
         "path": "/output/mcp-armor.json",
         "media_type": "application/json",
-        "adapter_state": "workspace_unreleased"
+        "adapter_state": "released"
       },
       "resources": {
         "memory_mb": 512,

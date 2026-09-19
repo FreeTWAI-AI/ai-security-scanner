@@ -372,10 +372,19 @@ fn registry_covers_exactly_the_twenty_four_catalog_engines() {
 
     let mcp_armor = catalog.get("mcp-armor").expect("MCP Armor manifest");
     assert_eq!(mcp_armor.category, EngineCategory::AiMcpConfiguration);
-    assert!(!mcp_armor.compatibility.runnable);
+    assert!(mcp_armor.compatibility.runnable);
     assert!(!mcp_armor.default_enabled);
-    assert!(mcp_armor.image.is_none());
-    assert!(mcp_armor.release_blocker().is_some());
+    let image = mcp_armor.image.as_ref().expect("MCP Armor image");
+    assert_eq!(
+        image.repository,
+        "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor"
+    );
+    assert_eq!(image.tag.as_deref(), Some("1.0.2-config-only.1"));
+    assert_eq!(
+        image.digest.as_deref(),
+        Some("sha256:f8dcf9b774e0f90cfbe32d81b1dc04c6b1d61538fa9829ca28c674d78440dfdc")
+    );
+    assert!(mcp_armor.release_blocker().is_none());
     assert_eq!(
         mcp_armor.source_revision.as_deref(),
         Some("6af4cee4665ab6242f02a88952f9127b6a04922a")

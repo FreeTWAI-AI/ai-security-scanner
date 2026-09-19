@@ -36,7 +36,7 @@ Completed results remain available when an independent check fails. Reports can 
 
 ## Integrated tools
 
-The current runnable engine set integrates 21 upstream projects. The catalog separately retains experimental, non-dispatchable AI contracts; those are not current scan capabilities. See [Development status](docs/development-status.md). The product runs only the tools that apply to each selected asset, keeps their original identifiers, severity, evidence, and remediation, then organizes every completed result in the same report.
+The current runnable engine set integrates 22 upstream projects. The catalog separately retains experimental, non-dispatchable AI contracts; those are not current scan capabilities. See [Development status](docs/development-status.md). The product runs only the tools that apply to each selected asset, keeps their original identifiers, severity, evidence, and remediation, then organizes every completed result in the same report.
 
 **Selected assets → applicable upstream tools → thin adapters → one prioritized report organized by asset**
 
@@ -80,6 +80,12 @@ The current runnable engine set integrates 21 upstream projects. The catalog sep
 | --- | --- |
 | [Kubescape](https://github.com/kubescape/kubescape) | Offline configuration checks over explicitly selected local Kubernetes manifests. |
 | [kube-bench](https://github.com/aquasecurity/kube-bench) | CIS checks over an immutable node-configuration snapshot, without a privileged live-host mount. |
+
+### MCP configuration
+
+| Tool | What ai-security-scanner uses it for |
+| --- | --- |
+| [MCP Armor](https://github.com/aira-security/mcp-armor) | Static checks over one approved MCP configuration snapshot for hardcoded credentials and excessive tool permissions, without starting or contacting an MCP server or loading a model. |
 
 Discovery, inventory, SBOM generation, and the localhost TCP utility remain clearly separated from vulnerability findings. The complete pinned versions, licenses, profiles, and execution boundaries are recorded in the [engine catalog](docs/engine-catalog.md).
 

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 const load = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
-test("MCP Armor publication candidate remains offline, non-root, and non-runnable", async () => {
+test("MCP Armor published runtime remains digest-pinned, offline, and non-root", async () => {
   const [catalogText, planText, statusText, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
     load("engines/catalog.json"),
     load("engines/images/mcp-armor/plan.json"),
@@ -24,18 +24,33 @@ test("MCP Armor publication candidate remains offline, non-root, and non-runnabl
   const plan = JSON.parse(planText);
   const statusRow = statusText.split("\n").find((line) => line.startsWith("| MCP Armor |"));
   assert.ok(statusRow, "public development status must include MCP Armor");
-  assert.equal(engine.compatibility.runnable, false);
-  assert.equal(engine.status, "experimental");
-  assert.equal(engine.image, null);
-  assert.equal(plan.publish_state, "publication_in_progress");
-  assert.equal(plan.publication, null);
+  assert.equal(engine.compatibility.runnable, true);
+  assert.equal(engine.status, "integrated");
+  assert.deepEqual(engine.image, {
+    repository: "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
+    tag: "1.0.2-config-only.1",
+    digest: "sha256:f8dcf9b774e0f90cfbe32d81b1dc04c6b1d61538fa9829ca28c674d78440dfdc",
+    signature_identity: null,
+  });
+  assert.equal(plan.publish_state, "published_managed_artifact");
+  assert.deepEqual(plan.publication, {
+    workflow_run: "https://github.com/teddashh/ai-security-scanner/actions/runs/34810830035",
+    source_revision: "16dfb80c7e45a1ccfa7d6d7d60cc41fae45c455c",
+    platforms: ["linux/amd64", "linux/arm64"],
+    platform_digests: {
+      "linux/amd64": "sha256:2188bc5fc4b4c1cb2e8862a32c53f0d8af24ad5967150ddc6be867e3c48118c3",
+      "linux/arm64": "sha256:d203df4079916cf46337ecf7f983ac27f3eb09f34e04058bca948b8f5038eb89",
+    },
+    anonymous_pull_verified: true,
+    evidence_artifact: "mcp-armor-image-evidence-34810830035-1",
+    managed_smoke_evidence_sha256: "sha256:8d796b2eb0d1e817f36ea1bec34ace60c5c495c26d8c4e8dffbdf24f199e492f",
+  });
   assert.deepEqual(plan.final_artifact, {
     repository: "ghcr.io/teddashh/ai-security-scanner-engine-mcp-armor",
     tag: "1.0.2-config-only.1",
-    digest: null,
+    digest: "sha256:f8dcf9b774e0f90cfbe32d81b1dc04c6b1d61538fa9829ca28c674d78440dfdc",
   });
-  assert.equal(plan.blockers.length, 1);
-  assert.match(plan.blockers[0], /workflow has not yet produced/u);
+  assert.deepEqual(plan.blockers, []);
   assert.equal(plan.dockerfile.sha256, sha256(dockerfile));
   assert.equal(plan.build_recipe.dependency_lock.sha256, sha256(requirements));
   assert.equal(plan.build_recipe.source_patch.sha256, sha256(patch));
@@ -52,7 +67,7 @@ test("MCP Armor publication candidate remains offline, non-root, and non-runnabl
   assert.equal(plan.managed_runtime.non_root_user, "65532:65532");
   assert.match(statusRow, /local image produced a complete two-check report/u);
   assert.match(statusRow, /networking disabled/u);
-  assert.match(statusRow, /No verified published digest exists, so dispatch remains disabled/u);
+  assert.match(statusRow, /published, digest-pinned, and dispatchable/u);
   assert.match(dockerfile, /USER 65532:65532/u);
   assert.match(dockerfile, /--require-hashes/u);
   assert.match(dockerfile, /--only-binary=:all:/u);
