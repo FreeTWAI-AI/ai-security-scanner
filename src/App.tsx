@@ -36,7 +36,10 @@ import {
   selectVerificationBaselineRunId,
 } from "./caseScopedUiState";
 import { isExactBuiltInLocalhostQuickScanRun } from "./localhostQuickScan";
-import { pageForSelectedRunLifecycle } from "./pageNavigation";
+import {
+  pageForSelectedRunLifecycle,
+  type TerminalRunPage,
+} from "./pageNavigation";
 import { isTerminalResultRun, isVerificationBaselineRun } from "./runLifecycle.ts";
 import {
   cloneRuntimeDeferredScanInput,
@@ -362,6 +365,11 @@ export default function App() {
   const [correlationReport, setCorrelationReport] = useState<CorrelationReport>();
   const correlationRequestGeneration = useRef(0);
   const [selectedReportRunId, setSelectedReportRunId] = useState<string>();
+  const [deferredTerminalPage, setDeferredTerminalPage] = useState<{
+    caseId: string;
+    runId: string;
+    requestedPage: TerminalRunPage;
+  }>();
   const [verificationBaselineRunId, setVerificationBaselineRunId] = useState<string>();
   const [selectedUseCase, setSelectedUseCase] = useState<{
     definition: UseCaseDefinition;
@@ -2212,11 +2220,45 @@ export default function App() {
   const currentBeginnerReport = currentRun
     ? workspace?.beginnerReports?.find((report) => report.runId === currentRun.id)
     : undefined;
-  const displayedPage = pageForSelectedRunLifecycle(page, currentRun);
+  const deferredPageForCurrentRun = deferredTerminalPage
+    && deferredTerminalPage.caseId === currentCaseId
+    && deferredTerminalPage.runId === currentRun?.id
+      ? deferredTerminalPage.requestedPage
+      : undefined;
+  const displayedPage = pageForSelectedRunLifecycle(page, currentRun, deferredPageForCurrentRun);
+
+  useEffect(() => {
+    if (
+      displayedPage === "progress"
+      && displayedPage !== page
+      && (page === "findings" || page === "export")
+      && currentCaseId
+      && currentRun
+    ) {
+      setDeferredTerminalPage({
+        caseId: currentCaseId,
+        runId: currentRun.id,
+        requestedPage: page,
+      });
+    }
+  }, [currentCaseId, currentRun, displayedPage, page]);
 
   useEffect(() => {
     if (displayedPage !== page) navigate(displayedPage);
   }, [displayedPage, page]);
+
+  useEffect(() => {
+    if (!deferredTerminalPage) return;
+
+    const stillFollowingRequestedRun = deferredTerminalPage.caseId === currentCaseId
+      && deferredTerminalPage.runId === currentRun?.id;
+    const leftWaitingPage = page !== "progress" && displayedPage === page;
+    const openedDeferredPage = displayedPage === deferredTerminalPage.requestedPage
+      && page === "progress";
+    if (!stillFollowingRequestedRun || leftWaitingPage || openedDeferredPage) {
+      setDeferredTerminalPage(undefined);
+    }
+  }, [currentCaseId, currentRun?.id, deferredTerminalPage, displayedPage, page]);
 
   // Correlation is a pure function of the case's findings and its active
   // groups, so recomputing on any other workspace change would be wasted work.
@@ -2503,6 +2545,7 @@ export default function App() {
             runs={workspace.runs}
             findings={workspace.findings}
             selectedRunId={currentRun?.id}
+            requestedTerminalPage={deferredPageForCurrentRun}
             readiness={scanReadiness?.caseId === currentCaseId ? scanReadiness : undefined}
             readinessCheckFailed={scanReadinessErrorCaseId === currentCaseId}
             diagnosticContext={{

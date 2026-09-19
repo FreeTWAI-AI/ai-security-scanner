@@ -189,6 +189,7 @@ const renderProgress = (
   assessmentIntent?: UseCaseId,
   assets: Asset[] = [asset()],
   report?: BeginnerMasterReport,
+  requestedTerminalPage?: "findings" | "export",
 ) =>
   render(
     <I18nProvider>
@@ -200,6 +201,7 @@ const renderProgress = (
         runs={[value]}
         findings={findings}
         selectedRunId={value.id}
+        requestedTerminalPage={requestedTerminalPage}
         onStart={() => Promise.resolve()}
         onRetryLocalhostQuickScan={() => Promise.resolve()}
         onFixSetup={() => {}}
@@ -385,6 +387,75 @@ test("an active scan keeps durable security findings in progress until the run f
     "Timing target: a useful result within minutes after tools are ready.",
   );
 });
+
+test.each([
+  [
+    "en",
+    "Results are not open yet",
+    "This scan has not finished. Results open automatically when it reaches an outcome.",
+  ],
+  [
+    "zh-TW",
+    "「結果」尚未開啟",
+    "這輪掃描尚未完成；掃描有最終結果後會自動開啟「結果」。",
+  ],
+] as const)(
+  "a %s reader is told why a deflected Results request is waiting and how it ends",
+  (locale, title, description) => {
+    window.localStorage.setItem(localeStorageKey, locale);
+    const { container } = renderProgress(
+      run([engine("semgrep", "running")], "running"),
+      [],
+      "source_code",
+      [asset()],
+      undefined,
+      "findings",
+    );
+
+    const notice = within(container).getByRole("alert");
+    expect(notice.textContent).toContain(title);
+    expect(notice.textContent).toContain(description);
+  },
+);
+
+test.each([
+  [
+    "en",
+    "Export is not open yet",
+    "This scan has not finished. Export opens automatically when it reaches an outcome.",
+    "Results open automatically",
+  ],
+  [
+    "zh-TW",
+    "「匯出」尚未開啟",
+    "這輪掃描尚未完成；掃描有最終結果後會自動開啟「匯出」。",
+    "會自動開啟「結果」",
+  ],
+] as const)(
+  "a deflected Export request in %s names Export and cannot reach a partial export",
+  (locale, title, description, resultsClaim) => {
+    window.localStorage.setItem(localeStorageKey, locale);
+    const { container } = renderProgress(
+      run([engine("semgrep", "running")], "running"),
+      [finding()],
+      "source_code",
+      [asset()],
+      reportWithCompletedCheck("security_check"),
+      "export",
+    );
+
+    const notice = within(container).getByRole("alert");
+    expect(notice.textContent).toContain(title);
+    expect(notice.textContent).toContain(description);
+    expect(notice.textContent).not.toContain(resultsClaim);
+    expect(container.querySelector('a[href="#export"]')).toBeNull();
+    const interactiveExportControls = [
+      ...within(container).queryAllByRole("link"),
+      ...within(container).queryAllByRole("button"),
+    ].filter((control) => `${control.textContent ?? ""} ${control.getAttribute("aria-label") ?? ""}`.match(/export|匯出/iu));
+    expect(interactiveExportControls).toEqual([]);
+  },
+);
 
 test("Traditional Chinese progress stays focused while a scan is active", () => {
   window.localStorage.setItem(localeStorageKey, "zh-TW");

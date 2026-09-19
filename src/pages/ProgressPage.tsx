@@ -44,6 +44,7 @@ import {
   isUndispatchedScanPlan,
 } from "../freshScanSelection";
 import type { UseCaseId } from "../useCases";
+import type { TerminalRunPage } from "../pageNavigation";
 import type {
   Asset,
   BeginnerMasterReport,
@@ -67,6 +68,7 @@ interface ProgressPageProps {
   runs: ScanRun[];
   findings: Finding[];
   selectedRunId?: string;
+  requestedTerminalPage?: TerminalRunPage;
   readiness?: ScanReadiness;
   readinessCheckFailed?: boolean;
   diagnosticContext?: ScanDiagnosticContext;
@@ -122,6 +124,16 @@ const copy = {
   },
   start: { en: "Start scan", zhTW: "開始掃描" },
   viewResults: { en: "View results", zhTW: "查看結果" },
+  resultsWaitingTitle: { en: "Results are not open yet", zhTW: "「結果」尚未開啟" },
+  exportWaitingTitle: { en: "Export is not open yet", zhTW: "「匯出」尚未開啟" },
+  resultsWaitingDescription: {
+    en: "This scan has not finished. Results open automatically when it reaches an outcome.",
+    zhTW: "這輪掃描尚未完成；掃描有最終結果後會自動開啟「結果」。",
+  },
+  exportWaitingDescription: {
+    en: "This scan has not finished. Export opens automatically when it reaches an outcome.",
+    zhTW: "這輪掃描尚未完成；掃描有最終結果後會自動開啟「匯出」。",
+  },
   startFreshScan: { en: "Start a new scan for fresh results", zhTW: "開始新的掃描取得新結果" },
   retryLocalhostQuickScan: { en: "Run this check again", zhTW: "重新執行這項檢查" },
   retryingLocalhostQuickScan: { en: "Starting a new attempt…", zhTW: "正在開始新的嘗試…" },
@@ -742,6 +754,7 @@ export function ProgressPage({
   report,
   runs,
   selectedRunId: controlledSelectedRunId,
+  requestedTerminalPage,
   readiness,
   readinessCheckFailed,
   diagnosticContext,
@@ -784,6 +797,11 @@ export function ProgressPage({
   const selectedRunReport = report?.runId === selectedRun?.id ? report : undefined;
   const showResultsAction = Boolean(
     selectedRun && terminalRunStatuses.has(selectedRun.status),
+  );
+  const waitingForTerminalPage = Boolean(
+    requestedTerminalPage
+    && selectedRun
+    && activeRunStatuses.has(selectedRun.status),
   );
   const scanWorkActive = hasActiveScanWork(runs);
   const undispatchedPlan = runs.find((run) => isUndispatchedScanPlan(run));
@@ -1191,6 +1209,20 @@ export function ProgressPage({
           </div>
         )}
       />
+
+      {waitingForTerminalPage && requestedTerminalPage && (
+        <InlineNotice
+          tone="info"
+          title={text(requestedTerminalPage === "findings"
+            ? copy.resultsWaitingTitle
+            : copy.exportWaitingTitle)}
+          announce
+        >
+          <p>{text(requestedTerminalPage === "findings"
+            ? copy.resultsWaitingDescription
+            : copy.exportWaitingDescription)}</p>
+        </InlineNotice>
+      )}
 
       {canRetryLocalhostQuickScan && terminalLocalhostSummary && (
         <InlineNotice tone="warning" title={text(copy.retryLocalhostQuickScanTitle)}>

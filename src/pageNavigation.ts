@@ -13,18 +13,37 @@ export interface PageTransitionViewport {
 }
 
 const activeRunStatuses = new Set<ScanRun["status"]>(["queued", "running", "paused"]);
+const terminalRunStatuses = new Set<ScanRun["status"]>([
+  "completed",
+  "no_checks_completed",
+  "partial",
+  "failed",
+  "cancelled",
+]);
+
+export type TerminalRunPage = Extract<PageId, "findings" | "export">;
 
 /** Active work has one destination; Results and Export are terminal-run pages. */
 export const pageForSelectedRunLifecycle = (
   requestedPage: PageId,
   selectedRun: Pick<ScanRun, "status"> | undefined,
-): PageId => (
-  (requestedPage === "findings" || requestedPage === "export")
-  && selectedRun
-  && activeRunStatuses.has(selectedRun.status)
-    ? "progress"
-    : requestedPage
-);
+  deferredPage?: TerminalRunPage,
+): PageId => {
+  if (
+    (requestedPage === "findings" || requestedPage === "export")
+    && selectedRun
+    && activeRunStatuses.has(selectedRun.status)
+  ) return "progress";
+
+  if (
+    requestedPage === "progress"
+    && deferredPage
+    && selectedRun
+    && terminalRunStatuses.has(selectedRun.status)
+  ) return deferredPage;
+
+  return requestedPage;
+};
 
 /**
  * Restores the beginning of a newly rendered page for sighted and keyboard users.

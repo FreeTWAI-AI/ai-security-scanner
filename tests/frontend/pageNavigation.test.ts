@@ -24,7 +24,29 @@ test("active report and export routes resolve directly to Progress", () => {
   }
 
   assert.equal(pageForSelectedRunLifecycle("findings", undefined), "findings");
+  assert.equal(pageForSelectedRunLifecycle("export", undefined), "export");
   assert.equal(pageForSelectedRunLifecycle("coverage", { status: "running" }), "coverage");
+});
+
+test("a deferred terminal page opens the page the reader requested when the selected run reaches an outcome", () => {
+  for (const deferredPage of ["findings", "export"] as const) {
+    for (const status of ["completed", "no_checks_completed", "partial", "failed", "cancelled"] as const) {
+      assert.equal(
+        pageForSelectedRunLifecycle("progress", { status }, deferredPage),
+        deferredPage,
+      );
+    }
+
+    for (const status of ["queued", "running", "paused"] as const) {
+      assert.equal(
+        pageForSelectedRunLifecycle("progress", { status }, deferredPage),
+        "progress",
+      );
+    }
+  }
+
+  assert.equal(pageForSelectedRunLifecycle("progress", undefined, "findings"), "progress");
+  assert.equal(pageForSelectedRunLifecycle("progress", { status: "completed" }), "progress");
 });
 
 test("a real page transition focuses the new heading and scrolls to the viewport origin once", () => {

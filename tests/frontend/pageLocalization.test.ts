@@ -509,8 +509,9 @@ test("active report routes resolve to Progress without transitional report copy"
   assert.match(exportPage, /workspaceExportRevision/u);
   assert.match(exportPage, /if \(activeRun\) \{[\s\S]*return null;/u);
   assert.match(navigation, /requestedPage === "findings" \|\| requestedPage === "export"/u);
-  assert.match(app, /const displayedPage = pageForSelectedRunLifecycle\(page, currentRun\);/u);
+  assert.match(app, /const displayedPage = pageForSelectedRunLifecycle\(page, currentRun, deferredPageForCurrentRun\);/u);
   assert.match(app, /if \(displayedPage !== page\) navigate\(displayedPage\);/u);
+  assert.match(app, /requestedTerminalPage=\{deferredPageForCurrentRun\}/u);
   assert.match(app, /switch \(displayedPage\)/u);
   assert.match(app, /<AppShell[\s\S]*page=\{displayedPage\}/u);
 });
