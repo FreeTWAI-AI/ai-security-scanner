@@ -1004,12 +1004,12 @@ const withCheck = (check: string, label: string): string => {
  */
 const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
   [
-    "This check cannot read the kind of input this target provides. Outcome: not tested.",
-    "這項檢查無法讀取此目標提供的輸入類型。結果：未檢測。",
+    "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+    "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。這不是你的設定問題，也不是掃描失敗；更改設定或再執行一次都無法改變這項結果。只有這項檢查的更新版內建掃描工具能改變這項狀況。",
   ],
   [
-    "Choose a check that supports this target.",
-    "請選擇支援此目標的檢查。",
+    "Choose a check that can read this kind of target.",
+    "請選擇能讀取這類目標的檢查。",
   ],
   [
     "Maester evaluated this control but did not return a pass or fail verdict.",

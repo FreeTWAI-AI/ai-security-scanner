@@ -1837,10 +1837,10 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                 task_id: Some(task.id.clone()),
                 target_asset_ids: task.asset_ids.clone(),
                 dimension: format!("{}: unsupported target input", check_id(task)),
-                reason: "This check cannot read the kind of input this target provides. Outcome: not tested."
+                reason: "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that."
                     .into(),
                 next_action_code: NextActionCode::ChooseCompatibleCheck,
-                next_action: "Choose a check that supports this target.".into(),
+                next_action: "Choose a check that can read this kind of target.".into(),
             });
             task_gap_already_projected = true;
         }
@@ -5081,7 +5081,14 @@ mod tests {
             task_gaps[0].next_action_code,
             NextActionCode::ChooseCompatibleCheck
         );
-        assert!(task_gaps[0].reason.contains("Outcome: not tested"));
+        assert_eq!(
+            task_gaps[0].reason,
+            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that."
+        );
+        assert_eq!(
+            task_gaps[0].next_action,
+            "Choose a check that can read this kind of target."
+        );
         assert!(!report.coverage_gaps.iter().any(|gap| {
             gap.task_id.as_deref() == Some("unsupported-input")
                 && gap.next_action_code == NextActionCode::RetryCheck
