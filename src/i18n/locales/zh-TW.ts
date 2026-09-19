@@ -96,6 +96,8 @@ export const zhTW = {
   "runtime.phase.failed.nonRetryable.detail": "請安裝相容的程式版本，再執行受影響的進階檢查。",
   "runtime.phase.failed.developerBuild.label": "這個開發版未內建掃描工具",
   "runtime.phase.failed.developerBuild.detail": "請指定一份已通過驗證、且含掃描工具的應用程式套件。",
+  "runtime.phase.failed.developerBuildUnverified.label": "這個開發版的掃描工具驗證失敗",
+  "runtime.phase.failed.developerBuildUnverified.detail": "請修正套件，或改指定一份已通過驗證的應用程式套件。",
   "runtime.phase.cancelled.label": "進階本機掃描工具設定已取消",
   "runtime.phase.cancelled.detail": "掃描工具狀態：尚未就緒。",
   "runtime.download.progress": "掃描工具下載進度",

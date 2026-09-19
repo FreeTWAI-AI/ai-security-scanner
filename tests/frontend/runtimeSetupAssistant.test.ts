@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   hasUnconfirmedManagedRuntimeCompletion,
   hasManagedRuntimeSetupRequestStarted,
+  isDeveloperBuildPackagedRuntimeVerificationFailed,
   isDeveloperBuildWithoutPackagedRuntime,
   isManagedRuntimePackageAdmissionFailure,
   resolveRuntimeSetupPresentation,
@@ -177,6 +178,35 @@ test("an unpackaged developer build is non-retryable and does not prescribe inst
   ]) assert.ok(source.includes(phrase), phrase);
   const description = source.match(/developerBuildDescription: "([^"]+)"/u)?.[1] ?? "";
   assert.equal(description, "Point it at a verified app bundle that includes them.");
+  assert.doesNotMatch(description, /install|reinstall/iu);
+});
+
+test("an unpackaged developer build with an unverifiable bundle is non-retryable and does not prescribe install", () => {
+  const developerBuildUnverified = {
+    active: false,
+    prerequisiteRepairActive: false,
+    phase: "failed" as const,
+    canRetry: false,
+    failureReason: "developer_build_packaged_runtime_verification_failed" as const,
+    nextAction: undefined,
+  };
+  const state = resolveRuntimeSetupPresentation({
+    mode: "native",
+    runtimeAvailable: false,
+    status: developerBuildUnverified,
+  });
+
+  assert.equal(isManagedRuntimePackageAdmissionFailure(developerBuildUnverified), true);
+  assert.equal(isDeveloperBuildPackagedRuntimeVerificationFailed(developerBuildUnverified), true);
+  assert.equal(isDeveloperBuildWithoutPackagedRuntime(developerBuildUnverified), false);
+  assert.equal(state.setupNonRetryable, true);
+  for (const phrase of [
+    "This developer build's scan tools failed verification",
+    "Fix the bundle or point it at a verified app bundle.",
+    "這個開發版的掃描工具驗證失敗",
+  ]) assert.ok(source.includes(phrase), phrase);
+  const description = source.match(/developerBuildUnverifiedDescription: "([^"]+)"/u)?.[1] ?? "";
+  assert.equal(description, "Fix the bundle or point it at a verified app bundle.");
   assert.doesNotMatch(description, /install|reinstall/iu);
 });
 

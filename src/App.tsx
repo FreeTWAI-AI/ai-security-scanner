@@ -46,6 +46,7 @@ import {
 } from "./runtimeFirstLaunch";
 import {
   hasManagedRuntimeSetupRequestStarted,
+  isDeveloperBuildPackagedRuntimeVerificationFailed,
   isDeveloperBuildWithoutPackagedRuntime,
   isManagedRuntimePackageAdmissionFailure,
   isManagedRuntimeSetupTerminal,
@@ -937,6 +938,36 @@ export default function App() {
       const cancelled = setupStatus.phase === "cancelled";
       const nonRetryable = isManagedRuntimePackageAdmissionFailure(setupStatus);
       const developerBuild = isDeveloperBuildWithoutPackagedRuntime(setupStatus);
+      const developerBuildUnverified = isDeveloperBuildPackagedRuntimeVerificationFailed(setupStatus);
+      const nonRetryableToast = developerBuild
+        ? {
+          title: text({ en: "This developer build has no scan tools", zhTW: "這個開發版未內建掃描工具" }),
+          detail: text({
+            en: "Point it at a verified app bundle that includes them.",
+            zhTW: "請指定一份已通過驗證、且含掃描工具的應用程式套件。",
+          }),
+        }
+        : developerBuildUnverified
+          ? {
+            title: text({
+              en: "This developer build's scan tools failed verification",
+              zhTW: "這個開發版的掃描工具驗證失敗",
+            }),
+            detail: text({
+              en: "Fix the bundle or point it at a verified app bundle.",
+              zhTW: "請修正套件，或改指定一份已通過驗證的應用程式套件。",
+            }),
+          }
+          : {
+            title: text({
+              en: "An advanced local scan tool is unavailable in this app version",
+              zhTW: "這個程式版本無法使用一項進階本機掃描工具",
+            }),
+            detail: text({
+              en: "Install a compatible app version to run this advanced check.",
+              zhTW: "請安裝相容的程式版本，再執行這項進階檢查。",
+            }),
+          };
       if (!completed && !cancelled) {
         if (currentPageRef.current !== "start") {
           currentPageRef.current = "start";
@@ -952,9 +983,7 @@ export default function App() {
             ? text({ en: "Advanced local scan tools are ready", zhTW: "進階本機掃描工具已就緒" })
             : text({ en: "Advanced local scan tools are not ready", zhTW: "進階本機掃描工具尚未就緒" })
           : nonRetryable
-            ? developerBuild
-              ? text({ en: "This developer build has no scan tools", zhTW: "這個開發版未內建掃描工具" })
-              : text({ en: "An advanced local scan tool is unavailable in this app version", zhTW: "這個程式版本無法使用一項進階本機掃描工具" })
+            ? nonRetryableToast.title
             : cancelled
             ? text({ en: "Advanced local scan-tool setup cancelled", zhTW: "進階本機掃描工具設定已取消" })
             : text({ en: "Advanced local scan-tool setup stopped", zhTW: "進階本機掃描工具設定已停止" }),
@@ -969,16 +998,8 @@ export default function App() {
               zhTW: "請重新檢查可用狀態。",
             })
           : nonRetryable
-            ? developerBuild
-              ? text({
-                en: "Point it at a verified app bundle that includes them.",
-                zhTW: "請指定一份已通過驗證、且含掃描工具的應用程式套件。",
-              })
-              : text({
-                en: "Install a compatible app version to run this advanced check.",
-                zhTW: "請安裝相容的程式版本，再執行這項進階檢查。",
-              })
-          : cancelled
+            ? nonRetryableToast.detail
+            : cancelled
             ? text({
               en: "Scan-tool status: not ready.",
               zhTW: "掃描工具狀態：尚未就緒。",

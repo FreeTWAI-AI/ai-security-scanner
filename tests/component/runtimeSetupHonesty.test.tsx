@@ -95,6 +95,24 @@ test("a developer build without scan tools does not prescribe install", () => {
   expect(actionButtons(container)).toHaveLength(0);
 });
 
+test("a developer build with an unverifiable bundle does not prescribe install", () => {
+  const { container } = renderAssistant({
+    status: setupStatus({
+      phase: "failed",
+      active: false,
+      canRetry: false,
+      canCancel: false,
+      failureReason: "developer_build_packaged_runtime_verification_failed",
+      nextAction: undefined,
+    }),
+  });
+
+  expect(heading(container)).toBe("This developer build's scan tools failed verification");
+  expect(explanation(container)).toContain("Fix the bundle");
+  expect(explanation(container)).not.toMatch(/install|reinstall/iu);
+  expect(actionButtons(container)).toHaveLength(0);
+});
+
 test("a failure that can never succeed offers nothing to retry", () => {
   const { container } = renderAssistant({ status: packagedAdmissionFailure });
 

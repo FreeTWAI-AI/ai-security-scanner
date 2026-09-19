@@ -92,7 +92,8 @@ impl AppState {
             }
             PackagedManagedRuntimeAdmission::Missing
             | PackagedManagedRuntimeAdmission::VerificationFailed
-            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild => {
+            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild
+            | PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuildVerificationFailed => {
                 self.managed_runtime_setup = Arc::new(
                     ManagedRuntimeSetupController::for_packaged_runtime_admission_failure(
                         failure_reason.expect("rejected admission has a stable failure reason"),

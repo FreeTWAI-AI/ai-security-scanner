@@ -919,6 +919,7 @@ const managedRuntimeNonRetryableFailures = new Set<ManagedRuntimeSetupFailureRea
   "packaged_runtime_missing",
   "packaged_runtime_verification_failed",
   "developer_build_without_packaged_runtime",
+  "developer_build_packaged_runtime_verification_failed",
 ]);
 
 const managedRuntimeSetupPhases = new Set<ManagedRuntimeSetupPhase>([
@@ -944,6 +945,7 @@ const managedRuntimeSetupFailureReasons = new Set<ManagedRuntimeSetupFailureReas
   "packaged_runtime_missing",
   "packaged_runtime_verification_failed",
   "developer_build_without_packaged_runtime",
+  "developer_build_packaged_runtime_verification_failed",
 ]);
 
 const managedRuntimeSetupNextActions = new Set<ManagedRuntimeSetupNextAction>([

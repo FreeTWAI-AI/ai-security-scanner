@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import type { ScannerSetupBlocker } from "../scanReadiness";
 import {
+  isDeveloperBuildPackagedRuntimeVerificationFailed,
   isDeveloperBuildWithoutPackagedRuntime,
   resolveRuntimeSetupPresentation,
 } from "../runtimeSetupPresentation";
@@ -70,6 +71,8 @@ interface RuntimeAssistantCopy {
   nonRetryableDescription: string;
   developerBuildTitle: string;
   developerBuildDescription: string;
+  developerBuildUnverifiedTitle: string;
+  developerBuildUnverifiedDescription: string;
   scannerIssues: Partial<Record<ScannerSetupBlocker, {
     title: string;
     description: string;
@@ -113,6 +116,8 @@ const copy: Record<RuntimeSetupLocale, RuntimeAssistantCopy> = {
     nonRetryableDescription: "Install a compatible app version to run this advanced check.",
     developerBuildTitle: "This developer build has no scan tools",
     developerBuildDescription: "Point it at a verified app bundle that includes them.",
+    developerBuildUnverifiedTitle: "This developer build's scan tools failed verification",
+    developerBuildUnverifiedDescription: "Fix the bundle or point it at a verified app bundle.",
     scannerIssues: {
       no_runnable_authorized_targets: {
         title: "This check is unavailable in the installed version",
@@ -200,6 +205,8 @@ const copy: Record<RuntimeSetupLocale, RuntimeAssistantCopy> = {
     nonRetryableDescription: "請安裝相容的程式版本，再執行這項進階檢查。",
     developerBuildTitle: "這個開發版未內建掃描工具",
     developerBuildDescription: "請指定一份已通過驗證、且含掃描工具的應用程式套件。",
+    developerBuildUnverifiedTitle: "這個開發版的掃描工具驗證失敗",
+    developerBuildUnverifiedDescription: "請修正套件，或改指定一份已通過驗證的應用程式套件。",
     scannerIssues: {
       no_runnable_authorized_targets: {
         title: "目前安裝版本無法執行這項檢查",
@@ -325,8 +332,13 @@ export function RuntimeSetupAssistant({
   }
 
   const developerBuild = isDeveloperBuildWithoutPackagedRuntime(status);
+  const developerBuildUnverified = isDeveloperBuildPackagedRuntimeVerificationFailed(status);
   const title = scannerIssue?.title ?? (setupNonRetryable
-    ? (developerBuild ? text.developerBuildTitle : text.nonRetryableTitle)
+    ? (developerBuild
+      ? text.developerBuildTitle
+      : developerBuildUnverified
+        ? text.developerBuildUnverifiedTitle
+        : text.nonRetryableTitle)
     : setupFailed
       ? nextAction?.title ?? text.failedTitle
       : setupCancelled
@@ -341,7 +353,11 @@ export function RuntimeSetupAssistant({
                 ? text.idleTitle
                 : text.title);
   const description = scannerIssue?.description ?? (setupNonRetryable
-    ? (developerBuild ? text.developerBuildDescription : text.nonRetryableDescription)
+    ? (developerBuild
+      ? text.developerBuildDescription
+      : developerBuildUnverified
+        ? text.developerBuildUnverifiedDescription
+        : text.nonRetryableDescription)
     : setupFailed && nextAction
       ? nextAction.description
       : setupFailed

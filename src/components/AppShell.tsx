@@ -15,6 +15,7 @@ import {
 import { completePageTransition } from "../pageNavigation";
 import {
   hasUnconfirmedManagedRuntimeCompletion,
+  isDeveloperBuildPackagedRuntimeVerificationFailed,
   isDeveloperBuildWithoutPackagedRuntime,
   isManagedRuntimePackageAdmissionFailure,
 } from "../runtimeSetupPresentation";
@@ -187,6 +188,17 @@ export function AppShell({
     t(value === 1 ? "common.byte" : "common.bytes", { value: formatNumber(value) });
   const runtimeSetupNonRetryable = isManagedRuntimePackageAdmissionFailure(runtimeSetup);
   const developerBuildUnavailable = isDeveloperBuildWithoutPackagedRuntime(runtimeSetup);
+  const developerBuildUnverified = isDeveloperBuildPackagedRuntimeVerificationFailed(runtimeSetup);
+  const runtimeAdmissionFailureLabel: TranslationKey = developerBuildUnavailable
+    ? "runtime.phase.failed.developerBuild.label"
+    : developerBuildUnverified
+      ? "runtime.phase.failed.developerBuildUnverified.label"
+      : "runtime.phase.failed.nonRetryable.label";
+  const runtimeAdmissionFailureDetail: TranslationKey = developerBuildUnavailable
+    ? "runtime.phase.failed.developerBuild.detail"
+    : developerBuildUnverified
+      ? "runtime.phase.failed.developerBuildUnverified.detail"
+      : "runtime.phase.failed.nonRetryable.detail";
   const runtimeSetupWorking = !runtimeSetupNonRetryable && (
     runtimeBusy
     || runtimeSetup?.active === true
@@ -198,9 +210,7 @@ export function AppShell({
       : classifyRuntimeIssue(runtime?.prerequisite, runtime?.detail, runtimeSetup?.detail)
   ];
   const runtimeGuidance: TranslationKey = runtimeSetupNonRetryable
-    ? (developerBuildUnavailable
-      ? "runtime.phase.failed.developerBuild.detail"
-      : "runtime.phase.failed.nonRetryable.detail")
+    ? runtimeAdmissionFailureDetail
     : runtimeSetup?.nextAction
       ? runtimeRecoveryKeys[runtimeSetup.nextAction]
       : runtimeIssue;
@@ -221,9 +231,7 @@ export function AppShell({
     && runtimeSetup?.phase === "failed"
     && !runtimeSetup.nextAction;
   const runtimeGuidanceTitle: TranslationKey = runtimeSetupNonRetryable
-    ? (developerBuildUnavailable
-      ? "runtime.phase.failed.developerBuild.label"
-      : "runtime.phase.failed.nonRetryable.label")
+    ? runtimeAdmissionFailureLabel
     : genericSetupFailure
       ? "runtime.phase.failed.generic.label"
       : "runtime.nextStep";
@@ -243,9 +251,7 @@ export function AppShell({
     : runtime?.available
       ? "runtime.badge.ready"
       : runtimeSetupNonRetryable
-        ? (developerBuildUnavailable
-          ? "runtime.phase.failed.developerBuild.label"
-          : "runtime.phase.failed.nonRetryable.label")
+        ? runtimeAdmissionFailureLabel
         : runtimeSetupWorking
           ? "runtime.badge.preparing"
           : runtimeSetup?.phase === "failed"

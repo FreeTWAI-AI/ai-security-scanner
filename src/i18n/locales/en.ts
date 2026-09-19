@@ -94,6 +94,8 @@ export const en = {
   "runtime.phase.failed.nonRetryable.detail": "Install a compatible app version to run the affected advanced check.",
   "runtime.phase.failed.developerBuild.label": "This developer build has no scan tools",
   "runtime.phase.failed.developerBuild.detail": "Point it at a verified app bundle that includes them.",
+  "runtime.phase.failed.developerBuildUnverified.label": "This developer build's scan tools failed verification",
+  "runtime.phase.failed.developerBuildUnverified.detail": "Fix the bundle or point it at a verified app bundle.",
   "runtime.phase.cancelled.label": "Advanced local scan-tool setup cancelled",
   "runtime.phase.cancelled.detail": "Scan-tool status: not ready.",
   "runtime.download.progress": "Scan tool download progress",

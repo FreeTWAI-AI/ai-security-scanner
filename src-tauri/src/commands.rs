@@ -7641,6 +7641,10 @@ mod tests {
                 PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuild,
                 ManagedRuntimeSetupFailureReason::DeveloperBuildWithoutPackagedRuntime,
             ),
+            (
+                PackagedManagedRuntimeAdmission::UnpackagedDeveloperBuildVerificationFailed,
+                ManagedRuntimeSetupFailureReason::DeveloperBuildPackagedRuntimeVerificationFailed,
+            ),
         ] {
             let (_directory, state) = test_state();
             let state = state.with_packaged_managed_runtime_admission(admission);

@@ -1937,7 +1937,8 @@ export type ManagedRuntimeSetupFailureReason =
   | "windows_wsl_command_failed"
   | "packaged_runtime_missing"
   | "packaged_runtime_verification_failed"
-  | "developer_build_without_packaged_runtime";
+  | "developer_build_without_packaged_runtime"
+  | "developer_build_packaged_runtime_verification_failed";
 
 export type ManagedRuntimeSetupNextAction =
   | "install_wsl"

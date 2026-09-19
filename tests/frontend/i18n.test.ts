@@ -208,6 +208,7 @@ test("every managed-runtime warning stays concise and action-led", () => {
     "runtime.phase.failed.generic.detail",
     "runtime.phase.failed.nonRetryable.detail",
     "runtime.phase.failed.developerBuild.detail",
+    "runtime.phase.failed.developerBuildUnverified.detail",
     "runtime.phase.cancelled.detail",
   ];
 
@@ -229,6 +230,14 @@ test("every managed-runtime warning stays concise and action-led", () => {
   );
   assert.doesNotMatch(
     i18n.translate("zh-TW", "runtime.phase.failed.developerBuild.detail"),
+    /安裝|重裝/u,
+  );
+  assert.doesNotMatch(
+    i18n.translate("en", "runtime.phase.failed.developerBuildUnverified.detail"),
+    /install|reinstall/iu,
+  );
+  assert.doesNotMatch(
+    i18n.translate("zh-TW", "runtime.phase.failed.developerBuildUnverified.detail"),
     /安裝|重裝/u,
   );
 
