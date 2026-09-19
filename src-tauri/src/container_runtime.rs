@@ -1724,6 +1724,7 @@ enum DirectRuntimeOperation {
     RuntimeSecurityPreflight,
     RuntimeExecutionPreflight,
     ManagedNetworkPreflight,
+    LocalPinnedImageInspection,
     PinnedImagePull,
     ContainerPause,
     ContainerUnpause,
@@ -1740,6 +1741,7 @@ impl DirectRuntimeOperation {
             Self::RuntimeSecurityPreflight => "runtime security preflight",
             Self::RuntimeExecutionPreflight => "runtime execution preflight",
             Self::ManagedNetworkPreflight => "managed network preflight",
+            Self::LocalPinnedImageInspection => "local pinned image inspection",
             Self::PinnedImagePull => "pinned image pull",
             Self::ContainerPause => "container pause",
             Self::ContainerUnpause => "container unpause",
@@ -2934,7 +2936,7 @@ impl ContainerRuntime for ProcessContainerRuntime {
         // store, do not call the registry. Unpublished GHCR pins otherwise fail
         // `docker pull` even when `docker image inspect` succeeds.
         let inspect = self.direct_output(
-            DirectRuntimeOperation::PinnedImagePull,
+            DirectRuntimeOperation::LocalPinnedImageInspection,
             ["image", "inspect", reference.as_str()],
         )?;
         if inspect.status.success() {
@@ -4256,6 +4258,7 @@ mod tests {
             DirectRuntimeOperation::RuntimeSecurityPreflight,
             DirectRuntimeOperation::RuntimeExecutionPreflight,
             DirectRuntimeOperation::ManagedNetworkPreflight,
+            DirectRuntimeOperation::LocalPinnedImageInspection,
             DirectRuntimeOperation::ContainerPause,
             DirectRuntimeOperation::ContainerUnpause,
             DirectRuntimeOperation::ContainerStop,
@@ -4350,6 +4353,110 @@ mod tests {
             started.elapsed() < StdDuration::from_secs(3),
             "timed-out direct command must terminate promptly"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_does_not_contact_the_registry_when_the_pinned_digest_is_already_local() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 0; fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime");
+        let image = PinnedImage::new(
+            "ghcr.io/example/private",
+            &format!("sha256:{}", "a".repeat(64)),
+        )
+        .expect("pinned image");
+
+        runtime.pull(&image).expect("local image skips pulling");
+
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert!(invocations.lines().any(|subcommand| subcommand == "image"));
+        assert!(
+            !invocations.lines().any(|subcommand| subcommand == "pull"),
+            "a locally present digest must never contact the registry"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_fetches_the_pinned_image_when_the_digest_is_absent() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        let log = temp.path().join("subcommands.log");
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = pull ]; then exit 0; fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime");
+        let image = PinnedImage::new(
+            "ghcr.io/example/private",
+            &format!("sha256:{}", "b".repeat(64)),
+        )
+        .expect("pinned image");
+
+        runtime.pull(&image).expect("absent image is pulled");
+
+        let invocations = fs::read_to_string(log).expect("runtime invocation log");
+        assert!(
+            invocations.lines().any(|subcommand| subcommand == "pull"),
+            "an absent digest must be fetched"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pull_failure_names_the_pull_operation_without_echoing_the_pinned_reference() {
+        let temp = tempfile::tempdir().expect("temporary runtime");
+        let binary = temp.path().join("podman-fixture");
+        write_executable_fixture(
+            &binary,
+            r#"#!/bin/sh
+script_root=${0%/*}
+printf '%s\n' "$1" >> "$script_root/subcommands.log"
+if [ "$1" = image ] && [ "$2" = inspect ]; then exit 1; fi
+if [ "$1" = pull ]; then
+  printf '%s\n' 'registry rejected image' >&2
+  exit 1
+fi
+exit 29
+"#,
+        );
+        let runtime = ProcessContainerRuntime::new(RuntimeProvider::Podman, binary)
+            .expect("construct compatibility runtime");
+        let image = PinnedImage::new(
+            "ghcr.io/example/private",
+            &format!("sha256:{}", "c".repeat(64)),
+        )
+        .expect("pinned image");
+        let reference = image.reference();
+
+        let error = runtime
+            .pull(&image)
+            .expect_err("failed registry pull is reported");
+        let message = error.to_string();
+
+        assert!(message.contains("pinned image pull"));
+        assert!(!message.contains("local pinned image inspection"));
+        assert!(!message.contains(&reference));
     }
 
     #[test]
