@@ -113,6 +113,8 @@ export const zhTW = {
   "update.availableHelp": "安裝程序會重新啟動 ai-security-scanner。",
   "update.error": "更新檢查失敗 · 再試一次",
   "update.errorHelp": "按下此按鈕重新執行簽署更新檢查。",
+  "update.unreachable": "無法連上更新服務 · 再試一次",
+  "update.unreachableHelp": "目前離線，或更新服務無法使用。按下此按鈕再試一次。",
   "update.checking": "正在檢查更新…",
   "update.version": "版本 {version}",
   "update.currentHelp": "目前版本 {version}",

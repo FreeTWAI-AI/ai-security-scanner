@@ -15,6 +15,7 @@ export type AppUpdatePhase =
   | "downloading"
   | "installing"
   | "restarting"
+  | "unreachable"
   | "error";
 
 export interface AppUpdateState {
@@ -38,9 +39,9 @@ const boundedText = (value: string | undefined, maximum: number): string | undef
   return normalized ? normalized.slice(0, maximum) : undefined;
 };
 
-const describeFailure = (error: unknown): string => {
+const describeFailure = (error: unknown): string | undefined => {
   const message = error instanceof Error ? error.message : String(error);
-  return boundedText(message, 600) ?? "更新服務目前無法使用。";
+  return boundedText(message, 600);
 };
 
 const closePendingUpdate = async () => {
@@ -69,7 +70,11 @@ export const checkForAppUpdate = async (): Promise<AppUpdateState> => {
     } catch (error) {
       pendingUpdate = null;
       await update.close().catch(() => undefined);
-      throw error;
+      return {
+        phase: "error",
+        currentVersion,
+        message: describeFailure(error),
+      };
     }
     pendingUpdate = update;
     return {
@@ -81,7 +86,7 @@ export const checkForAppUpdate = async (): Promise<AppUpdateState> => {
     };
   } catch (error) {
     return {
-      phase: "error",
+      phase: "unreachable",
       currentVersion,
       message: describeFailure(error),
     };

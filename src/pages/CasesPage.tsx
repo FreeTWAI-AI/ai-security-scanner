@@ -140,13 +140,13 @@ const pageCopy = {
   },
   aiGeneratedUnknown: { en: "I'm not sure", zhTW: "我不確定" },
   targetCandidateHelp: {
-    en: "Press Start to run the selected checks.",
-    zhTW: "按下「開始」以執行所選檢查。",
+    en: "Create the scan project first, then start the selected checks.",
+    zhTW: "請先建立掃描專案，再開始執行所選檢查。",
   },
   localPickerEyebrow: { en: "Local check", zhTW: "本機檢查" },
   localPickerBoundary: {
-    en: "The selected folder is copied into a private local snapshot. Review the checks, then press Start.",
-    zhTW: "所選資料夾會複製成私密本機快照；請檢查掃描項目後按下「開始」。",
+    en: "The selected folder is copied into a private local snapshot. Create the scan project first, then start the selected checks.",
+    zhTW: "所選資料夾會複製成私密本機快照；請先建立掃描專案，再開始執行所選檢查。",
   },
   localPathHelp: {
     en: "Only the folder name is shown here. Its full location stays on this computer.",

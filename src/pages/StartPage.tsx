@@ -385,7 +385,7 @@ export function StartPage({
       <details className="start-page__scope-note">
         <summary>
           <Icon name="info" size={19} />
-          {marketing.controlSummary}
+          <span>{marketing.controlSummary}</span>
         </summary>
         <div>
           <strong>{copy.scopeNoticeTitle}</strong>

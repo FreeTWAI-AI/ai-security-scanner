@@ -51,6 +51,20 @@ export function AppUpdateControl({ state, onCheck, onInstall }: AppUpdateControl
     );
   }
 
+  if (state.phase === "unreachable") {
+    return (
+      <button
+        className="update-control"
+        type="button"
+        title={t("update.unreachableHelp")}
+        onClick={onCheck}
+      >
+        <Icon name="refresh" size={15} />
+        {t("update.unreachable")}
+      </button>
+    );
+  }
+
   if (state.phase === "error") {
     return (
       <button

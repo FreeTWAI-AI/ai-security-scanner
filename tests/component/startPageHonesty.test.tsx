@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -214,3 +217,23 @@ test("the Traditional Chinese first layer stays outcome-led", () => {
   expect(timings).toHaveLength(3);
   expect(timings).toEqual(Array(3).fill("時間目標：工具就緒後幾分鐘內提供有用結果。"));
 });
+
+test("the first-screen card outcome sentences are not line-clamped", () => {
+  const css = readFileSync(path.join(process.cwd(), "src/start-page.css"), "utf8");
+  const headerParagraph = css.match(/\.use-case-card__header p\s*\{[^}]+\}/u)?.[0];
+  expect(headerParagraph).toBeTruthy();
+  expect(headerParagraph).not.toMatch(/line-clamp/u);
+  expect(headerParagraph).not.toMatch(/-webkit-box/u);
+  expect(headerParagraph).not.toMatch(/overflow:\s*hidden/u);
+
+  const { container } = renderStart();
+  const outcomes = Array.from(container.querySelectorAll<HTMLElement>(
+    ".start-page__choices > .use-case-grid .use-case-card__header p",
+  )).map((node) => node.textContent);
+  expect(outcomes).toEqual([
+    "Check repositories, websites or APIs, and exact internal hosts together in one result organized by asset.",
+    "Find website vulnerabilities and exposed services within the selected website origin.",
+    "Find exposed secrets, vulnerable dependencies, risky code, and unsafe configuration in one local project.",
+  ]);
+});
+

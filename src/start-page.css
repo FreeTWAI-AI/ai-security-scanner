@@ -146,6 +146,7 @@
 .use-case-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
   gap: 9px;
 }
 
@@ -250,7 +251,9 @@
 .use-case-card {
   display: flex;
   min-width: 0;
+  height: 100%;
   flex-direction: column;
+  gap: 12px;
   padding: 14px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -269,6 +272,10 @@
   display: flex;
   gap: 12px;
   align-items: flex-start;
+}
+
+.use-case-card__header > div {
+  min-width: 0;
 }
 
 .use-case-card__icon {
@@ -290,18 +297,14 @@
 }
 
 .use-case-card__header p {
-  display: -webkit-box;
   margin: 4px 0 0;
-  overflow: hidden;
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.42;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .use-case-card__timing {
-  margin: 10px 0 0;
+  margin: 0;
   color: var(--ink);
   font-size: 0.75rem;
   font-weight: 650;
@@ -310,7 +313,7 @@
 
 .use-case-card__action {
   width: 100%;
-  margin-top: 12px;
+  margin-top: auto;
 }
 
 .start-page__scan-limits {
@@ -426,12 +429,22 @@
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
   padding: 14px 16px;
   color: #416067;
   font-size: 0.78rem;
   font-weight: 750;
   cursor: pointer;
   list-style: none;
+}
+
+.start-page__scope-note > summary > svg {
+  flex: 0 0 auto;
+}
+
+.start-page__scope-note > summary > span {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .start-page__scope-note > summary::-webkit-details-marker {

@@ -42,7 +42,7 @@ const paths: Record<IconName, React.ReactNode> = {
   cases: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 5V3h8v2M7 10h10M7 14h7"/></>,
   coverage: <><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z"/><path d="m9 12 2 2 4-4"/></>,
   progress: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
-  findings: <><path d="M10.3 3.6 2.7 17a2 2 0 0 0 1.8 3h15a2 2 0 0 0 1.8-3L13.7 3.6a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></>,
+  findings: <><path d="M8 6h13M8 12h13M8 18h9"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></>,
   export: <><path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5"/><path d="m10 13 4-4-4-4M14 9H3"/></>,
   verification: <><path d="M20 7h-7a4 4 0 0 0-4 4v1"/><path d="m17 4 3 3-3 3M4 17h7a4 4 0 0 0 4-4v-1"/><path d="m7 20-3-3 3-3"/></>,
   shield: <><path d="M12 3 4 7v5c0 5 3.4 8 8 9 4.6-1 8-4 8-9V7l-8-4Z"/><path d="M12 8v4M12 16h.01"/></>,
