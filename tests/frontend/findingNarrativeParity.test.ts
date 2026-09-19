@@ -148,6 +148,14 @@ test("both sides recognise the same English before writing the same Chinese", ()
       .map((pair) => `${pair.english} -> ${pair.chinese}`)
       .join("\n")}`,
   );
+
+  const interruptedPreparation = pairs.find(
+    (pair) => pair.english === "The app closed while preparing this check. Retry from the saved plan.",
+  );
+  assert.deepEqual(interruptedPreparation, {
+    english: "The app closed while preparing this check. Retry from the saved plan.",
+    chinese: "應用程式在準備這項檢查時關閉。請從已儲存的計畫重新執行。",
+  });
 });
 
 const confidenceTable = (source: string, marker: string): Map<string, string> => {

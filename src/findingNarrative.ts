@@ -1128,6 +1128,10 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "這項檢查沒有啟動，因此不代表通過。",
   ],
   [
+    "The app closed while preparing this check. Retry from the saved plan.",
+    "應用程式在準備這項檢查時關閉。請從已儲存的計畫重新執行。",
+  ],
+  [
     "This check has no terminal outcome.",
     "這項檢查沒有終止結果。",
   ],

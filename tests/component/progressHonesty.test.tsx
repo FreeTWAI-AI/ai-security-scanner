@@ -235,6 +235,60 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+test.each([
+  {
+    locale: "en",
+    title: "Your scan paused when the app closed",
+    body: "Checks queued: 1. Available actions: Continue or Cancel.",
+    recovery: "Continue the original scope",
+  },
+  {
+    locale: "zh-TW",
+    title: "應用程式關閉時，掃描已暫停",
+    body: "已排入佇列的檢查：1 項。可用操作：繼續或取消。",
+    recovery: "繼續原本的範圍",
+  },
+])("a check interrupted during preparation explains recovery in $locale", ({ locale, title, body, recovery }) => {
+  window.localStorage.setItem(localeStorageKey, locale);
+  const { container } = renderProgress(run([
+    engine("preflight-check", "failed", {
+      phase: "preflight_interrupted",
+      errorCode: "preflight_interrupted",
+      resumable: true,
+    }),
+  ]));
+
+  const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
+    (candidate) => candidate.textContent?.includes(title),
+  );
+  expect(notice).toBeTruthy();
+  expect(notice!.textContent).toContain(body);
+  const recoveryControl = within(notice!).getByRole("button", { name: recovery }) as HTMLButtonElement;
+  expect(recoveryControl.disabled).toBe(false);
+});
+
+test.each([
+  {
+    label: "the interrupted phase",
+    overrides: { phase: "interrupted_restart", errorCode: "another_error" },
+  },
+  {
+    label: "the desktop restart error code",
+    overrides: { phase: "another_phase", errorCode: "desktop_process_restarted" },
+  },
+])("$label still reaches the shared interruption explanation", ({ overrides }) => {
+  const { container } = renderProgress(run([
+    engine("interrupted-check", "failed", { ...overrides, resumable: true }),
+  ]));
+
+  const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
+    (candidate) => candidate.textContent?.includes("Your scan paused when the app closed"),
+  );
+  expect(notice).toBeTruthy();
+  expect(notice!.textContent).toContain("Checks queued: 1. Available actions: Continue or Cancel.");
+  expect(within(notice!).getByRole("button", { name: "Continue the original scope" })).toBeTruthy();
+});
+
 test("a check that never ran is still accounted for on screen", () => {
   // Never-run checks are filtered out of the engine list and re-added as one
   // aggregate row. If that row goes missing they leave the page silently, and

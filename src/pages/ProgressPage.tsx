@@ -1114,7 +1114,10 @@ export function ProgressPage({
     (engine) => engine.errorCode === "resume_release_incompatible",
   );
   const interruptedEngines = selectedRun.engineRuns.filter(
-    (engine) => engine.phase === "interrupted_restart" || engine.errorCode === "desktop_process_restarted",
+    (engine) => engine.phase === "interrupted_restart"
+      || engine.errorCode === "desktop_process_restarted"
+      || engine.phase === "preflight_interrupted"
+      || engine.errorCode === "preflight_interrupted",
   );
   const incompleteCount = stateCounts.partial + stateCounts.failed + stateCounts.not_executed + stateCounts.cancelled;
   const terminalCount = terminalEngineStates.reduce((sum, state) => sum + stateCounts[state], 0);

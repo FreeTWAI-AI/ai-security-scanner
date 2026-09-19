@@ -213,6 +213,15 @@ test("stored defensive coverage prose is normalized into direct bilingual outcom
   }
 });
 
+test("an interrupted preparation explanation reaches a Traditional Chinese reader", () => {
+  const english = "The app closed while preparing this check. Retry from the saved plan.";
+  assert.equal(coverageGapProse("en", english), english);
+  assert.equal(
+    coverageGapProse("zh-TW", english),
+    "應用程式在準備這項檢查時關閉。請從已儲存的計畫重新執行。",
+  );
+});
+
 test("an expired-knowledge coverage row keeps its date and moves its sentence", () => {
   // The screen and the exported report have to say the same thing about a
   // scanner whose declared knowledge support ended before the run. The date is
