@@ -383,7 +383,7 @@ const pageCopy = {
   scannedAssets: bilingual("Items fully checked", "已完整檢查的項目"),
   readyToScan: bilingual("Ready to scan", "準備掃描"),
   readyToScanDetail: bilingual("Permission saved. Start this item.", "掃描許可已儲存；開始這個項目。"),
-  readyToScanNext: bilingual("Permission is saved. Start the scan from Scan progress.", "掃描許可已儲存；請到「掃描進度」開始掃描。"),
+  readyToScanNext: bilingual("Permission saved. Start the scan.", "掃描許可已儲存；開始掃描。"),
   incompleteAssets: bilingual("Needs attention", "需要處理"),
   pendingAssets: bilingual("Setup required", "需要設定"),
   metricsLabel: bilingual("What the product can currently see", "產品目前看得到的摘要"),

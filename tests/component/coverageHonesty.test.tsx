@@ -64,15 +64,29 @@ const renderCoverage = (assets: Asset[], coverage: CoverageRecord[] = []) =>
     </I18nProvider>,
   );
 
-/** The status pill rendered on one asset's review card. */
-const pillFor = (container: HTMLElement, name: string): HTMLElement => {
+/** The review card rendered for one named asset. */
+const cardFor = (container: HTMLElement, name: string): HTMLElement => {
   const card = Array.from(container.querySelectorAll<HTMLElement>(".asset-review-card")).find(
     (candidate) => within(candidate).queryByText(name) !== null,
   );
   if (!card) throw new Error(`no review card rendered for ${name}`);
-  const pill = card.querySelector<HTMLElement>(".status-pill");
+  return card;
+};
+
+/** The status pill rendered on one asset's review card. */
+const pillFor = (container: HTMLElement, name: string): HTMLElement => {
+  const pill = cardFor(container, name).querySelector<HTMLElement>(".status-pill");
   if (!pill) throw new Error(`no status pill rendered for ${name}`);
   return pill;
+};
+
+/** The next-step sentence a reader sees on one asset's review card. */
+const nextStepFor = (container: HTMLElement, name: string): string => {
+  const next = cardFor(container, name).querySelector<HTMLElement>(
+    ".asset-review-card__next p, .asset-review-card__next-inline",
+  );
+  if (!next?.textContent) throw new Error(`no next-step copy rendered for ${name}`);
+  return next.textContent;
 };
 
 beforeEach(() => {
@@ -111,6 +125,20 @@ test("an unfinished scan is not presented as one that has not started", () => {
   expect(unfinished.textContent).not.toContain("Ready to scan");
   expect(untouched.textContent).toContain("Ready to scan");
   expect(unfinished.textContent).not.toEqual(untouched.textContent);
+});
+
+test("saved permission names the Start scan action on this page in both languages", () => {
+  const { container: englishContainer } = renderCoverage([UNTOUCHED]);
+  const english = nextStepFor(englishContainer, "untouched.example");
+  expect(english).toBe("Permission saved. Start the scan.");
+  expect(english).not.toContain("Scan progress");
+
+  cleanup();
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const { container: chineseContainer } = renderCoverage([UNTOUCHED]);
+  const chinese = nextStepFor(chineseContainer, "untouched.example");
+  expect(chinese).toBe("掃描許可已儲存；開始掃描。");
+  expect(chinese).not.toContain("掃描進度");
 });
 
 test("a Traditional Chinese reader sees the stored coverage detail in their language", () => {

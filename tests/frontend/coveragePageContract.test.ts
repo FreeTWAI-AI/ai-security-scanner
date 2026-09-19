@@ -482,8 +482,8 @@ test("saved permission without a scan attempt is shown as ready instead of faile
   for (const phrase of [
     "Permission saved. Start this item.",
     "掃描許可已儲存；開始這個項目。",
-    "Permission is saved. Start the scan from Scan progress.",
-    "掃描許可已儲存；請到「掃描進度」開始掃描。",
+    "Permission saved. Start the scan.",
+    "掃描許可已儲存；開始掃描。",
     "Not scanned",
     "未掃描",
   ]) assert.ok(source.includes(phrase), phrase);
