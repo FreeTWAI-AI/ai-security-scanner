@@ -9,12 +9,12 @@ use crate::error::{AppError, AppResult};
 use crate::job_manager::JobManager;
 use crate::managed_network::{ManagedNetworkReconciliationSummary, ManagedNetworkRegistry};
 use crate::managed_runtime::{
-    ManagedRuntimeManager, ManagedRuntimeSetupController, ManagedRuntimeStatus,
-    PackagedManagedRuntimeAdmission,
+    ManagedRuntimeManager, ManagedRuntimePhase, ManagedRuntimeSetupController,
+    ManagedRuntimeStatus, PackagedManagedRuntimeAdmission,
 };
 use crate::process_lease::DataDirectoryExclusiveLease;
 use crate::registry::EngineRegistry;
-use crate::runtime_health_monitor::RuntimeHealthMonitor;
+use crate::runtime_health_monitor::{RuntimeHealthMonitor, RuntimeHealthObservation};
 use crate::source_authorization::SourceAuthorizationBindings;
 use crate::source_authorization::discovery::ProviderDiscoveryJobs;
 use crate::source_authorization::session::ProviderAuthorizationSessions;
@@ -305,25 +305,57 @@ fn checking_runtime_health(provider: &str) -> RuntimeHealth {
     }
 }
 
-fn detect_runtime_health(managed_runtime: Option<&ManagedRuntimeManager>) -> RuntimeHealth {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeHealthConfidence {
+    Settled,
+    Reconciling,
+}
+
+impl RuntimeHealthConfidence {
+    fn observe(self, health: RuntimeHealth) -> RuntimeHealthObservation {
+        match self {
+            Self::Settled => RuntimeHealthObservation::Settled(health),
+            Self::Reconciling => RuntimeHealthObservation::Reconciling(health),
+        }
+    }
+}
+
+fn managed_runtime_health_confidence(phase: ManagedRuntimePhase) -> RuntimeHealthConfidence {
+    match phase {
+        ManagedRuntimePhase::Running
+        | ManagedRuntimePhase::NotInstalled
+        | ManagedRuntimePhase::Installed
+        | ManagedRuntimePhase::Stopped
+        | ManagedRuntimePhase::Corrupt
+        | ManagedRuntimePhase::Unsupported => RuntimeHealthConfidence::Settled,
+        ManagedRuntimePhase::Starting => RuntimeHealthConfidence::Reconciling,
+    }
+}
+
+fn detect_runtime_health(
+    managed_runtime: Option<&ManagedRuntimeManager>,
+) -> RuntimeHealthObservation {
     if let Some(manager) = managed_runtime {
         return match manager.status() {
-            Ok(status) => RuntimeHealth {
-                provider: status.provider,
-                available: status.available,
-                phase: status.phase.as_str().into(),
-                version: Some(status.runtime_version),
-                prerequisite: status.prerequisite,
-                detail: status.detail,
-            },
-            Err(error) => RuntimeHealth {
+            Ok(status) => {
+                let confidence = managed_runtime_health_confidence(status.phase);
+                confidence.observe(RuntimeHealth {
+                    provider: status.provider,
+                    available: status.available,
+                    phase: status.phase.as_str().into(),
+                    version: Some(status.runtime_version),
+                    prerequisite: status.prerequisite,
+                    detail: status.detail,
+                })
+            }
+            Err(error) => RuntimeHealthObservation::Reconciling(RuntimeHealth {
                 provider: "managed_local".into(),
                 available: false,
                 phase: "error".into(),
                 version: None,
                 prerequisite: None,
                 detail: error.to_string(),
-            },
+            }),
         };
     }
 
@@ -331,22 +363,22 @@ fn detect_runtime_health(managed_runtime: Option<&ManagedRuntimeManager>) -> Run
         use crate::container_runtime::ContainerRuntime as _;
         runtime.preflight()
     }) {
-        Ok(preflight) => RuntimeHealth {
+        Ok(preflight) => RuntimeHealthObservation::Settled(RuntimeHealth {
             provider: format!("{:?}", preflight.provider).to_ascii_lowercase(),
             available: true,
             phase: "running".into(),
             version: Some(preflight.server_version),
             prerequisite: None,
             detail: "compatibility container service is available".into(),
-        },
-        Err(error) => RuntimeHealth {
+        }),
+        Err(error) => RuntimeHealthObservation::Settled(RuntimeHealth {
             provider: "none".into(),
             available: false,
             phase: "unavailable".into(),
             version: None,
             prerequisite: None,
             detail: error.to_string(),
-        },
+        }),
     }
 }
 
@@ -384,4 +416,47 @@ fn restrict_directory(path: &Path) -> AppResult<()> {
 #[cfg(not(unix))]
 fn restrict_directory(_path: &Path) -> AppResult<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_starting_managed_runtime_health_is_reconciling() {
+        let expectations = [
+            (
+                ManagedRuntimePhase::NotInstalled,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Installed,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Stopped,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Starting,
+                RuntimeHealthConfidence::Reconciling,
+            ),
+            (
+                ManagedRuntimePhase::Running,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Corrupt,
+                RuntimeHealthConfidence::Settled,
+            ),
+            (
+                ManagedRuntimePhase::Unsupported,
+                RuntimeHealthConfidence::Settled,
+            ),
+        ];
+
+        for (phase, expected) in expectations {
+            assert_eq!(managed_runtime_health_confidence(phase), expected);
+        }
+    }
 }

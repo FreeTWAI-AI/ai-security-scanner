@@ -267,6 +267,68 @@ test("active runtime setup keeps exact stage and progress visible while mechanic
   expect(getByRole("button", { name: "Stop setup" })).toBeTruthy();
 });
 
+test("an unfinished runtime check does not demand setup", () => {
+  const { container, queryByRole } = renderShell({
+    runtime: {
+      provider: "managed_local",
+      available: false,
+      phase: "starting",
+      detail: "test-only runtime detail",
+    },
+  });
+
+  expect(container.querySelector(".runtime-badge")?.textContent).toContain("Checking local scan tools");
+  expect(container.querySelector(".runtime-badge")?.textContent).not.toContain(
+    "Advanced local scans need setup",
+  );
+  expect(queryByRole("button", { name: "Prepare scan tools" })).toBeNull();
+  expect(queryByRole("button", { name: "Try setup again" })).toBeNull();
+  expect(queryByRole("button", { name: "Continue setup" })).toBeNull();
+  expect(container.querySelectorAll(".runtime-setup > .button")).toHaveLength(0);
+});
+
+test("a runtime that still needs first-launch setup keeps the setup offer", () => {
+  const { container, getByRole } = renderShell({
+    runtime: {
+      provider: "managed_local",
+      available: false,
+      phase: "installed",
+      detail: "test-only runtime detail",
+    },
+  });
+
+  expect(container.querySelector(".runtime-badge")?.textContent).toContain(
+    "Advanced local scans need setup",
+  );
+  expect(getByRole("button", { name: "Prepare scan tools" })).toBeTruthy();
+});
+
+test("an active managed setup is shown ahead of an unfinished runtime check", () => {
+  const { container, getByRole } = renderShell({
+    runtime: {
+      provider: "managed_local",
+      available: false,
+      phase: "checking",
+      detail: "test-only runtime detail",
+    },
+    runtimeSetup: {
+      phase: "init",
+      active: true,
+      prerequisiteRepairActive: false,
+      cancelRequested: false,
+      receivedBytes: 0,
+      resumedFromBytes: 0,
+      canCancel: true,
+      canRetry: false,
+      detail: "test-only setup detail",
+    },
+  });
+
+  expect(container.querySelector(".runtime-badge")?.textContent).toContain("Setting up local tools");
+  expect(container.querySelector(".runtime-badge")?.textContent).not.toContain("Checking local scan tools");
+  expect(getByRole("button", { name: "Stop setup" })).toBeTruthy();
+});
+
 test("one recovery banner composes every concurrent truth and relevant retry action", () => {
   const onRetryData = vi.fn();
   const onRetryCaseSelection = vi.fn();

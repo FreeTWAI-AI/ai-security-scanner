@@ -13,6 +13,7 @@ import {
   reconcileMobileNavigationOpen,
 } from "../mobileNavigation";
 import { completePageTransition } from "../pageNavigation";
+import { classifyRuntimeReadiness } from "../runtimeReadinessPresentation";
 import {
   hasUnconfirmedManagedRuntimeCompletion,
   isDeveloperBuildPackagedRuntimeVerificationFailed,
@@ -246,6 +247,7 @@ export function AppShell({
     : runtimeSetup?.phase === "cancelled"
       ? "runtime.setup.continue"
       : "runtime.setup.action";
+  const runtimeReadiness = classifyRuntimeReadiness(runtime?.available, runtime?.phase);
   const runtimeBadgeLabel: TranslationKey = mode !== "native"
     ? "runtime.badge.demo"
     : runtime?.available
@@ -258,7 +260,9 @@ export function AppShell({
             ? "runtime.badge.attention"
             : runtimeSetup?.phase === "cancelled"
               ? "runtime.badge.paused"
-              : "runtime.badge.needsSetup";
+              : runtimeReadiness === "checking"
+                ? "runtime.badge.checking"
+                : "runtime.badge.needsSetup";
   const hasDangerousCaseRecovery = Boolean(caseRecoveryDiagnostics?.length);
   const hasDataStatus = hasDangerousCaseRecovery || Boolean(dataUnavailable) || Boolean(caseSelectionUnavailable);
   const dataRetryRelevant = hasDangerousCaseRecovery || Boolean(dataUnavailable);
@@ -494,7 +498,10 @@ export function AppShell({
                   <Icon name="progress" size={15} />
                   {t("runtime.badge.preparing")}
                 </button>
-              ) : !runtimeSetupWorking && !runtimeSetupNonRetryable ? (
+              ) : !runtimeSetupWorking && !runtimeSetupNonRetryable
+                && (runtimeReadiness !== "checking"
+                  || runtimeSetup?.phase === "failed"
+                  || runtimeSetup?.phase === "cancelled") ? (
                 <button
                   className="button button--small"
                   type="button"

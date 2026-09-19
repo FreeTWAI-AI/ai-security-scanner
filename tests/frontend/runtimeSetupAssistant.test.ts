@@ -143,7 +143,10 @@ test("an exact packaged-runtime admission failure degrades gracefully without an
   ]) assert.ok(source.includes(phrase), phrase);
 
   assert.match(source, /setupNonRetryable \|\| \(!setupFailed[\s\S]*\? null : \(/u);
-  assert.match(shellSource, /!runtimeSetupWorking && !runtimeSetupNonRetryable \? \(/u);
+  assert.match(
+    shellSource,
+    /!runtimeSetupWorking && !runtimeSetupNonRetryable[\s\S]*runtimeReadiness !== "checking"[\s\S]*\? \(/u,
+  );
   assert.match(appSource, /if \(isManagedRuntimePackageAdmissionFailure\(runtimeSetup\)\) return;/u);
 
   const nonRetryableCopy = source.slice(
@@ -350,7 +353,10 @@ test("an admitted idle runtime offers an explicit preparation action", () => {
     "準備掃描工具",
   ]) assert.ok(source.includes(phrase), phrase);
   assert.match(source, /setupNonRetryable \|\| \(!setupFailed && !setupCancelled && !setupIdleUnavailable\) \? null/u);
-  assert.match(shellSource, /\) : !runtimeSetupWorking && !runtimeSetupNonRetryable \? \(/u);
+  assert.match(
+    shellSource,
+    /\) : !runtimeSetupWorking && !runtimeSetupNonRetryable[\s\S]*runtimeReadiness !== "checking"[\s\S]*\? \(/u,
+  );
 });
 
 test("completed setup copy stays hidden until authoritative runtime truth is ready", () => {

@@ -54,6 +54,7 @@ export const en = {
   "nav.verification.hint": "Compare before and after",
 
   "runtime.badge.ready": "Advanced local tools ready at last check",
+  "runtime.badge.checking": "Checking local scan tools…",
   "runtime.badge.needsSetup": "Advanced local scans need setup",
   "runtime.badge.preparing": "Setting up local tools",
   "runtime.badge.attention": "Local tool setup failed",

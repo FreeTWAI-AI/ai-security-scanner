@@ -9,6 +9,16 @@ use std::time::{Duration, Instant};
 /// preparation. Lifecycle transitions explicitly invalidate this cache.
 const RUNTIME_HEALTH_FRESHNESS: Duration = Duration::from_secs(5 * 60);
 
+pub enum RuntimeHealthObservation {
+    /// A completed check whose answer will not change until a lifecycle event
+    /// changes it. Starts a fresh freshness window.
+    Settled(RuntimeHealth),
+    /// The provider is mid-transition, or could not be queried inside the
+    /// bounded status budget. The reading is publishable copy, but it must not
+    /// suppress the next probe: the condition it reports resolves on its own.
+    Reconciling(RuntimeHealth),
+}
+
 #[derive(Debug)]
 struct RuntimeHealthMonitorState {
     cached: RuntimeHealth,
@@ -72,7 +82,7 @@ impl RuntimeHealthMonitor {
     /// unchanged and releases the slot so a later read can retry.
     pub fn request_refresh<F>(&self, detector: F) -> bool
     where
-        F: FnOnce() -> RuntimeHealth + Send + 'static,
+        F: FnOnce() -> RuntimeHealthObservation + Send + 'static,
     {
         let lifecycle_epoch = {
             let mut state = self.lock();
@@ -96,10 +106,17 @@ impl RuntimeHealthMonitor {
                 let detected = catch_unwind(AssertUnwindSafe(detector));
                 let mut state = lock_recovering_poison(&shared);
                 if state.lifecycle_epoch == lifecycle_epoch
-                    && let Ok(health) = detected
+                    && let Ok(observation) = detected
                 {
-                    state.cached = health;
-                    state.last_completed_at = Some(Instant::now());
+                    match observation {
+                        RuntimeHealthObservation::Settled(health) => {
+                            state.cached = health;
+                            state.last_completed_at = Some(Instant::now());
+                        }
+                        RuntimeHealthObservation::Reconciling(health) => {
+                            state.cached = health;
+                        }
+                    }
                 }
                 state.refresh_active = false;
             });
@@ -163,21 +180,26 @@ mod tests {
         assert!(monitor.request_refresh(move || {
             entered_tx.send(()).expect("signal detector entry");
             release_rx.recv().expect("release detector");
-            health("running", true)
+            RuntimeHealthObservation::Settled(health("running", true))
         }));
         entered_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("detector started");
 
         assert_eq!(monitor.cached().phase, "checking");
-        assert!(!monitor.request_refresh(|| health("duplicate", false)));
+        assert!(
+            !monitor.request_refresh(|| {
+                RuntimeHealthObservation::Settled(health("duplicate", false))
+            })
+        );
 
         release_tx.send(()).expect("release slow detector");
         wait_for_refresh(&monitor);
         assert_eq!(monitor.cached().phase, "running");
         assert!(monitor.cached().available);
         assert!(
-            !monitor.request_refresh(|| health("too_soon", false)),
+            !monitor
+                .request_refresh(|| RuntimeHealthObservation::Settled(health("too_soon", false))),
             "repeated shell reads inside the freshness window must not relaunch detection",
         );
     }
@@ -197,7 +219,11 @@ mod tests {
         wait_for_refresh(&monitor);
 
         assert_eq!(monitor.cached().phase, "last_known");
-        assert!(monitor.request_refresh(|| health("recovered", true)));
+        assert!(
+            monitor.request_refresh(|| {
+                RuntimeHealthObservation::Settled(health("recovered", true))
+            })
+        );
     }
 
     #[test]
@@ -205,9 +231,15 @@ mod tests {
         let monitor = RuntimeHealthMonitor::new(health("checking", false));
         monitor.record_observation(health("running", true));
 
-        assert!(!monitor.request_refresh(|| health("unexpected", false)));
+        assert!(!monitor.request_refresh(|| {
+            RuntimeHealthObservation::Settled(health("unexpected", false))
+        }));
         monitor.invalidate();
-        assert!(monitor.request_refresh(|| health("stopped", false)));
+        assert!(
+            monitor.request_refresh(|| {
+                RuntimeHealthObservation::Settled(health("stopped", false))
+            })
+        );
     }
 
     #[test]
@@ -219,7 +251,7 @@ mod tests {
         assert!(monitor.request_refresh(move || {
             entered_tx.send(()).expect("signal detector entry");
             release_rx.recv().expect("release detector");
-            health("stale_probe", false)
+            RuntimeHealthObservation::Settled(health("stale_probe", false))
         }));
         entered_rx
             .recv_timeout(Duration::from_secs(1))
@@ -231,5 +263,54 @@ mod tests {
 
         assert_eq!(monitor.cached().phase, "setup_completed");
         assert!(monitor.cached().available);
+    }
+
+    #[test]
+    fn reconciling_health_is_visible_without_delaying_the_next_check() {
+        let monitor = RuntimeHealthMonitor::new(health("checking", false));
+
+        assert!(monitor.request_refresh(|| {
+            RuntimeHealthObservation::Reconciling(health("starting", false))
+        }));
+        wait_for_refresh(&monitor);
+
+        assert_eq!(monitor.cached().phase, "starting");
+        assert!(
+            monitor
+                .request_refresh(|| { RuntimeHealthObservation::Settled(health("running", true)) })
+        );
+        wait_for_refresh(&monitor);
+    }
+
+    #[test]
+    fn settled_health_is_visible_and_remains_fresh() {
+        let monitor = RuntimeHealthMonitor::new(health("checking", false));
+
+        assert!(
+            monitor
+                .request_refresh(|| { RuntimeHealthObservation::Settled(health("running", true)) })
+        );
+        wait_for_refresh(&monitor);
+
+        assert_eq!(monitor.cached().phase, "running");
+        assert!(!monitor.request_refresh(|| {
+            RuntimeHealthObservation::Settled(health("unexpected", false))
+        }));
+    }
+
+    #[test]
+    fn reconciling_health_preserves_the_prior_settled_freshness_record() {
+        let monitor = RuntimeHealthMonitor::new(health("checking", false));
+        monitor.record_observation(health("running", true));
+        let settled_at = Instant::now() - RUNTIME_HEALTH_FRESHNESS;
+        monitor.lock().last_completed_at = Some(settled_at);
+
+        assert!(monitor.request_refresh(|| {
+            RuntimeHealthObservation::Reconciling(health("starting", false))
+        }));
+        wait_for_refresh(&monitor);
+
+        assert_eq!(monitor.cached().phase, "starting");
+        assert_eq!(monitor.lock().last_completed_at, Some(settled_at));
     }
 }

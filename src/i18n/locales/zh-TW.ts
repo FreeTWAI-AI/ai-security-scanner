@@ -56,6 +56,7 @@ export const zhTW = {
   "nav.verification.hint": "比較修復前後的差異",
 
   "runtime.badge.ready": "進階本機掃描工具上次檢查時可用",
+  "runtime.badge.checking": "正在檢查本機掃描工具…",
   "runtime.badge.needsSetup": "進階本機掃描需要設定",
   "runtime.badge.preparing": "正在設定本機工具",
   "runtime.badge.attention": "本機工具設定失敗",
