@@ -59,6 +59,11 @@ const CONTAINER_CAPTURE_DRAIN_TIMEOUT: StdDuration = StdDuration::from_secs(30);
 /// two send the reader to different next steps.
 pub const CONTAINER_EXECUTION_TIMEOUT_ERROR: &str =
     "scanner execution exceeded its configured host deadline";
+/// The product's own local launcher emits this when an engine's image cannot
+/// consume the typed input the host mounted. Matched as a product-owned
+/// constant, exactly like [`CONTAINER_EXECUTION_TIMEOUT_ERROR`]; a CI parity
+/// test binds it to the Go source so a launcher reword cannot silently unbind it.
+pub const LOCAL_INPUT_PROFILE_REJECTION_MARKER: &str = "cannot consume local input profile";
 const MANAGED_NETWORK_LABEL_KEY: &str = "ai.security-scanner.managed";
 const NETWORK_POLICY_LABEL_KEY: &str = "ai.security-scanner.policy-id";
 const CONTAINER_MANAGED_LABEL_KEY: &str = "ai.security-scanner.managed";

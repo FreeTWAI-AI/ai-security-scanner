@@ -150,6 +150,7 @@ pub struct RunDirectories {
 
 #[derive(Debug, Clone)]
 pub struct CapturePaths {
+    artifact_root: PathBuf,
     pub stdout: PathBuf,
     pub stderr: PathBuf,
     stdout_file: Arc<File>,
@@ -177,6 +178,21 @@ impl CapturePaths {
             CaptureWriter::new(stdout, self.active_writers.clone()),
             CaptureWriter::new(stderr, self.active_writers.clone()),
         ))
+    }
+
+    /// Reads at most `maximum_bytes` from the end of this invocation's already
+    /// verified stderr capture. The retained file handle prevents a path swap
+    /// from redirecting classification to unrelated data.
+    pub(crate) fn read_stderr_tail(&self, maximum_bytes: usize) -> std::io::Result<Vec<u8>> {
+        verify_capture_path_identity(&self.artifact_root, &self.stderr, &self.stderr_file)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        let mut file = self.stderr_file.try_clone()?;
+        let length = file.metadata()?.len();
+        let maximum_bytes = u64::try_from(maximum_bytes).unwrap_or(u64::MAX);
+        file.seek(SeekFrom::Start(length.saturating_sub(maximum_bytes)))?;
+        let mut bytes = Vec::with_capacity(usize::try_from(length.min(maximum_bytes)).unwrap_or(0));
+        file.take(maximum_bytes).read_to_end(&mut bytes)?;
+        Ok(bytes)
     }
 }
 
@@ -414,6 +430,7 @@ impl ArtifactStore {
         restrict_open_file(&stdout_file)?;
         restrict_open_file(&stderr_file)?;
         Ok(CapturePaths {
+            artifact_root: self.root.clone(),
             stdout,
             stderr,
             stdout_file: Arc::new(stdout_file),

@@ -1038,6 +1038,7 @@ fn all_engines_in_one_report<T>(
                     artifact_ids: vec![],
                     cleanup_completed: true,
                     last_error: None,
+                    failure_code: None,
                     runtime_command_provenance: None,
                     runtime_provider: None,
                     managed_network: None,

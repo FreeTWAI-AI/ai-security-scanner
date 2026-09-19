@@ -193,6 +193,15 @@ pub struct CaseService<'a> {
     signing_key_path: PathBuf,
 }
 
+fn execution_failure_code(checkpoint: &ExecutionCheckpoint) -> Option<String> {
+    checkpoint.failure_code.clone().or_else(|| {
+        checkpoint
+            .last_error
+            .as_ref()
+            .map(|_| "execution_failed".into())
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceMutation {
     /// Omit to add a new source; provide an existing ID to update it.
@@ -2858,6 +2867,7 @@ impl<'a> CaseService<'a> {
                 artifact_ids: Vec::new(),
                 cleanup_completed: true,
                 last_error: None,
+                failure_code: None,
                 runtime_command_provenance: None,
                 runtime_provider: None,
                 managed_network: None,
@@ -4145,6 +4155,7 @@ impl<'a> CaseService<'a> {
                             artifact_ids: Vec::new(),
                             cleanup_completed: true,
                             last_error: None,
+                            failure_code: None,
                             runtime_command_provenance: None,
                             runtime_provider: None,
                             managed_network: None,
@@ -4627,6 +4638,7 @@ impl<'a> CaseService<'a> {
                                 artifact_ids: Vec::new(),
                                 cleanup_completed: true,
                                 last_error: None,
+                                failure_code: None,
                                 runtime_command_provenance: None,
                                 runtime_provider: None,
                                 managed_network: None,
@@ -6462,11 +6474,7 @@ impl<'a> CaseService<'a> {
         engine_run.resume_token = Some(validated_checkpoint_token);
         engine_run.last_execution_report_sha256 = Some(report_sha256);
         engine_run.error_message = report.checkpoint.last_error.clone();
-        engine_run.error_code = report
-            .checkpoint
-            .last_error
-            .as_ref()
-            .map(|_| "execution_failed".into());
+        engine_run.error_code = execution_failure_code(&report.checkpoint);
         if replaces_previous_attempt {
             // Runtime, exit, and cleanup projections describe one execution
             // attempt. A resource-free higher-attempt report must not inherit
@@ -12830,6 +12838,7 @@ fn resource_free_naabu_planned_checkpoint(
         artifact_ids: Vec::new(),
         cleanup_completed: true,
         last_error: None,
+        failure_code: None,
         runtime_command_provenance: None,
         runtime_provider: None,
         managed_network: None,
@@ -19360,6 +19369,60 @@ mod tests {
     use chrono::Duration;
 
     #[test]
+    fn input_profile_rejection_code_wins_over_generic_execution_failure() {
+        let checkpoint = ExecutionCheckpoint::from_resume_token(
+            &serde_json::json!({
+                "case_id": "case-1",
+                "scan_run_id": "run-1",
+                "engine_run_id": "engine-run-1",
+                "engine_id": "grype",
+                "attempt": 1,
+                "stage": "failed",
+                "container_name": null,
+                "scope_sha256": null,
+                "artifact_ids": [],
+                "cleanup_completed": true,
+                "last_error": "This check could not read the kind of local input this target provides.",
+                "failure_code": "local_input_profile_unsupported"
+            })
+            .to_string(),
+        )
+        .expect("classified checkpoint");
+
+        assert_eq!(
+            execution_failure_code(&checkpoint).as_deref(),
+            Some("local_input_profile_unsupported")
+        );
+    }
+
+    #[test]
+    fn legacy_checkpoint_without_failure_code_stays_a_generic_failure() {
+        let checkpoint = ExecutionCheckpoint::from_resume_token(
+            &serde_json::json!({
+                "case_id": "case-1",
+                "scan_run_id": "run-1",
+                "engine_run_id": "engine-run-1",
+                "engine_id": "grype",
+                "attempt": 1,
+                "stage": "failed",
+                "container_name": null,
+                "scope_sha256": null,
+                "artifact_ids": [],
+                "cleanup_completed": true,
+                "last_error": "scanner container exited with status Some(126)"
+            })
+            .to_string(),
+        )
+        .expect("legacy checkpoint");
+
+        assert_eq!(checkpoint.failure_code, None);
+        assert_eq!(
+            execution_failure_code(&checkpoint).as_deref(),
+            Some("execution_failed")
+        );
+    }
+
+    #[test]
     fn every_preflight_diagnostic_is_direct_and_bounded() {
         let reasons = [
             ScanReadinessBlocker::DemoCase,
@@ -23247,6 +23310,7 @@ mod tests {
             artifact_ids: Vec::new(),
             cleanup_completed: true,
             last_error: None,
+            failure_code: None,
             runtime_command_provenance: None,
             runtime_provider: None,
             managed_network: None,
@@ -25695,6 +25759,7 @@ mod tests {
                 artifact_ids: Vec::new(),
                 cleanup_completed: true,
                 last_error: None,
+                failure_code: None,
                 runtime_command_provenance: None,
                 runtime_provider: None,
                 managed_network: None,
@@ -25751,6 +25816,7 @@ mod tests {
                 artifact_ids: Vec::new(),
                 cleanup_completed: true,
                 last_error: None,
+                failure_code: None,
                 runtime_command_provenance: None,
                 runtime_provider: None,
                 managed_network: None,
@@ -27412,6 +27478,7 @@ mod tests {
                     last_error: Some(
                         "control-file preparation stopped before runtime or target contact".into(),
                     ),
+                    failure_code: None,
                     runtime_command_provenance: None,
                     runtime_provider: None,
                     managed_network: None,
@@ -27524,6 +27591,7 @@ mod tests {
                 artifact_ids: Vec::new(),
                 cleanup_completed: true,
                 last_error: Some("claimed pre-sidecar failure".into()),
+                failure_code: None,
                 runtime_command_provenance: None,
                 runtime_provider: None,
                 managed_network: None,
@@ -40285,6 +40353,7 @@ mod tests {
                 artifact_ids: vec![artifact.id.clone()],
                 cleanup_completed: true,
                 last_error: None,
+                failure_code: None,
                 runtime_command_provenance: Some(
                     crate::container_runtime::RuntimeCommandProvenance::Compatibility,
                 ),

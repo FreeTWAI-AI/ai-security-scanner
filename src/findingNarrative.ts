@@ -961,6 +961,7 @@ export const localizedCoverageDimension = (
       ["website execution evidence", "網站執行證據"],
       ["target response", "目標回應"],
       ["scanner errors", "掃描器錯誤"],
+      ["unsupported target input", "不支援的目標輸入"],
     ] as const) {
       if (rest === fragment)
         return withCheck(dimension.slice(0, separator), label);
@@ -1002,6 +1003,14 @@ const withCheck = (check: string, label: string): string => {
  * that one, English key and Chinese sentence together.
  */
 const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
+  [
+    "This check cannot read the kind of input this target provides. Outcome: not tested.",
+    "這項檢查無法讀取此目標提供的輸入類型。結果：未檢測。",
+  ],
+  [
+    "Choose a check that supports this target.",
+    "請選擇支援此目標的檢查。",
+  ],
   [
     "Maester evaluated this control but did not return a pass or fail verdict.",
     "Maester 已評估這項控制措施，但未回傳通過或失敗的判定。",

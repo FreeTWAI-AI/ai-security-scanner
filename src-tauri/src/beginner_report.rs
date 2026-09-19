@@ -1826,6 +1826,25 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
             EngineTaskKind::BuiltInLocalhostTcp { .. } => {}
         }
 
+        if task.error_code.as_deref() == Some("local_input_profile_unsupported") {
+            status = CoverageDimensionStatus::NotTested;
+            tested_dimensions.clear();
+            useful_result = false;
+            exact_complete = false;
+            gaps.push(CoverageGap {
+                unattributed: None,
+                kind: CoverageGapKind::NotTested,
+                task_id: Some(task.id.clone()),
+                target_asset_ids: task.asset_ids.clone(),
+                dimension: format!("{}: unsupported target input", check_id(task)),
+                reason: "This check cannot read the kind of input this target provides. Outcome: not tested."
+                    .into(),
+                next_action_code: NextActionCode::ChooseCompatibleCheck,
+                next_action: "Choose a check that supports this target.".into(),
+            });
+            task_gap_already_projected = true;
+        }
+
         if status == CoverageDimensionStatus::TestedComplete && tested_dimensions.is_empty() {
             status = CoverageDimensionStatus::NotTested;
         }
@@ -5034,6 +5053,41 @@ mod tests {
         );
         let encoded = serde_json::to_string(&report).unwrap();
         assert!(!encoded.contains("untrusted target text"));
+    }
+
+    #[test]
+    fn a_check_that_cannot_read_the_target_is_not_tested_and_never_retried() {
+        let mut unsupported = catalog_task("unsupported-input", EngineRunStatus::Failed);
+        unsupported.error_code = Some("local_input_profile_unsupported".into());
+        let case = case_with_catalog_tasks(vec![unsupported], true);
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let check = report
+            .actual
+            .checks
+            .iter()
+            .find(|check| check.task_id == "unsupported-input")
+            .expect("projected check");
+        assert_eq!(check.status, CoverageDimensionStatus::NotTested);
+
+        let task_gaps = report
+            .coverage_gaps
+            .iter()
+            .filter(|gap| gap.task_id.as_deref() == Some("unsupported-input"))
+            .collect::<Vec<_>>();
+        assert_eq!(task_gaps.len(), 1);
+        assert_eq!(task_gaps[0].kind, CoverageGapKind::NotTested);
+        assert_eq!(
+            task_gaps[0].next_action_code,
+            NextActionCode::ChooseCompatibleCheck
+        );
+        assert!(task_gaps[0].reason.contains("Outcome: not tested"));
+        assert!(!report.coverage_gaps.iter().any(|gap| {
+            gap.task_id.as_deref() == Some("unsupported-input")
+                && gap.next_action_code == NextActionCode::RetryCheck
+        }));
+        assert_eq!(report.coverage_counts.not_tested, 1);
+        assert_eq!(report.coverage_counts.failed, 0);
     }
 
     fn knowledge_dated(knowledge_date: &str, support_until: &str) -> EngineKnowledgeInput {

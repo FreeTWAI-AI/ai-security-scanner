@@ -886,6 +886,7 @@ pub(crate) fn recognized_coverage_dimension_zh_hant(dimension: &str) -> Option<S
             ("website execution evidence", "網站執行證據"),
             ("target response", "目標回應"),
             ("scanner errors", "掃描器錯誤"),
+            ("unsupported target input", "不支援的目標輸入"),
         ] {
             if rest == fragment {
                 return Some(with_check(check, label));
@@ -1698,6 +1699,14 @@ fn strip_frame<'a>(value: &'a str, prefix: &str, suffix: &str) -> Option<&'a str
 /// Rust suite is the census, and a new sentence added there fails the test that
 /// exercises its path rather than passing silently in English.
 const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
+    (
+        "This check cannot read the kind of input this target provides. Outcome: not tested.",
+        "這項檢查無法讀取此目標提供的輸入類型。結果：未檢測。",
+    ),
+    (
+        "Choose a check that supports this target.",
+        "請選擇支援此目標的檢查。",
+    ),
     // Why the coverage is missing.
     (
         "Maester evaluated this control but did not return a pass or fail verdict.",
@@ -3047,6 +3056,16 @@ mod tests {
                 "{dimension}"
             );
         }
+    }
+
+    #[test]
+    fn an_unsupported_target_input_dimension_is_named_in_traditional_chinese() {
+        let localized = coverage_dimension_zh_hant("grype: unsupported target input");
+        assert_eq!(localized, "grype 的不支援的目標輸入");
+        assert!(
+            !localized.contains("unsupported target input"),
+            "{localized} still contains the English fragment"
+        );
     }
 
     /// The other direction from the producer census in `beginner_report.rs`:
