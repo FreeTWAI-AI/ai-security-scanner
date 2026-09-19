@@ -50,6 +50,10 @@ use ai_security_scanner_lib::product_uninstall::{
 use ai_security_scanner_lib::registry::EngineRegistry;
 use ai_security_scanner_lib::runtime::detect_runtime;
 use ai_security_scanner_lib::storage::Storage;
+use ai_security_scanner_lib::workspace_snapshot::{
+    WorkspaceInputProfile, WorkspaceSnapshotLimits, create_workspace_snapshot_with_profile,
+    resolve_workspace_snapshot,
+};
 use chrono::{DateTime, Utc};
 use clap::parser::ValueSource;
 use clap::{ArgAction, Args, CommandFactory, FromArgMatches, Subcommand, ValueEnum};
@@ -307,6 +311,8 @@ enum SourceCommand {
     },
     /// Preserve and parse one explicitly selected provider-output snapshot.
     DiscoverFromArtifact(SourceArtifactArgs),
+    /// Copy one explicitly selected local directory into a bounded read-only snapshot.
+    AttachWorkspace(SourceAttachWorkspaceArgs),
     /// List bounded artifact parsers and whether the desktop can capture their provider pages live.
     Connectors,
 }
@@ -355,6 +361,41 @@ struct SourceArtifactArgs {
     /// Observation time in RFC 3339. Defaults to the ingestion time.
     #[arg(long)]
     observed_at: Option<String>,
+}
+
+#[derive(Debug, Args)]
+struct SourceAttachWorkspaceArgs {
+    #[arg(long)]
+    case_id: String,
+    /// User-facing repository or local-input identity shown in Review and Results.
+    #[arg(long)]
+    label: String,
+    /// Absolute path to a directory explicitly selected by the user.
+    #[arg(long, value_name = "PATH")]
+    path: PathBuf,
+    #[arg(long, value_enum)]
+    profile: WorkspaceInputProfileArg,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum WorkspaceInputProfileArg {
+    RepositoryWorkingTree,
+    IacWorkingTree,
+    ContainerImageOciLayout,
+    KubernetesManifests,
+    KubernetesNodeSnapshot,
+}
+
+impl From<WorkspaceInputProfileArg> for WorkspaceInputProfile {
+    fn from(value: WorkspaceInputProfileArg) -> Self {
+        match value {
+            WorkspaceInputProfileArg::RepositoryWorkingTree => Self::RepositoryWorkingTree,
+            WorkspaceInputProfileArg::IacWorkingTree => Self::IacWorkingTree,
+            WorkspaceInputProfileArg::ContainerImageOciLayout => Self::ContainerImageOciLayout,
+            WorkspaceInputProfileArg::KubernetesManifests => Self::KubernetesManifests,
+            WorkspaceInputProfileArg::KubernetesNodeSnapshot => Self::KubernetesNodeSnapshot,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -1602,6 +1643,19 @@ fn execute_source(
                 json_output,
             )?;
         }
+        SourceCommand::AttachWorkspace(args) => {
+            let source_id = new_id();
+            let output = attach_workspace_source(
+                service,
+                artifact_root,
+                &args.case_id,
+                &source_id,
+                &args.label,
+                &args.path,
+                args.profile.into(),
+            )?;
+            print_value(&output, json_output)?;
+        }
         SourceCommand::Connectors => {
             // Listing static connector descriptors never ingests or reads an
             // artifact, so it does not need to create a synthetic case root.
@@ -1623,6 +1677,58 @@ fn execute_source(
         }
     }
     Ok(())
+}
+
+fn attach_workspace_source(
+    service: &CaseService<'_>,
+    artifact_root: &Path,
+    case_id: &str,
+    source_id: &str,
+    label: &str,
+    selected_path: &Path,
+    input_profile: WorkspaceInputProfile,
+) -> AppResult<Value> {
+    if !selected_path.is_absolute() {
+        return Err(AppError::InvalidRequest(
+            "the working-tree selection must be an explicit absolute directory".into(),
+        ));
+    }
+    let case = service.show_case(case_id)?;
+    if case.is_demo || case.status == CaseStatus::Archived {
+        return Err(AppError::NotAuthorized(
+            "demo or archived cases cannot attach working-tree snapshots".into(),
+        ));
+    }
+    let snapshot = create_workspace_snapshot_with_profile(
+        artifact_root,
+        case_id,
+        source_id,
+        selected_path,
+        input_profile,
+        WorkspaceSnapshotLimits::default(),
+    )?;
+    let snapshot_sha256 = snapshot.reference.sha256.clone();
+    let asset_id = snapshot.asset.id.clone();
+    let asset_kind = snapshot.asset.kind.clone();
+    let resolved_selected_path = selected_path.canonicalize().map_err(|error| {
+        AppError::InvalidRequest(format!(
+            "selected working-tree directory could not be resolved for output: {error}"
+        ))
+    })?;
+    // Re-resolve through the persisted reference before it enters the case.
+    // This exercises the same no-symlink/hash boundary used by execution.
+    resolve_workspace_snapshot(artifact_root, case_id, &snapshot.reference)?;
+    service.attach_workspace_snapshot(case_id, label, snapshot)?;
+
+    Ok(json!({
+        "label": label,
+        "path": resolved_selected_path,
+        "profile": input_profile,
+        "source_id": source_id,
+        "asset_id": asset_id,
+        "asset_kind": asset_kind,
+        "snapshot_sha256": snapshot_sha256,
+    }))
 }
 
 fn execute_scope(
@@ -3573,6 +3679,32 @@ mod tests {
             )
         }
 
+        fn create_case(&self, title: &str) -> String {
+            self.service()
+                .create_case(&CreateCaseRequest {
+                    title: title.into(),
+                    organization_name: String::new(),
+                    employee_range: "unknown".into(),
+                    assessment_intent: None,
+                    ai_generated_artifact: Default::default(),
+                    data_classes: vec![],
+                    requested_activities: vec![],
+                    source_kinds: vec![],
+                    not_applicable_source_kinds: vec![],
+                    declared_assets: vec![],
+                    notes: None,
+                })
+                .expect("case")
+                .id
+        }
+
+        fn workspace(&self, name: &str) -> PathBuf {
+            let path = self._directory.path().join("working-trees").join(name);
+            fs::create_dir_all(path.join("src")).expect("working tree");
+            fs::write(path.join("src/main.rs"), b"fn main() {}\n").expect("source fixture");
+            path
+        }
+
         fn discovered_domain(&self) -> (String, String) {
             let service = self.service();
             let case = service
@@ -3697,6 +3829,259 @@ mod tests {
             authorization_reference: Some("E2E".into()),
             external_scope,
             notes: None,
+        }
+    }
+
+    #[test]
+    fn repository_workspace_attachment_enables_authorized_gitleaks_plan() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture.create_case("CLI workspace");
+        let selected = fixture.workspace("repository");
+        let service = fixture.service();
+
+        let output = attach_workspace_source(
+            &service,
+            &fixture.artifact_root,
+            &case_id,
+            "workspace-source-1",
+            "Selected repository",
+            &selected,
+            WorkspaceInputProfile::RepositoryWorkingTree,
+        )
+        .expect("workspace attachment");
+
+        assert_eq!(output["label"], "Selected repository");
+        assert_eq!(output["profile"], "repository_working_tree");
+        assert_eq!(output["source_id"], "workspace-source-1");
+        assert_eq!(output["asset_kind"], "repository");
+        let resolved_selection = selected.canonicalize().expect("resolved selection");
+        assert_eq!(
+            output["path"].as_str().map(Path::new),
+            Some(resolved_selection.as_path())
+        );
+        assert_eq!(output["snapshot_sha256"].as_str().unwrap().len(), 64);
+
+        let attached = service.show_case(&case_id).expect("attached case");
+        let source = attached
+            .data_sources
+            .iter()
+            .find(|source| source.id == "workspace-source-1")
+            .expect("workspace source");
+        assert!(source.read_only);
+        assert_eq!(source.status, SourceConnectionStatus::Connected);
+        let asset = attached
+            .assets
+            .iter()
+            .find(|asset| asset.id == output["asset_id"])
+            .expect("workspace asset");
+        assert!(asset.candidate);
+        assert!(!asset.owner_confirmed);
+
+        service
+            .approve_scope(
+                &case_id,
+                ScopeApprovalRequest {
+                    asset_id: asset.id.clone(),
+                    permissions: vec![ScanPermission::LocalArtifactRead],
+                    confirmed_by: "e2e-operator".into(),
+                    expires_at: Some(Utc::now() + Duration::hours(1)),
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .expect("local artifact approval");
+        let plan = service
+            .plan_scan(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .expect("gitleaks plan");
+        assert!(plan.not_executed.is_empty());
+        assert_eq!(plan.executable.len(), 1);
+        assert_eq!(plan.executable[0].manifest.id, "gitleaks");
+        assert_eq!(plan.executable[0].assets[0].id, asset.id);
+    }
+
+    #[test]
+    fn workspace_attachment_rejects_invalid_paths_without_case_mutation() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture.create_case("Invalid workspace paths");
+        let file_path = fixture._directory.path().join("regular-file");
+        fs::write(&file_path, b"not a directory").expect("regular file");
+        let missing_path = fixture._directory.path().join("missing-directory");
+        let cases = [
+            (
+                PathBuf::from("relative/path"),
+                "the working-tree selection must be an explicit absolute directory",
+            ),
+            (
+                missing_path,
+                "selected working-tree path component could not be inspected",
+            ),
+            (
+                file_path,
+                "selected working-tree path must be a real directory, not a symlink",
+            ),
+        ];
+
+        for (index, (path, expected_message)) in cases.into_iter().enumerate() {
+            let error = attach_workspace_source(
+                &fixture.service(),
+                &fixture.artifact_root,
+                &case_id,
+                &format!("invalid-source-{index}"),
+                "Invalid workspace",
+                &path,
+                WorkspaceInputProfile::RepositoryWorkingTree,
+            )
+            .expect_err("invalid workspace path must fail");
+            assert!(
+                error.to_string().contains(expected_message),
+                "unexpected error: {error}"
+            );
+            let stored = fixture.service().show_case(&case_id).expect("stored case");
+            assert!(stored.data_sources.is_empty());
+            assert!(stored.assets.is_empty());
+        }
+    }
+
+    #[test]
+    fn workspace_attachment_rejects_artifact_root_overlap() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture.create_case("Overlapping workspace");
+
+        let error = attach_workspace_source(
+            &fixture.service(),
+            &fixture.artifact_root,
+            &case_id,
+            "overlap-source",
+            "Overlapping workspace",
+            &fixture.artifact_root,
+            WorkspaceInputProfile::RepositoryWorkingTree,
+        )
+        .expect_err("artifact-root overlap must fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("selected working tree and artifact root must not overlap")
+        );
+        let stored = fixture.service().show_case(&case_id).expect("stored case");
+        assert!(stored.data_sources.is_empty());
+        assert!(stored.assets.is_empty());
+    }
+
+    #[test]
+    fn workspace_attachment_rejects_duplicate_source_id() {
+        let fixture = CliScopeFixture::new();
+        let case_id = fixture.create_case("Duplicate workspace source");
+        let selected = fixture.workspace("duplicate-source");
+
+        attach_workspace_source(
+            &fixture.service(),
+            &fixture.artifact_root,
+            &case_id,
+            "workspace-source-duplicate",
+            "First attachment",
+            &selected,
+            WorkspaceInputProfile::RepositoryWorkingTree,
+        )
+        .expect("first attachment");
+        let error = attach_workspace_source(
+            &fixture.service(),
+            &fixture.artifact_root,
+            &case_id,
+            "workspace-source-duplicate",
+            "Second attachment",
+            &selected,
+            WorkspaceInputProfile::RepositoryWorkingTree,
+        )
+        .expect_err("duplicate source id must fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("workspace source id already exists in this case")
+        );
+        let stored = fixture.service().show_case(&case_id).expect("stored case");
+        assert_eq!(stored.data_sources.len(), 1);
+        assert_eq!(stored.assets.len(), 1);
+    }
+
+    #[test]
+    fn workspace_attachment_rejects_demo_and_archived_cases() {
+        let fixture = CliScopeFixture::new();
+        let selected = fixture.workspace("immutable-cases");
+        let mut demo = build_demo_case();
+        fixture
+            .storage
+            .save_case(&mut demo, "demo.seeded.cli-test")
+            .expect("demo case");
+        let archived_id = fixture.create_case("Archived workspace");
+        fixture
+            .service()
+            .archive_case(&archived_id)
+            .expect("archived case");
+
+        for (case_id, source_id) in [
+            (demo.id.as_str(), "demo-workspace-source"),
+            (archived_id.as_str(), "archived-workspace-source"),
+        ] {
+            let before = fixture.service().show_case(case_id).expect("case before");
+            let error = attach_workspace_source(
+                &fixture.service(),
+                &fixture.artifact_root,
+                case_id,
+                source_id,
+                "Immutable workspace",
+                &selected,
+                WorkspaceInputProfile::RepositoryWorkingTree,
+            )
+            .expect_err("immutable case must fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("demo or archived cases cannot attach working-tree snapshots")
+            );
+            let after = fixture.service().show_case(case_id).expect("case after");
+            assert_eq!(after.data_sources.len(), before.data_sources.len());
+            assert_eq!(after.assets.len(), before.assets.len());
+        }
+    }
+
+    #[test]
+    fn parses_workspace_attachment_profiles() {
+        for profile in [
+            "repository-working-tree",
+            "iac-working-tree",
+            "container-image-oci-layout",
+            "kubernetes-manifests",
+            "kubernetes-node-snapshot",
+        ] {
+            let cli = Cli::try_parse_from([
+                "ai-security-scanner",
+                "source",
+                "attach-workspace",
+                "--case-id",
+                "case-1",
+                "--label",
+                "Selected input",
+                "--path",
+                "/selected/input",
+                "--profile",
+                profile,
+            ])
+            .expect("workspace attachment CLI");
+            assert!(matches!(
+                cli.command,
+                Command::Source {
+                    command: SourceCommand::AttachWorkspace(_)
+                }
+            ));
         }
     }
 
