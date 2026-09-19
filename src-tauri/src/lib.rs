@@ -50,11 +50,20 @@ pub mod target_candidates;
 pub mod workspace_snapshot;
 
 #[cfg(feature = "desktop")]
+use error::AppError;
+#[cfg(any(feature = "desktop", test))]
+use error::AppResult;
+#[cfg(any(feature = "desktop", test))]
+use managed_runtime::ensure_private_product_data_directory;
+#[cfg(any(feature = "desktop", test))]
+use process_lease::DataDirectoryExclusiveLease;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+
+#[cfg(feature = "desktop")]
 use artifact_store::ArtifactStore;
 #[cfg(feature = "desktop")]
-use managed_runtime::{admit_packaged_managed_runtime, ensure_private_product_data_directory};
-#[cfg(feature = "desktop")]
-use process_lease::DataDirectoryExclusiveLease;
+use managed_runtime::admit_packaged_managed_runtime;
 #[cfg(feature = "desktop")]
 use registry::EngineRegistry;
 #[cfg(feature = "desktop")]
@@ -68,6 +77,75 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 #[cfg(feature = "desktop")]
 use startup_failure::{StartupFailure, StartupResource, display_language};
+
+#[cfg(feature = "desktop")]
+const DATA_DIRECTORY_ENVIRONMENT_VARIABLE: &str = "AI_SECURITY_SCANNER_DATA_DIR";
+#[cfg(feature = "desktop")]
+const MANAGED_RUNTIME_BUNDLE_ENVIRONMENT_VARIABLE: &str =
+    "AI_SECURITY_SCANNER_MANAGED_RUNTIME_BUNDLE";
+
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
+fn select_environment_path(
+    environment_value: Option<&OsStr>,
+    platform_default: &Path,
+) -> (PathBuf, bool) {
+    match environment_value.filter(|value| !value.is_empty()) {
+        Some(path) => (PathBuf::from(path), true),
+        None => (platform_default.to_path_buf(), false),
+    }
+}
+
+#[cfg(any(feature = "desktop", test))]
+fn prepare_and_lease_desktop_data_directory(
+    data_directory: &Path,
+    was_overridden: bool,
+) -> AppResult<DataDirectoryExclusiveLease> {
+    let process_lease = {
+        let _product_data_guard: Option<_> = if was_overridden {
+            std::fs::create_dir_all(data_directory)?;
+            None
+        } else {
+            Some(ensure_private_product_data_directory(data_directory)?)
+        };
+        DataDirectoryExclusiveLease::acquire(data_directory)?
+    };
+    // The process lease now pins the exact root and its parent for the
+    // desktop lifetime, so the creation/verification guard can yield.
+    Ok(process_lease)
+}
+
+#[cfg(feature = "desktop")]
+fn data_root_startup_failure(
+    resource: StartupResource,
+    error: impl std::fmt::Display,
+    data_root: &Path,
+    was_overridden: bool,
+) -> StartupFailure {
+    if was_overridden {
+        StartupFailure::preparation(
+            resource,
+            format!(
+                "data root `{}` selected by environment variable {DATA_DIRECTORY_ENVIRONMENT_VARIABLE}: {error}",
+                data_root.display()
+            ),
+        )
+    } else {
+        StartupFailure::preparation(resource, error)
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn data_root_lease_failure(
+    error: AppError,
+    data_root: &Path,
+    was_overridden: bool,
+) -> StartupFailure {
+    if was_overridden {
+        data_root_startup_failure(StartupResource::LocalDataDirectory, error, data_root, true)
+    } else {
+        StartupFailure::lease(error)
+    }
+}
 
 /// Provider/container reconciliation may execute slow local commands. It runs
 /// only after the shell owns managed state and never propagates an error into
@@ -109,22 +187,46 @@ fn reconcile_live_startup_resources(state: &AppState) {
 
 #[cfg(feature = "desktop")]
 fn prepare_desktop_state(app: &mut tauri::App) -> Result<AppState, StartupFailure> {
-    let app_data = app
+    let platform_app_data = app
         .path()
         .app_local_data_dir()
         .map_err(|error| StartupFailure::preparation(StartupResource::LocalDataDirectory, error))?;
-    let product_data_guard = ensure_private_product_data_directory(&app_data)
-        .map_err(|error| StartupFailure::preparation(StartupResource::LocalDataDirectory, error))?;
+    let data_environment_value = std::env::var_os(DATA_DIRECTORY_ENVIRONMENT_VARIABLE);
+    let (app_data, data_dir_was_overridden) =
+        select_environment_path(data_environment_value.as_deref(), &platform_app_data);
+    if data_dir_was_overridden {
+        tracing::info!(
+            data_root = %app_data.display(),
+            environment_variable = DATA_DIRECTORY_ENVIRONMENT_VARIABLE,
+            "desktop data root was selected from the environment"
+        );
+    }
     let process_lease =
-        DataDirectoryExclusiveLease::acquire(&app_data).map_err(StartupFailure::lease)?;
-    // The process lease now pins the exact root and its parent for the
-    // desktop lifetime, so the creation/verification guard can yield.
-    drop(product_data_guard);
-    let managed_bundle = app
+        prepare_and_lease_desktop_data_directory(&app_data, data_dir_was_overridden)
+            .map_err(|error| data_root_lease_failure(error, &app_data, data_dir_was_overridden))?;
+
+    let platform_managed_bundle = app
         .path()
         .resource_dir()
         .map_err(|error| StartupFailure::preparation(StartupResource::InstalledResources, error))?
         .join("managed-runtime");
+    let bundle_environment_value = std::env::var_os(MANAGED_RUNTIME_BUNDLE_ENVIRONMENT_VARIABLE);
+    let (managed_bundle, managed_bundle_was_overridden) = select_environment_path(
+        bundle_environment_value.as_deref(),
+        &platform_managed_bundle,
+    );
+    if managed_bundle_was_overridden {
+        tracing::info!(
+            managed_runtime_bundle = %managed_bundle.display(),
+            environment_variable = MANAGED_RUNTIME_BUNDLE_ENVIRONMENT_VARIABLE,
+            "desktop managed-runtime bundle was selected from the environment"
+        );
+    }
+    let managed_bundle_source = if managed_bundle_was_overridden {
+        MANAGED_RUNTIME_BUNDLE_ENVIRONMENT_VARIABLE
+    } else {
+        "installed application resources"
+    };
     let managed_runtime_admission = admit_packaged_managed_runtime(&app_data, &managed_bundle);
     if let Some(receipt) = managed_runtime_admission.recovery_receipt() {
         tracing::warn!(
@@ -132,17 +234,27 @@ fn prepare_desktop_state(app: &mut tauri::App) -> Result<AppState, StartupFailur
             source = receipt.source,
             manifest_sha256 = receipt.manifest_sha256,
             packaged_failure_reason = receipt.packaged_failure_reason.as_str(),
+            managed_runtime_bundle = %managed_bundle.display(),
+            managed_runtime_bundle_source = managed_bundle_source,
             "packaged scan tools were recovered from the exact verified private copy; installed application resources still require repair"
         );
     }
     if let Some(reason) = managed_runtime_admission.failure_reason() {
         tracing::warn!(
             failure_reason = reason.as_str(),
+            managed_runtime_bundle = %managed_bundle.display(),
+            managed_runtime_bundle_source = managed_bundle_source,
             "packaged scan tools are unavailable"
         );
     }
-    let storage = Storage::open(app_data.join("casework.db"))
-        .map_err(|error| StartupFailure::preparation(StartupResource::CaseDatabase, error))?;
+    let storage = Storage::open(app_data.join("casework.db")).map_err(|error| {
+        data_root_startup_failure(
+            StartupResource::CaseDatabase,
+            error,
+            &app_data,
+            data_dir_was_overridden,
+        )
+    })?;
     let engines = EngineRegistry::load_builtin().unwrap_or_else(|error| {
         tracing::error!(
             error = %error,
@@ -165,8 +277,14 @@ fn prepare_desktop_state(app: &mut tauri::App) -> Result<AppState, StartupFailur
         );
         adapter::AdapterRegistry::default()
     });
-    let artifact_store = ArtifactStore::open(app_data.join("artifacts"))
-        .map_err(|error| StartupFailure::preparation(StartupResource::ArtifactStorage, error))?;
+    let artifact_store = ArtifactStore::open(app_data.join("artifacts")).map_err(|error| {
+        data_root_startup_failure(
+            StartupResource::ArtifactStorage,
+            error,
+            &app_data,
+            data_dir_was_overridden,
+        )
+    })?;
     let artifact_root = artifact_store.root().to_path_buf();
     Ok(AppState::new(
         storage,
@@ -310,6 +428,75 @@ pub fn run() {
             eprintln!("{}", failure.message(display_language()));
             std::process::exit(1);
         });
+}
+
+#[cfg(test)]
+mod desktop_environment_path_tests {
+    use super::*;
+
+    #[test]
+    fn environment_path_selects_a_present_override() {
+        let platform_default = Path::new("platform-default");
+        let (selected, was_overridden) =
+            select_environment_path(Some(OsStr::new("operator-data")), platform_default);
+
+        assert_eq!(selected, PathBuf::from("operator-data"));
+        assert!(was_overridden);
+    }
+
+    #[test]
+    fn environment_path_selects_the_platform_default_when_absent() {
+        let platform_default = Path::new("platform-default");
+        let (selected, was_overridden) = select_environment_path(None, platform_default);
+
+        assert_eq!(selected, platform_default);
+        assert!(!was_overridden);
+    }
+
+    #[test]
+    fn environment_path_treats_an_empty_value_as_unset() {
+        let platform_default = Path::new("platform-default");
+        let (selected, was_overridden) =
+            select_environment_path(Some(OsStr::new("")), platform_default);
+
+        assert_eq!(selected, platform_default);
+        assert!(!was_overridden);
+    }
+
+    #[test]
+    fn environment_path_preserves_a_relative_override() {
+        let platform_default = Path::new("platform-default");
+        let relative = Path::new("relative/operator-data");
+        let (selected, was_overridden) =
+            select_environment_path(Some(relative.as_os_str()), platform_default);
+
+        assert_eq!(selected, relative);
+        assert!(was_overridden);
+    }
+
+    #[test]
+    fn platform_default_is_unchanged_without_an_override() {
+        let platform_default = PathBuf::from("platform/owned/default");
+        let original_default = platform_default.clone();
+
+        let (selected, was_overridden) = select_environment_path(None, &platform_default);
+
+        assert_eq!(selected, original_default);
+        assert_eq!(platform_default, original_default);
+        assert!(!was_overridden);
+    }
+
+    #[test]
+    fn overridden_data_root_is_still_exclusively_leased() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let override_path = temporary.path().join("operator-data");
+
+        let lease = prepare_and_lease_desktop_data_directory(&override_path, true)
+            .expect("desktop override lease");
+
+        assert_eq!(lease.path(), override_path.join(".exclusive-process.lock"));
+        assert!(DataDirectoryExclusiveLease::acquire(&override_path).is_err());
+    }
 }
 
 #[cfg(test)]

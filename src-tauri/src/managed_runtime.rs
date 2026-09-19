@@ -12832,7 +12832,7 @@ fn open_or_create_windows_managed_directory_guard(
     {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "managed runtime path is not a real directory",
+            "private product path must be a real directory, not a reparse point or non-directory",
         ));
     }
     let inheritance =
@@ -13137,7 +13137,7 @@ fn ensure_private_directory(path: &Path) -> io::Result<()> {
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "managed runtime path is not a real directory",
+            "private product path must be a real directory, not a symbolic link or non-directory",
         ));
     }
     #[cfg(unix)]
