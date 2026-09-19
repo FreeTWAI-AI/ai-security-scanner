@@ -289,6 +289,9 @@ test("typed skipped reasons choose a specific bilingual next step without render
     [["direct_network_target_kind_mismatch"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
     [["external_scope_missing"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
     [["authorization_reference_empty"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
+    [["mcp_configuration_absent"], /no MCP configuration/u, /沒有可檢查的 MCP 設定/u],
+    [["mcp_configuration_unselected"], /choose which MCP configuration/u, /選擇要檢查的 MCP 設定/u],
+    [["mcp_configuration_discovery_incomplete"], /discovery did not finish/u, /設定探索未完成/u],
   ] as const;
   for (const [codes, english, traditionalChinese] of cases) {
     const action = skippedChecksNextStepFor(codes);

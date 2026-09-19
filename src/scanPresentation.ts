@@ -159,6 +159,18 @@ const nextStepCopy = {
     en: "Open the technical records for the skipped checks, finish the indicated setup, then start a new scan.",
     zhTW: "請展開未執行檢查的技術紀錄，完成其中指出的設定，再開始新的掃描。",
   },
+  mcpConfigurationAbsent: {
+    en: "This project has no MCP configuration to check. Continue with the other checks.",
+    zhTW: "這個專案沒有可檢查的 MCP 設定；請繼續查看其他檢查。",
+  },
+  mcpConfigurationChoice: {
+    en: "Return to scan setup and choose which MCP configuration to check.",
+    zhTW: "回到掃描設定，選擇要檢查的 MCP 設定。",
+  },
+  mcpConfigurationDiscoveryIncomplete: {
+    en: "MCP configuration discovery did not finish. Continue with the other checks.",
+    zhTW: "MCP 設定探索未完成；請繼續查看其他檢查。",
+  },
   approvedScopeMismatch: {
     en: "Open the skipped check's technical records and match this check to the approved protocol or target form.",
     zhTW: "請展開未執行檢查的技術紀錄，讓這項檢查符合已核准的通訊協定或目標形式。",
@@ -179,6 +191,18 @@ const targetSetupErrorCodes = new Set([
   "no_ownership_confirmed_targets",
   "no_compatible_authorized_targets",
   "workspace_snapshot_unavailable",
+]);
+
+const mcpConfigurationAbsentErrorCodes = new Set([
+  "mcp_configuration_absent",
+]);
+
+const mcpConfigurationChoiceErrorCodes = new Set([
+  "mcp_configuration_unselected",
+]);
+
+const mcpConfigurationDiscoveryErrorCodes = new Set([
+  "mcp_configuration_discovery_incomplete",
 ]);
 
 const approvedScopeMismatchErrorCodes = new Set([
@@ -229,7 +253,10 @@ export const skippedChecksNextStepFor = (reasonCodes: readonly string[]): Biling
   const hasToolIssue = reasonCodes.some((code) => toolSetupErrorCodes.has(code));
   const hasReleaseIssue = reasonCodes.some((code) => releaseUnavailableErrorCodes.has(code));
   const hasApprovedScopeIssue = reasonCodes.some((code) => approvedScopeMismatchErrorCodes.has(code));
-  const knownCount = Number(hasTargetIssue) + Number(hasProviderIssue) + Number(hasToolIssue) + Number(hasReleaseIssue) + Number(hasApprovedScopeIssue);
+  const hasMcpAbsent = reasonCodes.some((code) => mcpConfigurationAbsentErrorCodes.has(code));
+  const hasMcpChoice = reasonCodes.some((code) => mcpConfigurationChoiceErrorCodes.has(code));
+  const hasMcpDiscoveryIssue = reasonCodes.some((code) => mcpConfigurationDiscoveryErrorCodes.has(code));
+  const knownCount = Number(hasTargetIssue) + Number(hasProviderIssue) + Number(hasToolIssue) + Number(hasReleaseIssue) + Number(hasApprovedScopeIssue) + Number(hasMcpAbsent) + Number(hasMcpChoice) + Number(hasMcpDiscoveryIssue);
 
   if (knownCount > 1) return nextStepCopy.mixedSkippedSetup;
   if (hasTargetIssue) return nextStepCopy.targetSetup;
@@ -237,6 +264,9 @@ export const skippedChecksNextStepFor = (reasonCodes: readonly string[]): Biling
   if (hasToolIssue) return nextStepCopy.toolSetup;
   if (hasReleaseIssue) return nextStepCopy.unavailableInRelease;
   if (hasApprovedScopeIssue) return nextStepCopy.approvedScopeMismatch;
+  if (hasMcpAbsent) return nextStepCopy.mcpConfigurationAbsent;
+  if (hasMcpChoice) return nextStepCopy.mcpConfigurationChoice;
+  if (hasMcpDiscoveryIssue) return nextStepCopy.mcpConfigurationDiscoveryIncomplete;
   return nextStepCopy.skippedUnknown;
 };
 

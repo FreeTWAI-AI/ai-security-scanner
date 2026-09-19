@@ -73,7 +73,8 @@ use crate::external_scope::{
     explicit_target_requires_sensitive_network_allowance,
 };
 use crate::mcp_armor_input::{
-    MCP_ARMOR_ENGINE_ID, select_mcp_configuration, selected_mcp_configuration,
+    MCP_ARMOR_ENGINE_ID, McpConfigurationPlanStatus, mcp_configuration_plan_status,
+    select_mcp_configuration,
 };
 use crate::naabu_work_plan::{
     FrozenNaabuGrant, NAABU_ENGINE_ID, NaabuAttemptSelection, NaabuWorkPlanV1, select_naabu_attempt,
@@ -8699,6 +8700,9 @@ pub const PLANNER_NOT_EXECUTED_REASON_CODES: &[&str] = &[
     "external_scope_missing",
     "license_review",
     "manifest_unavailable",
+    "mcp_configuration_absent",
+    "mcp_configuration_discovery_incomplete",
+    "mcp_configuration_unselected",
     "no_compatible_authorized_assets",
     "no_ownership_confirmed_targets",
     "provider_target_binding_mismatch",
@@ -8710,6 +8714,17 @@ pub const PLANNER_NOT_EXECUTED_REASON_CODES: &[&str] = &[
 
 const NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION: &str =
     "No ownership-confirmed asset has all unexpired permissions required by this engine.";
+
+const NO_COMPATIBLE_ASSET_KIND_EXPLANATION: &str =
+    "This check does not apply to the selected asset kind. Check outcome: not tested.";
+
+const MCP_CONFIGURATION_ABSENT_EXPLANATION: &str =
+    "This project has no MCP configuration file. Check outcome: not tested.";
+
+const MCP_CONFIGURATION_UNSELECTED_EXPLANATION: &str = "This project has more than one MCP configuration file, and none is selected. Check outcome: not tested.";
+
+const MCP_CONFIGURATION_DISCOVERY_INCOMPLETE_EXPLANATION: &str =
+    "MCP configuration discovery did not finish. Check outcome: not tested.";
 
 /// Planner copy for a local engine whose asset never received a workspace
 /// snapshot. Distinct from [`ScanReadinessBlocker::WorkspaceSnapshotUnavailable`]'s
@@ -8769,7 +8784,7 @@ fn incompatible_authorized_assets_reason(
     if kind_compatible.is_empty() {
         return planner_not_executed_reason(
             "no_compatible_authorized_assets",
-            NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION,
+            NO_COMPATIBLE_ASSET_KIND_EXPLANATION,
         );
     }
 
@@ -8811,17 +8826,17 @@ fn incompatible_authorized_assets_reason(
                 WORKSPACE_SNAPSHOT_NEVER_ATTACHED_EXPLANATION,
             );
         }
-        if incompatibilities.iter().all(|status| {
-            matches!(
-                status,
-                LocalInputCompatibility::UnsupportedContract
-                    | LocalInputCompatibility::McpConfigurationMissing
-            )
-        }) {
+        if incompatibilities
+            .iter()
+            .all(|status| matches!(status, LocalInputCompatibility::UnsupportedContract))
+        {
             return planner_not_executed_reason(
                 "no_compatible_authorized_assets",
-                NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION,
+                NO_COMPATIBLE_ASSET_KIND_EXPLANATION,
             );
+        }
+        if let Some(reason) = mcp_configuration_not_executed_reason(&incompatibilities) {
+            return reason;
         }
         return readiness_planner_skip(ScanReadinessBlocker::WorkspaceSnapshotUnavailable);
     }
@@ -8842,6 +8857,60 @@ fn incompatible_authorized_assets_reason(
         "no_compatible_authorized_assets",
         NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION,
     )
+}
+
+fn mcp_configuration_not_executed_reason(
+    incompatibilities: &[LocalInputCompatibility],
+) -> Option<(&'static str, String)> {
+    let mcp_states = incompatibilities
+        .iter()
+        .copied()
+        .filter(|status| {
+            matches!(
+                status,
+                LocalInputCompatibility::McpConfigurationAbsent
+                    | LocalInputCompatibility::McpConfigurationUnselected
+                    | LocalInputCompatibility::McpConfigurationDiscoveryIncomplete
+            )
+        })
+        .collect::<Vec<_>>();
+    if mcp_states.is_empty()
+        || !incompatibilities.iter().all(|status| {
+            matches!(
+                status,
+                LocalInputCompatibility::UnsupportedContract
+                    | LocalInputCompatibility::McpConfigurationAbsent
+                    | LocalInputCompatibility::McpConfigurationUnselected
+                    | LocalInputCompatibility::McpConfigurationDiscoveryIncomplete
+            )
+        })
+    {
+        return None;
+    }
+    if mcp_states.iter().any(|status| {
+        matches!(
+            status,
+            LocalInputCompatibility::McpConfigurationDiscoveryIncomplete
+        )
+    }) {
+        return Some(planner_not_executed_reason(
+            "mcp_configuration_discovery_incomplete",
+            MCP_CONFIGURATION_DISCOVERY_INCOMPLETE_EXPLANATION,
+        ));
+    }
+    if mcp_states
+        .iter()
+        .any(|status| matches!(status, LocalInputCompatibility::McpConfigurationUnselected))
+    {
+        return Some(planner_not_executed_reason(
+            "mcp_configuration_unselected",
+            MCP_CONFIGURATION_UNSELECTED_EXPLANATION,
+        ));
+    }
+    Some(planner_not_executed_reason(
+        "mcp_configuration_absent",
+        MCP_CONFIGURATION_ABSENT_EXPLANATION,
+    ))
 }
 
 fn compatible_authorized_assets<'a>(
@@ -9360,7 +9429,9 @@ enum LocalInputCompatibility {
     UnsupportedContract,
     SnapshotMissing,
     SnapshotMismatch,
-    McpConfigurationMissing,
+    McpConfigurationAbsent,
+    McpConfigurationUnselected,
+    McpConfigurationDiscoveryIncomplete,
 }
 
 fn local_input_metadata_matches(
@@ -9421,10 +9492,17 @@ fn local_input_compatibility(
     if !snapshot_matches {
         return LocalInputCompatibility::SnapshotMismatch;
     }
-    if manifest.id == MCP_ARMOR_ENGINE_ID
-        && selected_mcp_configuration(asset).ok().flatten().is_none()
-    {
-        return LocalInputCompatibility::McpConfigurationMissing;
+    if manifest.id == MCP_ARMOR_ENGINE_ID {
+        return match mcp_configuration_plan_status(asset) {
+            McpConfigurationPlanStatus::Selected => LocalInputCompatibility::Compatible,
+            McpConfigurationPlanStatus::Absent => LocalInputCompatibility::McpConfigurationAbsent,
+            McpConfigurationPlanStatus::Unselected => {
+                LocalInputCompatibility::McpConfigurationUnselected
+            }
+            McpConfigurationPlanStatus::DiscoveryIncomplete => {
+                LocalInputCompatibility::McpConfigurationDiscoveryIncomplete
+            }
+        };
     }
     LocalInputCompatibility::Compatible
 }
@@ -19387,36 +19465,55 @@ mod tests {
         }
 
         fn discovered_asset(&self, case_id: &str, kind: AssetKind) -> (AssessmentCase, Id) {
-            let service = self.service();
             if kind == AssetKind::Repository {
                 let fixture_id = new_id();
-                let selected = self
-                    .directory
-                    .path()
-                    .join("selected-working-trees")
-                    .join(&fixture_id);
-                fs::create_dir_all(selected.join("src")).unwrap();
-                fs::write(
-                    selected.join("src").join("main.rs"),
-                    format!("fn main() {{ println!(\"snapshot fixture {fixture_id}\"); }}\n"),
-                )
-                .unwrap();
-                fs::create_dir_all(self.directory.path().join("artifacts")).unwrap();
-                let snapshot = crate::workspace_snapshot::create_workspace_snapshot(
-                    self.directory.path().join("artifacts"),
+                return self.discovered_repository_with_files(
                     case_id,
-                    &format!("workspace-source-{fixture_id}"),
-                    &selected,
-                    crate::workspace_snapshot::WorkspaceSnapshotLimits::default(),
-                )
-                .unwrap();
-                let asset_id = snapshot.asset.id.clone();
-                let case = service
-                    .attach_workspace_snapshot(case_id, "Repository snapshot", snapshot)
-                    .unwrap();
-                return (case, asset_id);
+                    &[(
+                        "src/main.rs",
+                        &format!("fn main() {{ println!(\"snapshot fixture {fixture_id}\"); }}\n"),
+                    )],
+                );
             }
             self.discovered_declared_asset(case_id, kind)
+        }
+
+        fn discovered_repository_with_files(
+            &self,
+            case_id: &str,
+            files: &[(&str, &str)],
+        ) -> (AssessmentCase, Id) {
+            let service = self.service();
+            let fixture_id = new_id();
+            let selected = self
+                .directory
+                .path()
+                .join("selected-working-trees")
+                .join(&fixture_id);
+            if files.is_empty() {
+                fs::create_dir_all(&selected).unwrap();
+            }
+            for (relative_path, contents) in files {
+                let path = selected.join(relative_path);
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).unwrap();
+                }
+                fs::write(&path, contents).unwrap();
+            }
+            fs::create_dir_all(self.directory.path().join("artifacts")).unwrap();
+            let snapshot = crate::workspace_snapshot::create_workspace_snapshot(
+                self.directory.path().join("artifacts"),
+                case_id,
+                &format!("workspace-source-{fixture_id}"),
+                &selected,
+                crate::workspace_snapshot::WorkspaceSnapshotLimits::default(),
+            )
+            .unwrap();
+            let asset_id = snapshot.asset.id.clone();
+            let case = service
+                .attach_workspace_snapshot(case_id, "Repository snapshot", snapshot)
+                .unwrap();
+            (case, asset_id)
         }
 
         fn discovered_repository_without_workspace_snapshot(
@@ -28997,6 +29094,46 @@ mod tests {
         plan.not_executed.into_iter().next().unwrap()
     }
 
+    fn plan_mcp_armor(service: &CaseService<'_>, case_id: &str) -> ScanPlan {
+        service
+            .plan_scan(
+                case_id,
+                ScanPlanRequest {
+                    engine_ids: vec![MCP_ARMOR_ENGINE_ID.into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap()
+    }
+
+    fn mcp_armor_skip(plan: ScanPlan) -> NotExecutedEngine {
+        assert!(plan.executable.is_empty());
+        assert_eq!(plan.not_executed.len(), 1);
+        assert_eq!(plan.not_executed[0].engine_id, MCP_ARMOR_ENGINE_ID);
+        plan.not_executed.into_iter().next().unwrap()
+    }
+
+    fn approve_repository_local_artifact_read(
+        service: &CaseService<'_>,
+        case_id: &str,
+        asset_id: Id,
+    ) {
+        service
+            .approve_scope(
+                case_id,
+                ScopeApprovalRequest {
+                    asset_id,
+                    permissions: vec![ScanPermission::LocalArtifactRead],
+                    confirmed_by: "Repository owner".into(),
+                    expires_at: None,
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .unwrap();
+    }
+
     fn plan_httpx(service: &CaseService<'_>, case_id: &str) -> ScanPlan {
         service
             .plan_scan(
@@ -29093,10 +29230,8 @@ mod tests {
 
         let skipped = gitleaks_skip(plan_gitleaks(&service, &created.id));
         assert_eq!(skipped.reason_code, "no_compatible_authorized_assets");
-        assert_eq!(
-            skipped.explanation,
-            NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION
-        );
+        assert_eq!(skipped.explanation, NO_COMPATIBLE_ASSET_KIND_EXPLANATION);
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
     }
 
     #[test]
@@ -29290,6 +29425,148 @@ mod tests {
             AUTHORIZATION_REFERENCE_EMPTY_EXPLANATION
         );
         assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+    }
+
+    #[test]
+    fn planner_skips_mcp_armor_when_discovery_finds_no_configuration_file() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Absent
+        );
+
+        let skipped = mcp_armor_skip(plan_mcp_armor(&service, &created.id));
+        assert_eq!(skipped.reason_code, "mcp_configuration_absent");
+        assert_eq!(skipped.explanation, MCP_CONFIGURATION_ABSENT_EXPLANATION);
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+    }
+
+    #[test]
+    fn planner_skips_mcp_armor_when_multiple_configurations_are_unselected() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_repository_with_files(
+            &created.id,
+            &[
+                ("mcp.json", "{\"mcpServers\":{}}\n"),
+                (".cursor/mcp.json", "{\"mcpServers\":{}}\n"),
+            ],
+        );
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Unselected
+        );
+
+        let skipped = mcp_armor_skip(plan_mcp_armor(&service, &created.id));
+        assert_eq!(skipped.reason_code, "mcp_configuration_unselected");
+        assert_eq!(
+            skipped.explanation,
+            MCP_CONFIGURATION_UNSELECTED_EXPLANATION
+        );
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+    }
+
+    #[test]
+    fn planner_skips_mcp_armor_when_configuration_discovery_did_not_finish() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let files = (0..=crate::mcp_armor_input::MAX_MCP_CONFIGURATION_CANDIDATES)
+            .map(|index| {
+                (
+                    format!("mcp-{index}.json"),
+                    "{\"mcpServers\":{}}\n".to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let file_refs = files
+            .iter()
+            .map(|(path, contents)| (path.as_str(), contents.as_str()))
+            .collect::<Vec<_>>();
+        let (_, asset_id) = fixture.discovered_repository_with_files(&created.id, &file_refs);
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::DiscoveryIncomplete
+        );
+        assert!(
+            crate::mcp_armor_input::candidates_from_asset(asset)
+                .unwrap()
+                .is_empty()
+        );
+
+        let skipped = mcp_armor_skip(plan_mcp_armor(&service, &created.id));
+        assert_eq!(
+            skipped.reason_code,
+            "mcp_configuration_discovery_incomplete"
+        );
+        assert_eq!(
+            skipped.explanation,
+            MCP_CONFIGURATION_DISCOVERY_INCOMPLETE_EXPLANATION
+        );
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+        assert!(
+            !skipped
+                .explanation
+                .to_ascii_lowercase()
+                .contains("no mcp configuration"),
+            "{}",
+            skipped.explanation
+        );
+    }
+
+    #[test]
+    fn planner_plans_mcp_armor_when_exactly_one_configuration_is_auto_selected() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_repository_with_files(
+            &created.id,
+            &[(
+                "mcp.json",
+                include_str!("../../engines/images/mcp-armor/testdata/workspace/mcp.json"),
+            )],
+        );
+        let service = fixture.service();
+        approve_repository_local_artifact_read(&service, &created.id, asset_id);
+        let stored = service.show_case(&created.id).unwrap();
+        let asset = stored
+            .assets
+            .iter()
+            .find(|asset| asset.kind == AssetKind::Repository)
+            .expect("repository asset");
+        assert_eq!(
+            crate::mcp_armor_input::mcp_configuration_plan_status(asset),
+            crate::mcp_armor_input::McpConfigurationPlanStatus::Selected
+        );
+
+        let plan = plan_mcp_armor(&service, &created.id);
+        assert_eq!(plan.executable.len(), 1);
+        assert_eq!(plan.executable[0].manifest.id, MCP_ARMOR_ENGINE_ID);
+        assert!(plan.not_executed.is_empty());
     }
 
     #[test]

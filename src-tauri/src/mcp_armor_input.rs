@@ -125,6 +125,38 @@ pub fn select_mcp_configuration(
     Ok(selected)
 }
 
+/// Why MCP Armor cannot bind a repository asset yet. Distinct from ownership
+/// and permission: those grants already authorized the snapshot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpConfigurationPlanStatus {
+    Selected,
+    /// Discovery finished and found no configuration file.
+    Absent,
+    /// Discovery finished with more than one candidate and none is selected.
+    Unselected,
+    /// Discovery did not finish, so absence was never established.
+    DiscoveryIncomplete,
+}
+
+pub fn mcp_configuration_plan_status(asset: &Asset) -> McpConfigurationPlanStatus {
+    if selected_mcp_configuration(asset).ok().flatten().is_some() {
+        return McpConfigurationPlanStatus::Selected;
+    }
+    let complete = asset
+        .metadata
+        .get(MCP_CONFIGURATION_DISCOVERY_COMPLETE_METADATA_KEY)
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !complete {
+        return McpConfigurationPlanStatus::DiscoveryIncomplete;
+    }
+    match candidates_from_asset(asset) {
+        Ok(candidates) if candidates.is_empty() => McpConfigurationPlanStatus::Absent,
+        Ok(_) => McpConfigurationPlanStatus::Unselected,
+        Err(_) => McpConfigurationPlanStatus::DiscoveryIncomplete,
+    }
+}
+
 pub fn selected_mcp_configuration(asset: &Asset) -> AppResult<Option<McpConfigurationCandidate>> {
     let paths = exact_identifier_values(asset, MCP_CONFIGURATION_PATH_NAMESPACE);
     let digests = exact_identifier_values(asset, MCP_CONFIGURATION_SHA256_NAMESPACE);
