@@ -887,6 +887,119 @@ fn trivy_combines_lockfile_and_individual_package_artifacts() {
 }
 
 #[test]
+fn trivy_companion_envelope_without_results_does_not_withhold_completion() {
+    let primary = br#"{
+      "SchemaVersion": 2,
+      "Results": [{
+        "Target": "package-lock.json",
+        "Class": "lang-pkgs",
+        "Type": "npm",
+        "Vulnerabilities": [{
+          "VulnerabilityID": "CVE-2021-23337",
+          "PkgName": "lodash",
+          "InstalledVersion": "4.17.20",
+          "Severity": "HIGH"
+        }],
+        "asset_id": "asset-1"
+      }]
+    }"#;
+    let companion = br#"{
+      "SchemaVersion": 2,
+      "CreatedAt": "2026-09-18T12:00:00.123456789Z",
+      "ArtifactName": ".",
+      "ArtifactType": "filesystem",
+      "Metadata": {
+        "ImageConfig": {
+          "architecture": "",
+          "created": "0001-01-01T00:00:00Z",
+          "os": ""
+        }
+      }
+    }"#;
+    let temp = tempfile::tempdir().expect("temporary artifact root");
+    let run_id = "run-trivy-empty-companion";
+    let engine_run_id = "engine-run-trivy-empty-companion";
+    let mut raw_artifacts = Vec::new();
+    for (id, filename, bytes) in [
+        ("artifact-trivy-lockfiles", "trivy.json", primary.as_slice()),
+        (
+            "artifact-trivy-individual-packages",
+            "trivy-individual-packages.json",
+            companion.as_slice(),
+        ),
+    ] {
+        std::fs::write(temp.path().join(filename), bytes).expect("write Trivy fixture artifact");
+        raw_artifacts.push(RawArtifact {
+            id: id.into(),
+            case_id: "case-1".into(),
+            run_id: run_id.into(),
+            engine_run_id: engine_run_id.into(),
+            relative_path: filename.into(),
+            media_type: "application/json".into(),
+            sha256: hex::encode(Sha256::digest(bytes)),
+            byte_length: bytes.len() as u64,
+            created_at: Utc
+                .with_ymd_and_hms(2026, 9, 9, 12, 0, 0)
+                .single()
+                .expect("fixed timestamp"),
+            contains_sensitive_data: false,
+        });
+    }
+
+    let registry = EngineRegistry::load_builtin().expect("valid engine catalog");
+    let manifest = registry.get("trivy").expect("Trivy manifest");
+    let assets = vec![authorized_asset("asset-1", AssetKind::Other, None, &[])];
+    let asset_ids = vec!["asset-1".into()];
+    let asset_identifier_map = AdapterAssetIdentifierMap::from_assets(&assets);
+    let input = AdapterInput {
+        case_id: "case-1",
+        scan_run_id: run_id,
+        engine_run_id,
+        manifest,
+        ai_system_applicable: false,
+        ai_generated_artifact_applicable: false,
+        asset_ids: &asset_ids,
+        asset_identifier_map: &asset_identifier_map,
+        artifact_root: temp.path(),
+        raw_artifacts: &raw_artifacts,
+    };
+    let output = builtin_adapter_registry()
+        .expect("valid built-in adapters")
+        .normalize(&input)
+        .expect("normalize both Trivy artifacts")
+        .expect("Trivy adapter");
+
+    assert!(
+        output.complete,
+        "unexpected warnings: {:?}",
+        output.warnings
+    );
+    assert_eq!(output.findings.len(), 1);
+    let source_rules = output
+        .findings
+        .iter()
+        .flat_map(|finding| finding.evidence.iter())
+        .filter_map(|evidence| evidence.source_rule.as_deref())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(source_rules, BTreeSet::from(["CVE-2021-23337"]));
+    let artifact_ids = output
+        .findings
+        .iter()
+        .flat_map(|finding| finding.evidence.iter())
+        .map(|evidence| evidence.artifact_id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(artifact_ids, BTreeSet::from(["artifact-trivy-lockfiles"]));
+    assert!(
+        output
+            .warnings
+            .iter()
+            .all(|warning| !warning.contains("pinned JSON reporter")),
+        "empty companion was treated as a broken reporter: {:?}",
+        output.warnings
+    );
+}
+
+#[test]
 fn finding_written_before_confidence_basis_codes_still_loads_without_one() {
     let finding = normalize_fixture("gitleaks")
         .findings
@@ -3743,7 +3856,7 @@ fn missing_primary_result_shapes_are_incomplete_but_known_empty_shapes_are_compl
         ),
         (
             "trivy",
-            br#"{}"#.as_slice(),
+            br#"[]"#.as_slice(),
             "trivy.json",
             "application/json",
         ),
@@ -3782,6 +3895,12 @@ fn missing_primary_result_shapes_are_incomplete_but_known_empty_shapes_are_compl
             "gitleaks",
             br#"[]"#.as_slice(),
             "gitleaks.json",
+            "application/json",
+        ),
+        (
+            "trivy",
+            br#"{}"#.as_slice(),
+            "trivy.json",
             "application/json",
         ),
         (
@@ -4032,6 +4151,27 @@ fn trivy_preserves_valid_items_but_withholds_completion_for_malformed_result_sha
     ] {
         assert!(!warnings.contains(sentinel));
     }
+}
+
+#[test]
+fn trivy_results_present_but_not_an_array_withholds_completion() {
+    let output = normalize_bytes(
+        "trivy",
+        br#"{"SchemaVersion":2,"Results":{"Target":"not-an-array"}}"#,
+        "trivy-results-not-array.json",
+        "application/json",
+        "run-trivy-results-not-array",
+    );
+
+    assert!(!output.complete);
+    assert!(output.findings.is_empty());
+    assert!(
+        output.warnings.iter().any(|warning| warning.contains(
+            "Trivy output lacked its Results array; the raw artifact was retained, and the scan should be retried with the pinned JSON reporter"
+        )),
+        "missing Results-shape warning: {:?}",
+        output.warnings
+    );
 }
 
 #[test]

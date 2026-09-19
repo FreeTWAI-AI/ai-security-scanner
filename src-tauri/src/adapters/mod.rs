@@ -6039,11 +6039,19 @@ fn extract_trivy(parsed: &ParsedArtifact, warnings: &mut Vec<String>) -> Vec<Sou
         push_warning(warnings, "Trivy expected a JSON document");
         return Vec::new();
     };
-    let Some(results) = root
-        .get("Results")
-        .or_else(|| root.get("results"))
-        .and_then(Value::as_array)
-    else {
+    // Absent Results is an empty Trivy document. Warn only when the root is
+    // not an object or Results/results is present but not an array.
+    if !root.is_object() {
+        push_warning(
+            warnings,
+            "Trivy output lacked its Results array; the raw artifact was retained, and the scan should be retried with the pinned JSON reporter",
+        );
+        return Vec::new();
+    }
+    let Some(results_value) = root.get("Results").or_else(|| root.get("results")) else {
+        return Vec::new();
+    };
+    let Some(results) = results_value.as_array() else {
         push_warning(
             warnings,
             "Trivy output lacked its Results array; the raw artifact was retained, and the scan should be retried with the pinned JSON reporter",
