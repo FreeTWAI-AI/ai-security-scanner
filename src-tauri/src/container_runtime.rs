@@ -2929,8 +2929,19 @@ impl ContainerRuntime for ProcessContainerRuntime {
     }
 
     fn pull(&self, image: &PinnedImage) -> AppResult<()> {
+        let reference = image.reference();
+        // Local load / pin path: if the exact digest is already in the local
+        // store, do not call the registry. Unpublished GHCR pins otherwise fail
+        // `docker pull` even when `docker image inspect` succeeds.
+        let inspect = self.direct_output(
+            DirectRuntimeOperation::PinnedImagePull,
+            ["image", "inspect", reference.as_str()],
+        )?;
+        if inspect.status.success() {
+            return Ok(());
+        }
         let operation = DirectRuntimeOperation::PinnedImagePull;
-        let output = self.direct_output(operation, ["pull", image.reference().as_str()])?;
+        let output = self.direct_output(operation, ["pull", reference.as_str()])?;
         if !output.status.success() {
             return Err(process_failure(operation.label(), &output));
         }
