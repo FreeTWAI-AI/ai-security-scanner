@@ -1,1 +1,4 @@
+# Synthetic secrets that prove the managed Gitleaks launcher still reports findings; every value is synthetic.
 api_key = "z9K4mP7qR2sT8vW3xY6a" # gitleaks:allow
+aws_access_key_id = "AKIA3NMKQZ7YV2WD6XTF"
+aws_secret_access_key = "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"
