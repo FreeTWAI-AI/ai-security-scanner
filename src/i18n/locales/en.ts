@@ -116,7 +116,7 @@ export const en = {
   "update.availableHelp": "Installation restarts ai-security-scanner.",
   "update.error": "Update check failed · Try again",
   "update.errorHelp": "Select this button to retry the signed update check.",
-  "update.unreachable": "Could not reach the update service · Try again",
+  "update.unreachable": "Update service unavailable · Retry",
   "update.unreachableHelp": "The app is offline or the update service is unavailable. Select this button to try again.",
   "update.checking": "Checking for updates…",
   "update.version": "Version {version}",

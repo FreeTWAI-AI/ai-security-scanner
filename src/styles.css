@@ -489,12 +489,14 @@ a {
 
 .topbar__right {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 9px;
 }
 
 .update-control {
   display: inline-flex;
+  max-width: min(40vw, 22rem);
   min-height: 32px;
   align-items: center;
   gap: 6px;
@@ -506,6 +508,13 @@ a {
   font: inherit;
   font-size: 0.78rem;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.update-control__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

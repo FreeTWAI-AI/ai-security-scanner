@@ -31,7 +31,7 @@ export function AppUpdateControl({ state, onCheck, onInstall }: AppUpdateControl
     return (
       <span className="update-control update-control--busy" role="status">
         <span className="loading-spinner" aria-hidden="true" />
-        {progressLabel(state, t, formatNumber)}
+        <span className="update-control__label">{progressLabel(state, t, formatNumber)}</span>
       </span>
     );
   }
@@ -46,7 +46,9 @@ export function AppUpdateControl({ state, onCheck, onInstall }: AppUpdateControl
         onClick={() => onInstall(availableVersion)}
       >
         <Icon name="download" size={15} />
-        {t("update.available", { version: availableVersion })}
+        <span className="update-control__label">
+          {t("update.available", { version: availableVersion })}
+        </span>
       </button>
     );
   }
@@ -60,7 +62,7 @@ export function AppUpdateControl({ state, onCheck, onInstall }: AppUpdateControl
         onClick={onCheck}
       >
         <Icon name="refresh" size={15} />
-        {t("update.unreachable")}
+        <span className="update-control__label">{t("update.unreachable")}</span>
       </button>
     );
   }
@@ -74,7 +76,7 @@ export function AppUpdateControl({ state, onCheck, onInstall }: AppUpdateControl
         onClick={onCheck}
       >
         <Icon name="warning" size={15} />
-        {t("update.error")}
+        <span className="update-control__label">{t("update.error")}</span>
       </button>
     );
   }
@@ -90,9 +92,11 @@ export function AppUpdateControl({ state, onCheck, onInstall }: AppUpdateControl
         : t("update.checkHelp")}
     >
       <Icon name={state.phase === "current" ? "check" : "refresh"} size={15} />
-      {state.phase === "checking"
-        ? t("update.checking")
-        : t("update.version", { version: state.currentVersion ?? t("common.unknownVersion") })}
+      <span className="update-control__label">
+        {state.phase === "checking"
+          ? t("update.checking")
+          : t("update.version", { version: state.currentVersion ?? t("common.unknownVersion") })}
+      </span>
     </button>
   );
 }

@@ -74,3 +74,20 @@ test("finding status labels wrap instead of widening the 320px layout", async ()
     /\.finding-row__top\s+\.status-pill\s*\{[^}]*max-width:\s*100%\s*;[^}]*white-space:\s*normal\s*;/su,
   );
 });
+
+test("the top-bar update control cannot displace the page context", async () => {
+  const styles = await readFile(stylesUrl, "utf8");
+  assert.match(styles, /\.topbar__right\s*\{[^}]*min-width:\s*0\s*;/su);
+  assert.match(
+    styles,
+    /\.update-control\s*\{[^}]*max-width:\s*min\(40vw,\s*22rem\)\s*;/su,
+  );
+});
+
+test("top-bar update labels use single-line ellipsis truncation", async () => {
+  const styles = await readFile(stylesUrl, "utf8");
+  assert.match(
+    styles,
+    /\.update-control__label\s*\{[^}]*min-width:\s*0\s*;[^}]*overflow:\s*hidden\s*;[^}]*text-overflow:\s*ellipsis\s*;[^}]*white-space:\s*nowrap\s*;/su,
+  );
+});
