@@ -91,7 +91,9 @@ fn remedy(family: FindingFamily) -> &'static str {
         FindingFamily::Microsoft365 => "調整這項控制項所檢查的 Microsoft 365 租用戶設定",
         // Used by Nuclei and Greenbone vulnerability findings. Reachability
         // inventory from Naabu/httpx takes the exposure-observation path and
-        // never reads this clause.
+        // never reads this clause. A rated finding whose only backing check
+        // did not complete takes the confirm-first action and also never
+        // reads this clause.
         FindingFamily::NetworkExposure => "調整這項檢查所指出的服務或設定",
         FindingFamily::SourceCode => "修改程式碼以移除回報的不安全寫法",
         FindingFamily::Secret => {
@@ -645,6 +647,16 @@ pub const EXPOSURE_OBSERVATION_IMPACT: &str =
 pub const EXPOSURE_OBSERVATION_NEXT_STEP: &str = "Confirm that the service is expected. To look for weaknesses, run an applicable security check against it.";
 pub const EXPOSURE_OBSERVATION_VERIFICATION: &str = "Repeat the same bounded discovery if you need to confirm whether the service is still reachable.";
 pub const EXPOSURE_OBSERVATION_OWNER: &str = "System or service owner";
+
+/// Next action when every attached check failed to produce observations.
+///
+/// The finding still appears with its rating, evidence, and stored verification
+/// step. This sentence is the recommended action only: finish the incomplete
+/// check and confirm the observation before treating the stored verification
+/// step — which assumes a change — as something to do.
+pub const INCOMPLETE_CHECK_CONFIRM_ACTION: &str = "Finish the check that did not complete, then re-verify this observation, before changing anything.";
+pub const INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT: &str =
+    "先完成未完成的檢查，再確認這項觀察，之後才變更任何內容。";
 
 /// "Why this priority", in the reader's language.
 ///
@@ -2629,6 +2641,36 @@ pub fn action_zh_hant(
     format!("{}。", remedy(family))
 }
 
+/// Report-layer action: the family's remedy, unless every attached check
+/// failed to produce observations, in which case the reader is told to
+/// finish that check before changing anything.
+pub fn finding_next_action_english(
+    english: &str,
+    family: Option<FindingFamily>,
+    aws_iam_policy: Option<&AwsIamPolicyFindingDetails>,
+    unconfirmed_by_coverage: bool,
+) -> String {
+    if unconfirmed_by_coverage {
+        INCOMPLETE_CHECK_CONFIRM_ACTION.to_owned()
+    } else {
+        action_english(english, family, aws_iam_policy)
+    }
+}
+
+pub fn finding_next_action_zh_hant(
+    english: &str,
+    expert_type: &str,
+    family: Option<FindingFamily>,
+    aws_iam_policy: Option<&AwsIamPolicyFindingDetails>,
+    unconfirmed_by_coverage: bool,
+) -> String {
+    if unconfirmed_by_coverage {
+        INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT.to_owned()
+    } else {
+        action_zh_hant(english, expert_type, family, aws_iam_policy)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3095,6 +3137,43 @@ mod tests {
                 "Vulnerability manager",
                 Some(FindingFamily::NetworkExposure),
                 None,
+            ),
+            "調整這項檢查所指出的服務或設定。"
+        );
+    }
+
+    #[test]
+    fn unconfirmed_coverage_overrides_the_family_remedy_in_both_locales() {
+        assert_eq!(
+            finding_next_action_english("unused", Some(FindingFamily::NetworkExposure), None, true,),
+            INCOMPLETE_CHECK_CONFIRM_ACTION
+        );
+        assert_eq!(
+            finding_next_action_zh_hant(
+                "unused",
+                "Vulnerability manager",
+                Some(FindingFamily::NetworkExposure),
+                None,
+                true,
+            ),
+            INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT
+        );
+        assert_eq!(
+            finding_next_action_english(
+                "unused",
+                Some(FindingFamily::NetworkExposure),
+                None,
+                false,
+            ),
+            "Correct the service or configuration named by this check."
+        );
+        assert_eq!(
+            finding_next_action_zh_hant(
+                "unused",
+                "Vulnerability manager",
+                Some(FindingFamily::NetworkExposure),
+                None,
+                false,
             ),
             "調整這項檢查所指出的服務或設定。"
         );

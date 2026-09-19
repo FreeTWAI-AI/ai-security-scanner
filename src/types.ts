@@ -927,6 +927,7 @@ export type BeginnerCoverageGapKind =
   | "manual_review";
 export type BeginnerNextActionCode =
   | "review_finding"
+  | "confirm_finding_after_incomplete_check"
   | "retry_check"
   | "review_scope_and_retry"
   | "choose_compatible_check"

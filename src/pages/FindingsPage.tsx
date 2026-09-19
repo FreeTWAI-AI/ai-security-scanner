@@ -22,6 +22,9 @@ import {
   beginnerStepAction,
   engineNameFrom,
   findingActionSentence,
+  findingUnconfirmedByCoverage,
+  INCOMPLETE_CHECK_CONFIRM_ACTION,
+  INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
   findingConfidencePresentation,
   findingPriorityReason,
   findingUnattributedGap,
@@ -683,6 +686,10 @@ const copy = {
   testedStatusNotTested: { en: "Not tested", zhTW: "未測試" },
   testedStatusInProgress: { en: "In progress", zhTW: "進行中" },
   actionReviewFinding: { en: "Review the problem and its evidence.", zhTW: "檢視這個問題與相關證據。" },
+  actionConfirmAfterIncompleteCheck: {
+    en: INCOMPLETE_CHECK_CONFIRM_ACTION,
+    zhTW: INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
+  },
   actionRetry: { en: "Retry this check.", zhTW: "重新執行這項檢查。" },
   actionScope: { en: "Review the requested scope, then retry.", zhTW: "確認要求的範圍後再重試。" },
   actionCompatible: { en: "Choose an available check for this target.", zhTW: "為這個目標選擇可用的檢查。" },
@@ -758,6 +765,7 @@ const testedStatusCopy = (status: BeginnerCoverageStatus) => {
 const nextActionCopy = (code: BeginnerNextActionCode) => {
   switch (code) {
     case "review_finding": return copy.actionReviewFinding;
+    case "confirm_finding_after_incomplete_check": return copy.actionConfirmAfterIncompleteCheck;
     case "retry_check": return copy.actionRetry;
     case "review_scope_and_retry": return copy.actionScope;
     case "choose_compatible_check": return copy.actionCompatible;
@@ -858,6 +866,7 @@ const assetNextActionDestination = {
   add_asset_identifier: "coverage",
   // The finding is on the surface the user is already reading.
   review_finding: undefined,
+  confirm_finding_after_incomplete_check: undefined,
   // Deliberately no action.
   preserve_visible_limitation: undefined,
   no_action_unless_scope_changes: undefined,
@@ -1319,7 +1328,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
       )
     : text(noRecordedGapDetail);
   const nextStepActionText = (step: (typeof orderedNextSteps)[number]): string =>
-    beginnerStepAction(locale, step, report.findings);
+    beginnerStepAction(locale, step, report.findings, report.actual.checks);
   const nextStepSummary = orderedNextSteps[0]
     ? appendRemainingCount(
         nextStepActionText(orderedNextSteps[0]),
@@ -1821,6 +1830,13 @@ export function FindingsPage({
     () => resultRecords.filter(isSecurityFinding),
     [resultRecords],
   );
+  const actionUnconfirmedByCoverage = (finding: Finding): boolean => {
+    if (!report || isExposureObservation(finding)) return false;
+    return findingUnconfirmedByCoverage(
+      finding.evidence.map((item) => ({ engineRunId: item.engineRunId })),
+      report.actual.checks,
+    );
+  };
   const hasTypedInventory = Boolean(report?.inventory?.total);
   const observations = useMemo(
     () => hasTypedInventory ? [] : resultRecords.filter(isExposureObservation),
@@ -2485,6 +2501,7 @@ export function FindingsPage({
                       englishFallback: finding.recommendation,
                       family: finding.family,
                       awsIamPolicy: finding.awsIamPolicy,
+                      unconfirmedByCoverage: actionUnconfirmedByCoverage(finding),
                     })}
                   </span>
                   {scannerRemediations.length > 0
@@ -3037,6 +3054,7 @@ export function FindingsPage({
                   englishFallback: selected.recommendation,
                   family: selected.family,
                   awsIamPolicy: selected.awsIamPolicy,
+                  unconfirmedByCoverage: actionUnconfirmedByCoverage(selected),
                 })}</p>
                 {selectedScannerRemediations.length > 0
                   ? selectedScannerRemediations.map((remediation) => (

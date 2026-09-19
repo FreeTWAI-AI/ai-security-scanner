@@ -3,7 +3,7 @@ use ai_security_scanner_lib::adapters::{BUILTIN_ENGINE_IDS, builtin_adapter_regi
 use ai_security_scanner_lib::artifact_store::ArtifactStore;
 use ai_security_scanner_lib::beginner_report::{
     BeginnerInventoryItemKind, BeginnerMasterReport, CoverageDimensionStatus, CoverageGapKind,
-    build_beginner_master_report,
+    NextActionCode, build_beginner_master_report,
 };
 use ai_security_scanner_lib::case_service::{
     CaseExportFormat, CaseService, DurableExecutionReport, EngineAssetRoute,
@@ -1704,8 +1704,10 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             // instructions when the reader is sent to a different specialist, and a
             // Cloudsplaining step is composed from its typed policy record rather than
             // from that string at all. Merging on the stored text alone would collapse
-            // both of these into one wrong sentence.
-            let same_text_different_expert = report
+            // both of these into one wrong sentence. Greenbone on this mixed run did
+            // not produce observations, so its Vulnerability manager step is
+            // confirm-first rather than the family remedy; Nuclei did, and keeps it.
+            let correct_service = report
                 .next_steps
                 .iter()
                 .filter(|step| {
@@ -1714,12 +1716,19 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 .map(|step| step.recommended_expert_type.clone())
                 .collect::<Vec<_>>();
             assert_eq!(
-                same_text_different_expert,
-                [
-                    Some("Vulnerability manager".to_string()),
-                    Some("Application security engineer".to_string()),
-                ],
-                "one stored sentence, two experts, two steps"
+                correct_service,
+                [Some("Application security engineer".to_string())],
+                "a confirmed network-exposure finding keeps the family remedy"
+            );
+            assert!(
+                report.next_steps.iter().any(|step| {
+                    step.code == NextActionCode::ConfirmFindingAfterIncompleteCheck
+                        && step.recommended_expert_type.as_deref()
+                            == Some("Vulnerability manager")
+                        && step.action
+                            == ai_security_scanner_lib::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION
+                }),
+                "an incomplete Greenbone check must not tell the reader to correct a service"
             );
             let iam_policies = [
                 "IAMFullAccess",

@@ -1,5 +1,7 @@
 import type {
   AwsIamPolicyFindingDetails,
+  BeginnerCoverageStatus,
+  BeginnerNextActionCode,
   ConfidenceBasisCode,
   ContextFactor,
   FindingFamily,
@@ -77,7 +79,9 @@ const REMEDY: Record<FindingFamily, string> = {
   microsoft365: "調整這項控制項所檢查的 Microsoft 365 租用戶設定",
   // Used by Nuclei and Greenbone vulnerability findings. Reachability
   // inventory from Naabu/httpx takes the exposure-observation path and
-  // never reads this clause.
+  // never reads this clause. A rated finding whose only backing check
+  // did not complete takes the confirm-first action and also never
+  // reads this clause.
   network_exposure: "調整這項檢查所指出的服務或設定",
   source_code: "修改程式碼以移除回報的不安全寫法",
   secret:
@@ -2224,6 +2228,34 @@ export const localizedDataQualityWarning = (
   return locale === "en" ? normalized : (translateDataQualityWarning(normalized) ?? normalized);
 };
 
+/** Next action when every attached check failed to produce observations. */
+export const INCOMPLETE_CHECK_CONFIRM_ACTION =
+  "Finish the check that did not complete, then re-verify this observation, before changing anything.";
+export const INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT =
+  "先完成未完成的檢查，再確認這項觀察，之後才變更任何內容。";
+
+export const coverageProducedObservations = (
+  status: BeginnerCoverageStatus,
+): boolean => status === "tested_complete" || status === "tested_partial";
+
+/**
+ * True when every evidence reference points at a check this report does not
+ * classify as having produced observations. Unknowns fail closed: missing
+ * engine-run ids, ids absent from `checks`, and findings with no evidence at
+ * all are unconfirmed.
+ */
+export const findingUnconfirmedByCoverage = (
+  evidenceReferences: readonly { engineRunId?: string }[],
+  checks: readonly { taskId: string; status: BeginnerCoverageStatus }[],
+): boolean => {
+  const statusByTaskId = new Map(checks.map((check) => [check.taskId, check.status]));
+  return evidenceReferences.every((reference) => {
+    if (!reference.engineRunId) return true;
+    const status = statusByTaskId.get(reference.engineRunId);
+    return status === undefined || !coverageProducedObservations(status);
+  });
+};
+
 /** The direct recommended action for the finding family. */
 export const findingActionSentence = (
   locale: "en" | "zh-TW",
@@ -2231,8 +2263,14 @@ export const findingActionSentence = (
     englishFallback: string;
     family?: FindingFamily;
     awsIamPolicy?: AwsIamPolicyFindingDetails;
+    unconfirmedByCoverage?: boolean;
   },
 ): string => {
+  if (options.unconfirmedByCoverage) {
+    return locale === "zh-TW"
+      ? INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT
+      : INCOMPLETE_CHECK_CONFIRM_ACTION;
+  }
   if (options.awsIamPolicy) {
     return locale === "zh-TW"
       ? awsIamPolicyActionZhTW(options.awsIamPolicy)
@@ -2266,6 +2304,7 @@ export const beginnerStepAction = (
   locale: "en" | "zh-TW",
   step: {
     action: string;
+    code?: BeginnerNextActionCode;
     family?: FindingFamily;
     findingId?: string;
     unattributed?: UnattributedResults;
@@ -2273,12 +2312,15 @@ export const beginnerStepAction = (
   },
   findings: readonly {
     findingId: string;
+    severityBasisCode?: SeverityBasisCode;
     evidenceReferences: readonly {
       detailsFrozen?: boolean;
       engineId: string;
+      engineRunId?: string;
       scannerDetails?: { awsIamPolicy?: AwsIamPolicyFindingDetails };
     }[];
   }[],
+  checks?: readonly { taskId: string; status: BeginnerCoverageStatus }[],
 ): string => {
   const derivedFrom = step.findingId
     ? findings.find((finding) => finding.findingId === step.findingId)
@@ -2291,6 +2333,13 @@ export const beginnerStepAction = (
       nextAction: step.action,
     }).nextAction;
   }
+  const exposureObservation = derivedFrom?.severityBasisCode === "open_port"
+    || derivedFrom?.severityBasisCode === "reachable_http_service";
+  const unconfirmedByCoverage = derivedFrom !== undefined
+    && !exposureObservation
+    && (checks
+      ? findingUnconfirmedByCoverage(derivedFrom.evidenceReferences, checks)
+      : step.code === "confirm_finding_after_incomplete_check");
   const awsIamPolicy = derivedFrom
     ?.evidenceReferences
     .filter((reference) =>
@@ -2303,6 +2352,7 @@ export const beginnerStepAction = (
       englishFallback: step.action,
       family: step.family,
       awsIamPolicy,
+      unconfirmedByCoverage,
     });
   return derivedFrom ? composed : coverageGapProse(locale, composed);
 };

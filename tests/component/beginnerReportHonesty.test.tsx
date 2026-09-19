@@ -3,6 +3,10 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { FindingsPage } from "../../src/pages/FindingsPage";
 import { I18nProvider, localeStorageKey } from "../../src/i18n";
+import {
+  INCOMPLETE_CHECK_CONFIRM_ACTION,
+  INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
+} from "../../src/findingNarrative";
 import type {
   BeginnerCheckResultKindWire,
   BeginnerCoverageStatus,
@@ -137,6 +141,34 @@ const greenboneDeadHostReport = (): BeginnerMasterReport => {
     coverageCounts: counts({ testedComplete: 1, failed: 1 }),
   });
 };
+
+const completedCoverage = (
+  taskId = "task-1",
+  checkId = "nuclei",
+): BeginnerMasterReport["actual"] => ({
+  checks: [{
+    taskId,
+    checkId,
+    targetAssetIds: ["asset-1"],
+    status: "tested_complete",
+    testedDimensions: [],
+  }],
+  networkScopes: [],
+  unavailableDimensions: [],
+});
+
+const evidenceOnTask = (
+  taskId: string,
+  overrides: Partial<BeginnerReportFinding["evidenceReferences"][number]> = {},
+): BeginnerReportFinding["evidenceReferences"][number] => ({
+  evidenceId: "evidence-1",
+  engineId: "nuclei",
+  detailsFrozen: true,
+  engineRunId: taskId,
+  artifactSha256: "a".repeat(64),
+  observedAt: "2026-09-04T12:00:00Z",
+  ...overrides,
+});
 
 const frozenFinding = (
   overrides: Partial<BeginnerReportFinding> = {},
@@ -1279,6 +1311,7 @@ const assetNextActionControlCases = [
   ["review_manual_control", "coverage"],
   ["add_asset_identifier", "coverage"],
   ["review_finding", undefined],
+  ["confirm_finding_after_incomplete_check", undefined],
   ["preserve_visible_limitation", undefined],
   ["no_action_unless_scope_changes", undefined],
 ] as const satisfies ReadonlyArray<
@@ -2119,17 +2152,15 @@ test("priority comes before summary metrics", () => {
 
 test("priority cards show target, location, confidence, next action, and verification before opening details", () => {
   const combinedReport = report("partial", {
+    actual: completedCoverage("task-1", "trivy"),
     findings: [frozenFinding({
       targetAssetIds: ["asset-1", "asset-2"],
       nextStep: "Ask the application owner to update the affected dependency.",
       verificationGuidance: "After the approved update, rerun the same dependency check.",
-      evidenceReferences: [{
-        evidenceId: "evidence-1",
+      evidenceReferences: [evidenceOnTask("task-1", {
         engineId: "trivy",
-        artifactSha256: "a".repeat(64),
-        observedAt: "2026-09-04T12:00:00Z",
         location: "package-lock.json · lodash@4.17.20",
-      }],
+      })],
     })],
   });
   combinedReport.requested.targets.push({
@@ -2521,16 +2552,13 @@ test("an older report falls back only through the same retained evidence ID", ()
 test("target-controlled raw evidence text is never relabelled as remediation guidance", () => {
   const rawSentinel = "RAW_TARGET_SENTINEL_DO_NOT_FOLLOW";
   const { container } = renderReport(report("partial", {
+    actual: completedCoverage(),
     findings: [frozenFinding({
       nextStep: "Use the product-owned safe next step.",
-      evidenceReferences: [{
+      evidenceReferences: [evidenceOnTask("task-1", {
         evidenceId: "evidence-raw",
-        engineId: "nuclei",
-        detailsFrozen: true,
         summary: rawSentinel,
-        artifactSha256: "a".repeat(64),
-        observedAt: "2026-09-04T12:00:00Z",
-      }],
+      })],
     })],
   }));
 
@@ -2545,18 +2573,14 @@ test("target-controlled raw evidence text is never relabelled as remediation gui
 
 test("a Nuclei-shaped finding keeps scanner remediation on the first layer and admits missing verification", () => {
   const { container } = renderReport(report("partial", {
+    actual: completedCoverage(),
     findings: [frozenFinding({
       family: "network_exposure",
       nextStep: "Document why this service must remain reachable, or remove or restrict the exposure.",
-      evidenceReferences: [{
-        evidenceId: "evidence-1",
-        engineId: "nuclei",
-        detailsFrozen: true,
+      evidenceReferences: [evidenceOnTask("task-1", {
         scannerDetails: { remediation: "Restrict access to the phpMyAdmin panel." },
         summary: "Nuclei reported the panel.",
-        artifactSha256: "a".repeat(64),
-        observedAt: "2026-09-04T12:00:00Z",
-      }],
+      })],
     })],
   }));
 
@@ -2570,6 +2594,90 @@ test("a Nuclei-shaped finding keeps scanner remediation on the first layer and a
   const advice = container.querySelector<HTMLElement>(".detail-section--advice");
   expect(advice!.textContent).toContain("Restrict access to the phpMyAdmin panel.");
   expect(container.textContent).toContain("No verification step was retained for this result.");
+});
+
+test("a finding backed only by a timed-out check is told to confirm, not to correct the service", () => {
+  const finding = frozenFinding({
+    family: "network_exposure",
+    title: "The synthetic public site's HSTS status remains unconfirmed",
+    nextStep: "Correct the service or configuration named by this check.",
+    evidenceReferences: [evidenceOnTask("httpx-task", {
+      engineId: "httpx",
+      summary: "Synthetic timeout record proving the check was incomplete, not that HSTS was absent.",
+    })],
+  });
+  const { container } = renderReport(report("partial", {
+    actual: {
+      checks: [{
+        taskId: "httpx-task",
+        checkId: "httpx",
+        targetAssetIds: ["asset-1"],
+        status: "timed_out",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    findings: [finding],
+    nextSteps: [{
+      priority: 0,
+      code: "confirm_finding_after_incomplete_check",
+      action: INCOMPLETE_CHECK_CONFIRM_ACTION,
+      reason: `${finding.title} — Informational severity, Medium confidence`,
+      findingId: finding.findingId,
+      family: "network_exposure",
+    }],
+  }));
+
+  const card = container.querySelector<HTMLElement>(".priority-card");
+  expect(card!.textContent).toContain(INCOMPLETE_CHECK_CONFIRM_ACTION);
+  expect(card!.textContent).not.toContain("Correct the service or configuration named by this check.");
+
+  openFirstFinding(container);
+  const advice = container.querySelector<HTMLElement>(".detail-section--advice");
+  expect(advice!.textContent).toContain(INCOMPLETE_CHECK_CONFIRM_ACTION);
+  expect(advice!.textContent).not.toContain("Correct the service or configuration named by this check.");
+
+  const steps = Array.from(container.querySelectorAll("ol.detail-list li"));
+  expect(steps.some((item) => item.textContent?.includes(INCOMPLETE_CHECK_CONFIRM_ACTION))).toBe(true);
+  expect(steps.some((item) =>
+    item.textContent?.includes("Correct the service or configuration named by this check."))).toBe(false);
+});
+
+test("a finding backed only by a timed-out check is told to confirm in Traditional Chinese", () => {
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const finding = frozenFinding({
+    family: "network_exposure",
+    title: "The synthetic public site's HSTS status remains unconfirmed",
+    nextStep: "Correct the service or configuration named by this check.",
+    evidenceReferences: [evidenceOnTask("httpx-task", { engineId: "httpx" })],
+  });
+  const { container } = renderReport(report("partial", {
+    actual: {
+      checks: [{
+        taskId: "httpx-task",
+        checkId: "httpx",
+        targetAssetIds: ["asset-1"],
+        status: "timed_out",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    findings: [finding],
+    nextSteps: [{
+      priority: 0,
+      code: "confirm_finding_after_incomplete_check",
+      action: INCOMPLETE_CHECK_CONFIRM_ACTION,
+      reason: finding.title,
+      findingId: finding.findingId,
+      family: "network_exposure",
+    }],
+  }));
+
+  expect(container.textContent).toContain(INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT);
+  expect(container.textContent).not.toContain("調整這項檢查所指出的服務或設定。");
+  expect(container.textContent).not.toContain("Correct the service or configuration named by this check.");
 });
 
 test("a finding without scanner remediation says the scanner did not provide a specific fix", () => {
@@ -3006,6 +3114,10 @@ test("one instruction several findings share is listed once and says how many it
       title: `Over-broad permission ${index + 1} in policy AdminPolicy`,
       nextStep: "Narrow policy AdminPolicy.",
       recommendedExpertType: "Cloud identity specialist",
+      evidenceReferences: [evidenceOnTask("cloudsplaining-task", {
+        evidenceId: `evidence-${findingId}`,
+        engineId: "cloudsplaining",
+      })],
     }));
   const { container } = renderReport(report("complete", {
     actual: {

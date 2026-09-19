@@ -19,7 +19,7 @@ use crate::beginner_report::{
     BEGINNER_MASTER_REPORT_SCHEMA_VERSION, BeginnerInventoryItem, BeginnerInventoryItemKind,
     BeginnerMasterReport, BeginnerReportSummary, CheckResultKind, CoverageDimensionStatus,
     CoverageGap, CoverageGapKind, FindingSnapshotSource, NextActionCode, ReportScanStage,
-    RequestedLimitSource,
+    RequestedLimitSource, finding_unconfirmed_by_coverage,
 };
 use crate::bootstrap::executor::list_bootstrap_cleanup_obligations;
 use crate::connectors::{
@@ -14027,6 +14027,12 @@ fn html_gap_next_action(gap: &CoverageGap, catalog: HtmlReportCatalog) -> String
                 "檢視這個問題與相關證據。",
             )
             .to_owned(),
+        NextActionCode::ConfirmFindingAfterIncompleteCheck => catalog
+            .text(
+                crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION,
+                crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
+            )
+            .to_owned(),
         NextActionCode::RetryCheck => catalog
             .text(
                 "Retry this check.",
@@ -15139,23 +15145,29 @@ fn beginner_step_action(
             .iter()
             .find(|finding| finding.finding_id == finding_id)
     });
+    let unconfirmed = derived_from
+        .is_some_and(|finding| finding_unconfirmed_by_coverage(finding, &report.actual));
     let action = match catalog.locale {
         crate::export::ReportLocale::En => derived_from.map_or_else(
             || step.action.clone(),
             |finding| {
-                crate::finding_narrative::action_english(
+                crate::finding_narrative::finding_next_action_english(
                     &step.action,
                     step.family,
                     beginner_aws_iam_policy(finding),
+                    unconfirmed,
                 )
             },
         ),
-        crate::export::ReportLocale::ZhHant => crate::finding_narrative::action_zh_hant(
-            &step.action,
-            step.recommended_expert_type.as_deref().unwrap_or_default(),
-            step.family,
-            derived_from.and_then(beginner_aws_iam_policy),
-        ),
+        crate::export::ReportLocale::ZhHant => {
+            crate::finding_narrative::finding_next_action_zh_hant(
+                &step.action,
+                step.recommended_expert_type.as_deref().unwrap_or_default(),
+                step.family,
+                derived_from.and_then(beginner_aws_iam_policy),
+                unconfirmed,
+            )
+        }
     };
     match (catalog.locale, step.unattributed.as_ref(), derived_from) {
         (crate::export::ReportLocale::ZhHant, Some(unattributed), _) => {
@@ -17300,10 +17312,26 @@ fn html_report_bytes(
                     }
                 }
             };
+            // Intra-document only: the problems table and finding cards already
+            // emit `#f{n}` for this same finding. Scanner-supplied URLs stay
+            // inert text; this is a link to this report's own card.
+            let reason_html = match step.finding_id.as_ref().and_then(|finding_id| {
+                report
+                    .findings
+                    .iter()
+                    .position(|finding| finding.finding_id == *finding_id)
+            }) {
+                Some(index) => format!(
+                    "<a href=\"#f{}\">{}</a>",
+                    catalog.format_number(index + 1),
+                    html_escape(&reason),
+                ),
+                None => html_escape(&reason),
+            };
             format!(
                 "<li><strong>{}</strong> — {}{}</li>",
                 html_escape(&action),
-                html_escape(&reason),
+                reason_html,
                 expert
                     .as_ref()
                     .map(|expert| format!(
@@ -17411,6 +17439,7 @@ fn html_report_bytes(
         // a translated heading; legacy wording is normalized in both locales.
         let severity_label = catalog.identifier(&enum_key(&finding.severity));
         let confidence_label = catalog.identifier(&enum_key(&finding.confidence));
+        let unconfirmed_by_coverage = finding_unconfirmed_by_coverage(finding, &report.actual);
         let (plain_language_risk, possible_impact, next_step, expert_type) = match catalog.locale {
             crate::export::ReportLocale::En => (
                 crate::finding_narrative::summary_english(
@@ -17422,10 +17451,11 @@ fn html_report_bytes(
                     finding.family,
                     &finding.context_factors,
                 ),
-                crate::finding_narrative::action_english(
+                crate::finding_narrative::finding_next_action_english(
                     &finding.next_step,
                     finding.family,
                     beginner_aws_iam_policy(finding),
+                    unconfirmed_by_coverage,
                 ),
                 finding.recommended_expert_type.clone(),
             ),
@@ -17453,11 +17483,12 @@ fn html_report_bytes(
                     finding.family,
                     &finding.context_factors,
                 ),
-                crate::finding_narrative::action_zh_hant(
+                crate::finding_narrative::finding_next_action_zh_hant(
                     &finding.next_step,
                     &finding.recommended_expert_type,
                     finding.family,
                     beginner_aws_iam_policy(finding),
+                    unconfirmed_by_coverage,
                 ),
                 crate::finding_narrative::expert_type_zh_hant(&finding.recommended_expert_type)
                     .to_owned(),
@@ -32805,6 +32836,220 @@ mod tests {
         let retained_html = render(RETAINED_VERIFICATION);
         assert!(retained_html.contains(RETAINED_VERIFICATION));
         assert!(!retained_html.contains(ABSENT_VERIFICATION));
+    }
+
+    fn html_report_for_rated_httpx_finding(
+        status: EngineRunStatus,
+        error_code: Option<&str>,
+        evidence_engine_run_id: Option<&str>,
+        locale: crate::export::ReportLocale,
+    ) -> String {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (mut case, asset_id) = fixture.discovered_asset(&created.id, AssetKind::WebService);
+        let now = Utc::now();
+        let task_id = "httpx-task";
+        case.scan_runs.push(ScanRun {
+            id: "run-httpx".into(),
+            case_id: case.id.clone(),
+            sequence: 1,
+            created_at: now,
+            completed_at: Some(now),
+            request_outcome: None,
+            report_asset_snapshots: Vec::new(),
+            knowledge_cutoff: now,
+            ai_system_applicable: false,
+            ai_system_applicability: Default::default(),
+            ai_generated_artifact: Default::default(),
+            verification_baseline_run_id: None,
+            scope_grant_ids: vec![],
+            scope_grant_snapshots: vec![],
+            engine_admission_issues: Vec::new(),
+            engine_runs: vec![EngineRun {
+                unattributed: Vec::new(),
+                unevaluated_targets: Vec::new(),
+                security_template_executions: Vec::new(),
+                manual_review_controls: Vec::new(),
+                id: task_id.into(),
+                scan_run_id: "run-httpx".into(),
+                engine_id: "httpx".into(),
+                task_kind: EngineTaskKind::CatalogEngine,
+                localhost_tcp_observation: None,
+                asset_ids: vec![asset_id.clone()],
+                status,
+                progress_percent: 72,
+                phase: "failed".into(),
+                started_at: Some(now),
+                finished_at: Some(now),
+                resume_token: None,
+                last_execution_report_sha256: None,
+                engine_version: None,
+                image_digest: None,
+                rule_version: None,
+                adapter_version: "native".into(),
+                manifest_schema_version: None,
+                source_revision: None,
+                repository_url: None,
+                distribution_mode: None,
+                image_repository: None,
+                command_sha256: None,
+                execution_timeout_seconds: None,
+                knowledge_input: None,
+                scope_contract_sha256: None,
+                naabu_work_plan: None,
+                naabu_attempt_requests: Vec::new(),
+                naabu_attempt_results: Vec::new(),
+                mapping_version: None,
+                mapping_provenance: None,
+                fingerprint_schema_version: None,
+                runtime_provider: None,
+                runtime_version: None,
+                runtime_security_options: None,
+                exit_code: Some(2),
+                cleanup_removed: Some(true),
+                cleanup_detail: Some("done".into()),
+                warnings: vec![],
+                raw_artifact_ids: vec![],
+                error_code: error_code.map(str::to_owned),
+                error_message: error_code.map(|_| "One synthetic target timed out.".into()),
+            }],
+        });
+        let finding = Finding {
+            family: Some(crate::domain::FindingFamily::NetworkExposure),
+            severity_basis_code: None,
+            confidence_basis_code: None,
+            context_factors: Vec::new(),
+            id: "hsts-unconfirmed".into(),
+            case_id: case.id.clone(),
+            first_seen_run_id: "run-httpx".into(),
+            last_seen_run_id: "run-httpx".into(),
+            fingerprint: "demo:web:missing-hsts".into(),
+            title: "The synthetic public site's HSTS status remains unconfirmed".into(),
+            plain_language_summary:
+                "httpx reported an informational-severity condition on the assessed asset.".into(),
+            possible_impact:
+                "An internet-reachable service may expose unexpected functionality or a known weakness."
+                    .into(),
+            severity: Severity::Informational,
+            confidence: Confidence::Medium,
+            priority: 58,
+            priority_reasons: vec![],
+            asset_ids: vec![asset_id.clone()],
+            evidence: vec![Evidence {
+                id: "evidence-hsts".into(),
+                finding_id: "hsts-unconfirmed".into(),
+                run_id: "run-httpx".into(),
+                engine_run_id: evidence_engine_run_id.map(str::to_owned),
+                kind: EvidenceKind::Observation,
+                engine_id: "httpx".into(),
+                scanner_details: None,
+                source_rule: None,
+                result_pointer_sha256: None,
+                observed_at: now,
+                summary: "Synthetic timeout record proving the check was incomplete, not that HSTS was absent.".into(),
+                location: Some("https://shop.example.test".into()),
+                artifact_id: "artifact-hsts".into(),
+                artifact_sha256: "a".repeat(64),
+                pointer: Some("/status".into()),
+                redacted: false,
+            }],
+            control_references: vec![],
+            recommendation:
+                "Have a network or system administrator review the TLS/HSTS settings.".into(),
+            verification_guidance: "Rerun httpx with the same scope after the change and confirm that source rule hsts is no longer reported.".into(),
+            rollback_considerations: None,
+            official_references: vec![],
+            recommended_expert_type: "Network or system administrator".into(),
+            status: FindingStatus::Unreviewed,
+            tags: vec![],
+        };
+        case.finding_observations.push(FindingObservation {
+            id: "observation-hsts".into(),
+            run_id: "run-httpx".into(),
+            finding_id: finding.id.clone(),
+            fingerprint: finding.fingerprint.clone(),
+            asset_ids: finding.asset_ids.clone(),
+            engine_ids: vec!["httpx".into()],
+            severity: finding.severity.clone(),
+            confidence: finding.confidence.clone(),
+            evidence_hashes: vec!["a".repeat(64)],
+            observed_at: now,
+            finding_snapshot: Some(finding.clone()),
+        });
+        case.findings.push(finding);
+        case.updated_at = now;
+        String::from_utf8(
+            html_report_bytes(
+                &case,
+                "run-httpx",
+                &ExportOptions {
+                    redaction: RedactionProfile::None,
+                    include_raw_artifacts: false,
+                    locale,
+                },
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn html_report_does_not_tell_the_reader_to_correct_a_timed_out_check() {
+        let action = crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION;
+        let html = html_report_for_rated_httpx_finding(
+            EngineRunStatus::PartiallyCompleted,
+            Some("TARGET_TIMEOUT"),
+            Some("httpx-task"),
+            crate::export::ReportLocale::En,
+        );
+        assert!(
+            html.contains(action),
+            "the confirm-first action must appear: {html}"
+        );
+        assert!(!html.contains("Correct the service or configuration named by this check."));
+        let card_action =
+            format!("<p class=\"finding-action\"><strong>What to do next:</strong> {action}</p>");
+        assert!(html.contains(&card_action), "{html}");
+        let table_action = format!("<td>{action}</td>");
+        assert!(html.contains(&table_action), "{html}");
+        let list_action = format!("<li><strong>{action}</strong> — <a href=\"#f1\">");
+        assert!(html.contains(&list_action), "{html}");
+        assert!(html.contains("<article id=\"f1\">"));
+
+        let zh = html_report_for_rated_httpx_finding(
+            EngineRunStatus::PartiallyCompleted,
+            Some("TARGET_TIMEOUT"),
+            Some("httpx-task"),
+            crate::export::ReportLocale::ZhHant,
+        );
+        let zh_action = crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT;
+        assert!(zh.contains(zh_action), "{zh}");
+        assert!(!zh.contains("調整這項檢查所指出的服務或設定。"));
+        assert!(zh.contains(&format!(
+            "<p class=\"finding-action\"><strong>下一步怎麼做:</strong> {zh_action}</p>"
+        )));
+        assert!(zh.contains(&format!("<td>{zh_action}</td>")));
+        assert!(zh.contains(&format!(
+            "<li><strong>{zh_action}</strong> — <a href=\"#f1\">"
+        )));
+    }
+
+    #[test]
+    fn html_report_keeps_the_family_remedy_when_the_check_completed() {
+        let html = html_report_for_rated_httpx_finding(
+            EngineRunStatus::Completed,
+            None,
+            Some("httpx-task"),
+            crate::export::ReportLocale::En,
+        );
+        let action = "Correct the service or configuration named by this check.";
+        assert!(html.contains(action), "{html}");
+        assert!(!html.contains(crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION));
+        assert!(html.contains(&format!(
+            "<p class=\"finding-action\"><strong>What to do next:</strong> {action}</p>"
+        )));
+        assert!(html.contains(&format!("<td>{action}</td>")));
+        assert!(html.contains(&format!("<li><strong>{action}</strong> — <a href=\"#f1\">")));
     }
 
     #[test]

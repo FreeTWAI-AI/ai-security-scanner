@@ -462,6 +462,7 @@ pub struct CoverageCounts {
 #[serde(rename_all = "snake_case")]
 pub enum NextActionCode {
     ReviewFinding,
+    ConfirmFindingAfterIncompleteCheck,
     RetryCheck,
     ReviewScopeAndRetry,
     ChooseCompatibleCheck,
@@ -791,7 +792,8 @@ pub fn build_beginner_master_report(
         });
     }
 
-    let (findings, finding_warnings) = project_findings(case, run);
+    let (mut findings, finding_warnings) = project_findings(case, run);
+    apply_coverage_constrained_finding_actions(&mut findings, &actual);
     let finding_groups = project_finding_groups(case, &findings);
     data_quality_warnings.extend(finding_warnings);
     debug_assert!(data_quality_warnings.iter().all(|warning| {
@@ -3773,6 +3775,51 @@ pub(crate) fn finding_aws_iam_policy(
         })
 }
 
+fn check_produced_observations(status: CoverageDimensionStatus) -> bool {
+    matches!(
+        status,
+        CoverageDimensionStatus::TestedComplete | CoverageDimensionStatus::TestedPartial
+    )
+}
+
+/// True when every evidence reference points at a check this report does not
+/// classify as having produced observations. Unknowns fail closed: missing
+/// engine-run ids, ids absent from `actual.checks`, and findings with no
+/// evidence at all are unconfirmed. Reachability inventory keeps its own
+/// next-step path and is not this state.
+pub(crate) fn finding_unconfirmed_by_coverage(
+    finding: &BeginnerFinding,
+    actual: &ActualCoverage,
+) -> bool {
+    if finding
+        .severity_basis_code
+        .is_some_and(|code| code.is_exposure_observation())
+    {
+        return false;
+    }
+    finding.evidence_references.iter().all(|reference| {
+        let Some(engine_run_id) = reference.engine_run_id.as_ref() else {
+            return true;
+        };
+        actual
+            .checks
+            .iter()
+            .find(|check| check.task_id == *engine_run_id)
+            .is_none_or(|check| !check_produced_observations(check.status))
+    })
+}
+
+fn apply_coverage_constrained_finding_actions(
+    findings: &mut [BeginnerFinding],
+    actual: &ActualCoverage,
+) {
+    for finding in findings {
+        if finding_unconfirmed_by_coverage(finding, actual) {
+            finding.next_step = crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION.into();
+        }
+    }
+}
+
 fn severity_word(severity: &Severity) -> &'static str {
     match severity {
         // Not "informational" and not "low": the source gave no recognized
@@ -3816,13 +3863,20 @@ fn project_next_steps(
     }) {
         let policy = finding_aws_iam_policy(finding);
         let expert = finding.recommended_expert_type.clone();
+        let unconfirmed = finding_unconfirmed_by_coverage(finding, actual);
         let key = (
-            crate::finding_narrative::action_english(&finding.next_step, finding.family, policy),
-            crate::finding_narrative::action_zh_hant(
+            crate::finding_narrative::finding_next_action_english(
+                &finding.next_step,
+                finding.family,
+                policy,
+                unconfirmed,
+            ),
+            crate::finding_narrative::finding_next_action_zh_hant(
                 &finding.next_step,
                 &expert,
                 finding.family,
                 policy,
+                unconfirmed,
             ),
             expert.clone(),
         );
@@ -3834,7 +3888,11 @@ fn project_next_steps(
         steps.push(BeginnerNextStep {
             unattributed: None,
             priority: steps.len() as u16,
-            code: NextActionCode::ReviewFinding,
+            code: if unconfirmed {
+                NextActionCode::ConfirmFindingAfterIncompleteCheck
+            } else {
+                NextActionCode::ReviewFinding
+            },
             action: finding.next_step.clone(),
             reason: finding_step_reason(
                 &finding.title,
@@ -5771,6 +5829,208 @@ mod tests {
                 .iter()
                 .any(|step| { step.finding_id.as_deref() == Some(problem.id.as_str()) })
         );
+    }
+
+    fn timed_out_httpx_task(id: &str) -> EngineRun {
+        let mut task = catalog_task(id, EngineRunStatus::PartiallyCompleted);
+        task.engine_id = "httpx".into();
+        task.error_code = Some("TARGET_TIMEOUT".into());
+        task.error_message = Some("One synthetic target timed out.".into());
+        task
+    }
+
+    fn completed_httpx_task(id: &str) -> EngineRun {
+        let mut task = catalog_task(id, EngineRunStatus::Completed);
+        task.engine_id = "httpx".into();
+        task.error_code = None;
+        task.error_message = None;
+        task.exit_code = Some(0);
+        task
+    }
+
+    fn rated_network_finding(
+        case: &AssessmentCase,
+        finding_id: &str,
+        engine_run_id: Option<&str>,
+    ) -> Finding {
+        let mut finding = frozen_finding(case, finding_id, 58, Severity::Informational);
+        finding.family = Some(FindingFamily::NetworkExposure);
+        finding.confidence = Confidence::Medium;
+        finding.title = "The synthetic public site's HSTS status remains unconfirmed".into();
+        finding.recommendation =
+            "Have a network or system administrator review the TLS/HSTS settings.".into();
+        finding.verification_guidance = "Rerun httpx with the same scope after the change and confirm that source rule hsts is no longer reported.".into();
+        finding.recommended_expert_type = "Network or system administrator".into();
+        finding.asset_ids = vec!["asset-1".into()];
+        finding.evidence[0].engine_id = "httpx".into();
+        finding.evidence[0].engine_run_id = engine_run_id.map(str::to_owned);
+        finding.evidence[0].summary =
+            "Synthetic timeout record proving the check was incomplete, not that HSTS was absent."
+                .into();
+        finding
+    }
+
+    fn case_with_rated_network_finding(
+        task: EngineRun,
+        engine_run_id: Option<&str>,
+    ) -> AssessmentCase {
+        let mut case = case_with_catalog_tasks(vec![task], true);
+        let finding = rated_network_finding(&case, "hsts-unconfirmed", engine_run_id);
+        let retained = observation(&finding, "run-1", instant(18));
+        case.findings.push(finding);
+        case.finding_observations.push(retained);
+        case
+    }
+
+    fn assert_confirm_first_action(report: &BeginnerMasterReport) {
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.finding_id == "hsts-unconfirmed")
+            .expect("the rated finding remains visible");
+        assert_eq!(
+            finding.next_step,
+            crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION
+        );
+        assert_eq!(
+            finding.severity,
+            Severity::Informational,
+            "coverage does not change the finding's rating"
+        );
+        assert_eq!(finding.confidence, Confidence::Medium);
+        assert_eq!(finding.priority, Some(58));
+        let unconfirmed = finding_unconfirmed_by_coverage(finding, &report.actual);
+        assert!(unconfirmed);
+        assert_eq!(
+            crate::finding_narrative::finding_next_action_english(
+                &finding.next_step,
+                finding.family,
+                None,
+                unconfirmed,
+            ),
+            crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION
+        );
+        assert_eq!(
+            crate::finding_narrative::finding_next_action_zh_hant(
+                &finding.next_step,
+                &finding.recommended_expert_type,
+                finding.family,
+                None,
+                unconfirmed,
+            ),
+            crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT
+        );
+        let step = report
+            .next_steps
+            .iter()
+            .find(|step| step.finding_id.as_deref() == Some("hsts-unconfirmed"))
+            .expect("the rated finding still has a next step");
+        assert_eq!(
+            step.code,
+            NextActionCode::ConfirmFindingAfterIncompleteCheck
+        );
+        assert_eq!(
+            step.action,
+            crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION
+        );
+        assert_ne!(step.code, NextActionCode::ReviewFinding);
+    }
+
+    #[test]
+    fn timed_out_check_does_not_tell_the_reader_to_correct_the_service() {
+        let case = case_with_rated_network_finding(timed_out_httpx_task("task-1"), Some("task-1"));
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert_eq!(
+            report.actual.checks[0].status,
+            CoverageDimensionStatus::TimedOut
+        );
+        assert_confirm_first_action(&report);
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.next_step.contains("Correct the service"))
+        );
+    }
+
+    #[test]
+    fn completed_check_keeps_the_family_remedy() {
+        let case = case_with_rated_network_finding(completed_httpx_task("task-1"), Some("task-1"));
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert_eq!(
+            report.actual.checks[0].status,
+            CoverageDimensionStatus::TestedComplete
+        );
+        let finding = &report.findings[0];
+        assert!(!finding_unconfirmed_by_coverage(finding, &report.actual));
+        assert_eq!(
+            finding.next_step,
+            "Correct the service or configuration named by this check."
+        );
+        let step = report
+            .next_steps
+            .iter()
+            .find(|step| step.finding_id.as_deref() == Some("hsts-unconfirmed"))
+            .expect("the confirmed finding keeps a next step");
+        assert_eq!(step.code, NextActionCode::ReviewFinding);
+        assert_eq!(
+            step.action,
+            "Correct the service or configuration named by this check."
+        );
+        assert_eq!(
+            crate::finding_narrative::finding_next_action_zh_hant(
+                &finding.next_step,
+                &finding.recommended_expert_type,
+                finding.family,
+                None,
+                false,
+            ),
+            "調整這項檢查所指出的服務或設定。"
+        );
+    }
+
+    #[test]
+    fn missing_engine_run_id_is_unconfirmed_by_coverage() {
+        let case = case_with_rated_network_finding(completed_httpx_task("task-1"), None);
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert_eq!(
+            report.findings[0].evidence_references[0].engine_run_id,
+            None
+        );
+        assert_confirm_first_action(&report);
+    }
+
+    #[test]
+    fn evidence_naming_an_absent_run_is_unconfirmed_by_coverage() {
+        let case =
+            case_with_rated_network_finding(completed_httpx_task("task-1"), Some("missing-task"));
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert_eq!(
+            report.findings[0].evidence_references[0]
+                .engine_run_id
+                .as_deref(),
+            Some("missing-task")
+        );
+        assert!(
+            report
+                .actual
+                .checks
+                .iter()
+                .all(|check| check.task_id != "missing-task")
+        );
+        assert_confirm_first_action(&report);
+    }
+
+    #[test]
+    fn a_finding_with_no_evidence_is_unconfirmed_by_coverage() {
+        let mut case =
+            case_with_rated_network_finding(completed_httpx_task("task-1"), Some("task-1"));
+        case.findings[0].evidence.clear();
+        case.finding_observations[0].finding_snapshot = Some(case.findings[0].clone());
+        case.finding_observations[0].evidence_hashes.clear();
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert!(report.findings[0].evidence_references.is_empty());
+        assert_confirm_first_action(&report);
     }
 
     #[test]
