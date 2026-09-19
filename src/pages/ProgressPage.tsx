@@ -41,6 +41,7 @@ import {
   canStartPreparedScan,
   findRunCreatedAfterStart,
   hasActiveScanWork,
+  isUndispatchedScanPlan,
 } from "../freshScanSelection";
 import type { UseCaseId } from "../useCases";
 import type {
@@ -148,6 +149,15 @@ const copy = {
     en: "Readiness step required below. Different-release checks require a new scan.",
     zhTW: "需要完成下方的準備步驟；不同版本的檢查需要新的掃描。",
   },
+  undispatchedPlanTitle: {
+    en: "A scan plan is waiting and nothing is running",
+    zhTW: "掃描計畫正在等候，目前沒有掃描在執行",
+  },
+  undispatchedPlanDescription: {
+    en: "No scanner has started.",
+    zhTW: "掃描器尚未啟動。",
+  },
+  undispatchedPlanCancel: { en: "Cancel this plan", zhTW: "取消這份計畫" },
   checkingReady: { en: "Checking what is ready…", zhTW: "正在確認可以執行的檢查…" },
   readinessUnavailableTitle: { en: "Scan readiness unavailable", zhTW: "掃描準備狀態無法取得" },
   readinessUnavailableDescription: {
@@ -776,6 +786,7 @@ export function ProgressPage({
     selectedRun && terminalRunStatuses.has(selectedRun.status),
   );
   const scanWorkActive = hasActiveScanWork(runs);
+  const undispatchedPlan = runs.find((run) => isUndispatchedScanPlan(run));
   const canStart = !terminalExactLocalhostQuickScan
     && canStartPreparedScan(readiness, Boolean(readinessCheckFailed), runs);
   const blockerPresentation = readiness?.blockerCode
@@ -1190,6 +1201,20 @@ export function ProgressPage({
       {starting && (
         <InlineNotice tone="info" title={text(copy.startingNewTitle)}>
           <p role="status">{text(copy.startingNewDescription)}</p>
+        </InlineNotice>
+      )}
+
+      {undispatchedPlan && (
+        <InlineNotice tone="warning" title={text(copy.undispatchedPlanTitle)} announce>
+          <p>{text(copy.undispatchedPlanDescription)}</p>
+          <button
+            className="button button--danger-ghost button--small"
+            type="button"
+            disabled={busy}
+            onClick={() => void onCancel(undispatchedPlan.id)}
+          >
+            <Icon name="stop" size={15} />{text(copy.undispatchedPlanCancel)}
+          </button>
         </InlineNotice>
       )}
 

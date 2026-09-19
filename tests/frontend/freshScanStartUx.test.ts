@@ -92,6 +92,77 @@ test("a prepared case can start a new scan while terminal history remains visibl
   }
 });
 
+test("an undispatched plan does not count as active scan work and does not block Start", () => {
+  const undispatchedPlan = {
+    status: "queued",
+    progress: 0,
+    startedAt: "2026-09-04T12:00:00Z",
+    engineRuns: [{ status: "pending" }],
+  };
+
+  assert.equal(hasActiveScanWork([undispatchedPlan]), false);
+  assert.equal(canStartPreparedScan({ ready: true }, false, [undispatchedPlan]), true);
+  assert.equal(
+    canStartPreparedScan({ ready: false, blockerCode: "scan_already_active" }, false, [undispatchedPlan]),
+    true,
+    "a plan that nothing is dispatching must not keep Start greyed out",
+  );
+});
+
+test("a preparing, running, or paused run still blocks Start", () => {
+  for (const status of ["preparing", "running", "paused"]) {
+    assert.equal(hasActiveScanWork([{ status }]), true, status);
+    assert.equal(
+      canStartPreparedScan({ ready: true }, false, [{ status }]),
+      false,
+      `${status} work must block a second scan`,
+    );
+  }
+  for (const status of ["preparing", "running", "paused"]) {
+    const run = { status: "queued", progress: 0, engineRuns: [{ status }] };
+    assert.equal(hasActiveScanWork([run]), true, `engine ${status}`);
+    assert.equal(
+      canStartPreparedScan({ ready: true }, false, [run]),
+      false,
+      `engine ${status} work must block a second scan`,
+    );
+  }
+});
+
+test("a queued run with a recorded startedAt still blocks Start", () => {
+  const dispatchedQueue = {
+    status: "queued",
+    progress: 0,
+    startedAt: "2026-09-04T12:00:00Z",
+    engineRuns: [{ status: "pending", startedAt: "2026-09-04T12:00:01Z" }],
+  };
+
+  assert.equal(hasActiveScanWork([dispatchedQueue]), true);
+  assert.equal(canStartPreparedScan({ ready: true }, false, [dispatchedQueue]), false);
+});
+
+test("the waiting-plan state is named in English and Traditional Chinese and offers cancel", async () => {
+  const progress = await readSource("src/pages/ProgressPage.tsx");
+
+  for (const phrase of [
+    "A scan plan is waiting and nothing is running",
+    "掃描計畫正在等候，目前沒有掃描在執行",
+    "No scanner has started.",
+    "掃描器尚未啟動。",
+    "Cancel this plan",
+    "取消這份計畫",
+  ]) assert.ok(progress.includes(phrase), phrase);
+
+  assert.match(
+    progress,
+    /const undispatchedPlan = runs\.find\(\(run\) => isUndispatchedScanPlan\(run\)\)/u,
+  );
+  assert.match(
+    progress,
+    /\{undispatchedPlan && \([\s\S]*onClick=\{\(\) => void onCancel\(undispatchedPlan\.id\)\}[\s\S]*copy\.undispatchedPlanCancel/u,
+  );
+});
+
 test("scan history renders the prepared Start action instead of trapping the user in the prior run", async () => {
   const progress = await readSource("src/pages/ProgressPage.tsx");
   const historyStart = progress.indexOf("const runMeta");

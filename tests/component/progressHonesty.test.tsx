@@ -1,5 +1,5 @@
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { ProgressPage } from "../../src/pages/ProgressPage";
 import { I18nProvider, localeStorageKey } from "../../src/i18n";
@@ -621,4 +621,66 @@ test("a terminal scan keeps the results entry even when it found no problems", (
   const results = container.querySelector<HTMLAnchorElement>('a[href="#findings"]');
   expect(results?.textContent).toContain("View results");
   expect(results?.className).toContain("button--primary");
+});
+
+test("a waiting undispatched plan is named and offers a direct cancel", () => {
+  // A CLI plan creates a queued run that nothing will ever dispatch. Naming it
+  // as live work greys out Start and hides the only way out: cancel the plan.
+  const onCancel = vi.fn(() => Promise.resolve());
+  const waitingPlan = run(
+    [engine("planned-check", "pending", { phase: "queued", progress: 0 })],
+    "queued",
+    { progress: 0, finishedAt: undefined },
+  );
+
+  const { container } = render(
+    <I18nProvider>
+      <ProgressPage
+        caseId="case-1"
+        assets={[asset()]}
+        runs={[waitingPlan]}
+        findings={[]}
+        selectedRunId={waitingPlan.id}
+        onStart={() => Promise.resolve()}
+        onRetryLocalhostQuickScan={() => Promise.resolve()}
+        onFixSetup={() => {}}
+        onPause={() => Promise.resolve()}
+        onResume={() => Promise.resolve()}
+        onCancel={onCancel}
+      />
+    </I18nProvider>,
+  );
+
+  const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
+    (candidate) => candidate.textContent?.includes("A scan plan is waiting and nothing is running"),
+  );
+  expect(notice).toBeTruthy();
+  expect(notice!.textContent).toContain("No scanner has started.");
+  const cancel = within(notice!).getByRole("button", { name: /cancel this plan/i }) as HTMLButtonElement;
+  expect(cancel.disabled).toBe(false);
+  fireEvent.click(cancel);
+  expect(onCancel).toHaveBeenCalledWith(waitingPlan.id);
+
+  cleanup();
+  window.localStorage.setItem(localeStorageKey, "zh-TW");
+  const chinese = render(
+    <I18nProvider>
+      <ProgressPage
+        caseId="case-1"
+        assets={[asset()]}
+        runs={[waitingPlan]}
+        findings={[]}
+        selectedRunId={waitingPlan.id}
+        onStart={() => Promise.resolve()}
+        onRetryLocalhostQuickScan={() => Promise.resolve()}
+        onFixSetup={() => {}}
+        onPause={() => Promise.resolve()}
+        onResume={() => Promise.resolve()}
+        onCancel={() => Promise.resolve()}
+      />
+    </I18nProvider>,
+  );
+  expect(chinese.container.textContent).toContain("掃描計畫正在等候，目前沒有掃描在執行");
+  expect(chinese.container.textContent).toContain("掃描器尚未啟動。");
+  expect(chinese.container.textContent).toContain("取消這份計畫");
 });
