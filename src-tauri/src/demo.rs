@@ -260,7 +260,7 @@ pub fn build_demo_case() -> AssessmentCase {
                 phase: "failed".into(),
                 started_at: Some(now - Duration::days(2) + Duration::minutes(3)),
                 finished_at: Some(now - Duration::days(2) + Duration::minutes(18)),
-                resume_token: Some("synthetic-resume-token".into()),
+                resume_token: None,
                 last_execution_report_sha256: None,
                 engine_version: Some("synthetic-demo".into()),
                 image_digest: None,
@@ -616,6 +616,39 @@ mod tests {
             offenders.is_empty(),
             "demo case contains Han characters in stored strings: {offenders:#?}"
         );
+    }
+
+    #[test]
+    fn seeded_demo_case_stores_only_valid_resume_tokens() {
+        let demo = build_demo_case();
+        let httpx_run = demo
+            .scan_runs
+            .iter()
+            .flat_map(|run| &run.engine_runs)
+            .find(|engine_run| engine_run.engine_id == "httpx")
+            .expect("demo case should contain an httpx run");
+
+        assert_eq!(httpx_run.status, EngineRunStatus::PartiallyCompleted);
+        assert_eq!(httpx_run.progress_percent, 72);
+        assert_eq!(httpx_run.phase, "failed");
+        assert!(httpx_run.resume_token.is_none());
+
+        for engine_run in demo
+            .scan_runs
+            .iter()
+            .flat_map(|run| &run.engine_runs)
+            .filter(|engine_run| engine_run.resume_token.is_some())
+        {
+            crate::orchestrator::ExecutionCheckpoint::from_resume_token(
+                engine_run.resume_token.as_deref().unwrap(),
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "demo engine run {} stores an invalid resume token: {error}",
+                    engine_run.id
+                )
+            });
+        }
     }
 
     #[test]
