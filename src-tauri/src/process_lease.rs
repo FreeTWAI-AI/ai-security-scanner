@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 
 const LEASE_FILENAME: &str = ".exclusive-process.lock";
+pub(crate) const DATA_DIRECTORY_LEASE_CONTENTION_MESSAGE: &str = "another ai-security-scanner desktop or destructive maintenance operation owns this local data directory; close that desktop or let the exact operation finish, then retry";
 
 #[cfg(windows)]
 #[derive(Debug)]
@@ -91,8 +92,7 @@ impl WindowsOwnedMutex {
                             CloseHandle(handle);
                         }
                         let _ = ready_send.send(Err(AppError::NotAvailable(
-                            "another ai-security-scanner desktop or destructive maintenance operation owns this local data directory; close that desktop or let the exact operation finish, then retry"
-                                .into(),
+                            DATA_DIRECTORY_LEASE_CONTENTION_MESSAGE.into(),
                         )));
                     }
                     _ => {
@@ -668,8 +668,7 @@ impl DataDirectoryExclusiveLease {
                 && error.raw_os_error() == contention.raw_os_error()
             {
                 return Err(AppError::NotAvailable(
-                    "another ai-security-scanner desktop or destructive maintenance operation owns this local data directory; close that desktop or let the exact operation finish, then retry"
-                        .into(),
+                    DATA_DIRECTORY_LEASE_CONTENTION_MESSAGE.into(),
                 ));
             }
             return Err(error.into());

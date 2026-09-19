@@ -41,6 +41,8 @@ pub mod registry;
 pub mod runtime;
 pub mod runtime_health_monitor;
 pub mod source_authorization;
+#[cfg(any(feature = "desktop", test))]
+mod startup_failure;
 #[cfg(feature = "desktop")]
 mod state;
 pub mod storage;
@@ -61,6 +63,11 @@ use state::AppState;
 use storage::Storage;
 #[cfg(feature = "desktop")]
 use tauri::Manager;
+#[cfg(feature = "desktop")]
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+
+#[cfg(feature = "desktop")]
+use startup_failure::{StartupFailure, StartupResource, display_language};
 
 /// Provider/container reconciliation may execute slow local commands. It runs
 /// only after the shell owns managed state and never propagates an error into
@@ -101,6 +108,89 @@ fn reconcile_live_startup_resources(state: &AppState) {
 }
 
 #[cfg(feature = "desktop")]
+fn prepare_desktop_state(app: &mut tauri::App) -> Result<AppState, StartupFailure> {
+    let app_data = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| StartupFailure::preparation(StartupResource::LocalDataDirectory, error))?;
+    let product_data_guard = ensure_private_product_data_directory(&app_data)
+        .map_err(|error| StartupFailure::preparation(StartupResource::LocalDataDirectory, error))?;
+    let process_lease =
+        DataDirectoryExclusiveLease::acquire(&app_data).map_err(StartupFailure::lease)?;
+    // The process lease now pins the exact root and its parent for the
+    // desktop lifetime, so the creation/verification guard can yield.
+    drop(product_data_guard);
+    let managed_bundle = app
+        .path()
+        .resource_dir()
+        .map_err(|error| StartupFailure::preparation(StartupResource::InstalledResources, error))?
+        .join("managed-runtime");
+    let managed_runtime_admission = admit_packaged_managed_runtime(&app_data, &managed_bundle);
+    if let Some(receipt) = managed_runtime_admission.recovery_receipt() {
+        tracing::warn!(
+            boundary = receipt.boundary,
+            source = receipt.source,
+            manifest_sha256 = receipt.manifest_sha256,
+            packaged_failure_reason = receipt.packaged_failure_reason.as_str(),
+            "packaged scan tools were recovered from the exact verified private copy; installed application resources still require repair"
+        );
+    }
+    if let Some(reason) = managed_runtime_admission.failure_reason() {
+        tracing::warn!(
+            failure_reason = reason.as_str(),
+            "packaged scan tools are unavailable"
+        );
+    }
+    let storage = Storage::open(app_data.join("casework.db"))
+        .map_err(|error| StartupFailure::preparation(StartupResource::CaseDatabase, error))?;
+    let engines = EngineRegistry::load_builtin().unwrap_or_else(|error| {
+        tracing::error!(
+            error = %error,
+            "built-in engine catalog is unavailable; catalog-backed checks remain unavailable"
+        );
+        EngineRegistry::empty()
+    });
+    for issue in engines.admission_issues() {
+        tracing::warn!(
+            engine_id = issue.engine_id.as_deref().unwrap_or("unidentified"),
+            issue_code = %issue.code,
+            detail = %issue.detail,
+            "catalog engine is unavailable"
+        );
+    }
+    let adapters = adapters::builtin_adapter_registry().unwrap_or_else(|error| {
+        tracing::error!(
+            error = %error,
+            "built-in adapter registry is unavailable; catalog-backed checks remain unavailable"
+        );
+        adapter::AdapterRegistry::default()
+    });
+    let artifact_store = ArtifactStore::open(app_data.join("artifacts"))
+        .map_err(|error| StartupFailure::preparation(StartupResource::ArtifactStorage, error))?;
+    let artifact_root = artifact_store.root().to_path_buf();
+    Ok(AppState::new(
+        storage,
+        engines,
+        adapters,
+        artifact_root,
+        app_data.join("integrity-signing-key"),
+    )
+    .with_process_lease(process_lease)
+    .with_packaged_managed_runtime_admission(managed_runtime_admission))
+}
+
+#[cfg(feature = "desktop")]
+fn report_desktop_startup_failure(app: &tauri::App, failure: StartupFailure) {
+    let message = failure.message(display_language());
+    eprintln!("{message}");
+    app.dialog()
+        .message(message)
+        .kind(MessageDialogKind::Error)
+        .blocking_show();
+    app.handle().exit(1);
+}
+
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -118,68 +208,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let app_data = app.path().app_local_data_dir()?;
-            let product_data_guard = ensure_private_product_data_directory(&app_data)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let process_lease = DataDirectoryExclusiveLease::acquire(&app_data)
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            // The process lease now pins the exact root and its parent for the
-            // desktop lifetime, so the creation/verification guard can yield.
-            drop(product_data_guard);
-            let managed_bundle = app.path().resource_dir()?.join("managed-runtime");
-            let managed_runtime_admission =
-                admit_packaged_managed_runtime(&app_data, &managed_bundle);
-            if let Some(receipt) = managed_runtime_admission.recovery_receipt() {
-                tracing::warn!(
-                    boundary = receipt.boundary,
-                    source = receipt.source,
-                    manifest_sha256 = receipt.manifest_sha256,
-                    packaged_failure_reason = receipt.packaged_failure_reason.as_str(),
-                    "packaged scan tools were recovered from the exact verified private copy; installed application resources still require repair"
-                );
-            }
-            if let Some(reason) = managed_runtime_admission.failure_reason() {
-                tracing::warn!(
-                    failure_reason = reason.as_str(),
-                    "packaged scan tools are unavailable"
-                );
-            }
-            let storage = Storage::open(app_data.join("casework.db"))
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let engines = EngineRegistry::load_builtin().unwrap_or_else(|error| {
-                tracing::error!(
-                    error = %error,
-                    "built-in engine catalog is unavailable; catalog-backed checks remain unavailable"
-                );
-                EngineRegistry::empty()
-            });
-            for issue in engines.admission_issues() {
-                tracing::warn!(
-                    engine_id = issue.engine_id.as_deref().unwrap_or("unidentified"),
-                    issue_code = %issue.code,
-                    detail = %issue.detail,
-                    "catalog engine is unavailable"
-                );
-            }
-            let adapters = adapters::builtin_adapter_registry().unwrap_or_else(|error| {
-                tracing::error!(
-                    error = %error,
-                    "built-in adapter registry is unavailable; catalog-backed checks remain unavailable"
-                );
-                adapter::AdapterRegistry::default()
-            });
-            let artifact_store = ArtifactStore::open(app_data.join("artifacts"))
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
-            let artifact_root = artifact_store.root().to_path_buf();
-            let state = AppState::new(
-                storage,
-                engines,
-                adapters,
-                artifact_root,
-                app_data.join("integrity-signing-key"),
-            )
-            .with_process_lease(process_lease)
-            .with_packaged_managed_runtime_admission(managed_runtime_admission);
+            let state = match prepare_desktop_state(app) {
+                Ok(state) => state,
+                Err(failure) => {
+                    report_desktop_startup_failure(app, failure);
+                    return Ok(());
+                }
+            };
             // Prepare and harden the local export identity early, but never
             // turn a damaged optional export identity into a scanner startup
             // gate. Signed bundle creation remains fail-closed and reports the
@@ -270,7 +305,11 @@ pub fn run() {
             commands::verify_case_export,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running ai-security-scanner");
+        .unwrap_or_else(|error| {
+            let failure = StartupFailure::preparation(StartupResource::Application, error);
+            eprintln!("{}", failure.message(display_language()));
+            std::process::exit(1);
+        });
 }
 
 #[cfg(test)]
@@ -308,12 +347,41 @@ mod desktop_nonblocking_source_invariants {
             .find("fn reconcile_live_startup_resources(state: &AppState)")
             .expect("background helper");
         let helper_end = source[helper_start..]
-            .find("\n#[cfg(feature = \"desktop\")]\n#[cfg_attr")
+            .find("\n#[cfg(feature = \"desktop\")]\nfn prepare_desktop_state")
             .map(|offset| helper_start + offset)
             .expect("background helper end");
         let helper = &source[helper_start..helper_end];
         assert!(!helper.lines().any(|line| line.trim_end().ends_with("?;")));
         assert!(!helper.contains(".map_err("));
+    }
+
+    #[test]
+    fn desktop_setup_reports_startup_failures_without_propagating_them() {
+        let source = normalized_source(include_str!("lib.rs"));
+        let setup_start = source.find(".setup(|app| {").expect("desktop setup");
+        let setup_end = source[setup_start..]
+            .find("\n        .invoke_handler(")
+            .map(|offset| setup_start + offset)
+            .expect("desktop setup end");
+        let setup = &source[setup_start..setup_end];
+
+        assert!(setup.contains("report_desktop_startup_failure(app, failure);"));
+        assert!(setup.contains("return Ok(());"));
+        assert!(!setup.lines().any(|line| line.trim_end().ends_with("?;")));
+
+        let reporter_start = source
+            .find("fn report_desktop_startup_failure(app: &tauri::App, failure: StartupFailure)")
+            .expect("startup failure reporter");
+        let reporter_end = source[reporter_start..]
+            .find("\n#[cfg(feature = \"desktop\")]\n#[cfg_attr")
+            .map(|offset| reporter_start + offset)
+            .expect("startup failure reporter end");
+        let reporter = &source[reporter_start..reporter_end];
+        assert!(reporter.contains("eprintln!(\"{message}\");"));
+        assert!(reporter.contains(".blocking_show();"));
+        assert!(reporter.contains("app.handle().exit(1);"));
+
+        assert!(!source.contains(".expect(\"error while running ai-security-scanner\")"));
     }
 
     #[test]
