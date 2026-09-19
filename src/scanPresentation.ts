@@ -159,6 +159,10 @@ const nextStepCopy = {
     en: "Open the technical records for the skipped checks, finish the indicated setup, then start a new scan.",
     zhTW: "請展開未執行檢查的技術紀錄，完成其中指出的設定，再開始新的掃描。",
   },
+  approvedScopeMismatch: {
+    en: "Open the skipped check's technical records and match this check to the approved protocol or target form.",
+    zhTW: "請展開未執行檢查的技術紀錄，讓這項檢查符合已核准的通訊協定或目標形式。",
+  },
   retry: {
     en: "Retry this check. Its diagnostic log is available under Technical details.",
     zhTW: "請重試這項檢查；診斷紀錄位於「技術細節」。",
@@ -174,6 +178,14 @@ const targetSetupErrorCodes = new Set([
   "no_effective_scope_grants",
   "no_ownership_confirmed_targets",
   "no_compatible_authorized_targets",
+  "workspace_snapshot_unavailable",
+]);
+
+const approvedScopeMismatchErrorCodes = new Set([
+  "direct_network_protocol_mismatch",
+  "direct_network_target_kind_mismatch",
+  "external_scope_missing",
+  "authorization_reference_empty",
 ]);
 
 const providerSetupErrorCodes = new Set([
@@ -196,6 +208,7 @@ const toolSetupErrorCodes = new Set([
   "runtime_image_unpinned",
   "command_unavailable",
   "external_executable_unsupported",
+  "engine_execution_contract_invalid",
 ]);
 
 const releaseUnavailableErrorCodes = new Set([
@@ -215,13 +228,15 @@ export const skippedChecksNextStepFor = (reasonCodes: readonly string[]): Biling
   const hasProviderIssue = reasonCodes.some((code) => providerSetupErrorCodes.has(code));
   const hasToolIssue = reasonCodes.some((code) => toolSetupErrorCodes.has(code));
   const hasReleaseIssue = reasonCodes.some((code) => releaseUnavailableErrorCodes.has(code));
-  const knownCount = Number(hasTargetIssue) + Number(hasProviderIssue) + Number(hasToolIssue) + Number(hasReleaseIssue);
+  const hasApprovedScopeIssue = reasonCodes.some((code) => approvedScopeMismatchErrorCodes.has(code));
+  const knownCount = Number(hasTargetIssue) + Number(hasProviderIssue) + Number(hasToolIssue) + Number(hasReleaseIssue) + Number(hasApprovedScopeIssue);
 
   if (knownCount > 1) return nextStepCopy.mixedSkippedSetup;
   if (hasTargetIssue) return nextStepCopy.targetSetup;
   if (hasProviderIssue) return nextStepCopy.providerSetup;
   if (hasToolIssue) return nextStepCopy.toolSetup;
   if (hasReleaseIssue) return nextStepCopy.unavailableInRelease;
+  if (hasApprovedScopeIssue) return nextStepCopy.approvedScopeMismatch;
   return nextStepCopy.skippedUnknown;
 };
 

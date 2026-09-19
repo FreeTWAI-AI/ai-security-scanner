@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -277,9 +278,17 @@ test("a gateway preparation failure gives direct automatic setup and retry", () 
 test("typed skipped reasons choose a specific bilingual next step without rendering the code", () => {
   const cases = [
     [["no_compatible_authorized_assets"], /scan setup/u, /掃描設定/u],
+    [["no_ownership_confirmed_targets"], /scan setup/u, /掃描設定/u],
+    [["workspace_snapshot_unavailable"], /scan setup/u, /掃描設定/u],
     [["provider_source_required"], /cloud setup/u, /雲端設定/u],
+    [["provider_target_binding_mismatch"], /cloud setup/u, /雲端設定/u],
     [["runtime_image_unavailable"], /setup is automatic/u, /自動準備/u],
+    [["engine_execution_contract_invalid"], /setup is automatic/u, /自動準備/u],
     [["engine_release_unavailable"], /Update the app/u, /更新應用程式/u],
+    [["direct_network_protocol_mismatch"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
+    [["direct_network_target_kind_mismatch"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
+    [["external_scope_missing"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
+    [["authorization_reference_empty"], /approved protocol or target form/u, /已核准的通訊協定或目標形式/u],
   ] as const;
   for (const [codes, english, traditionalChinese] of cases) {
     const action = skippedChecksNextStepFor(codes);
@@ -291,4 +300,26 @@ test("typed skipped reasons choose a specific bilingual next step without render
   const mixed = skippedChecksNextStepFor(["no_compatible_authorized_assets", "runtime_image_unavailable"]);
   assert.match(mixed.en, /Finish the displayed target or cloud step/u);
   assert.match(mixed.zhTW, /完成畫面上的目標或雲端步驟/u);
+});
+
+test("every planner skip reason is classified without falling through to skippedUnknown", () => {
+  const rust = readFileSync(new URL("../../src-tauri/src/case_service.rs", import.meta.url), "utf8");
+  const marker = "pub const PLANNER_NOT_EXECUTED_REASON_CODES: &[&str] = &[";
+  const start = rust.indexOf(marker);
+  assert.ok(start >= 0, "planner reason census was not found in case_service.rs");
+  const body = rust.slice(start + marker.length);
+  const end = body.indexOf("];");
+  assert.ok(end > 0, "planner reason census has no closing bracket");
+  const codes = [...body.slice(0, end).matchAll(/"([a-z0-9_]+)"/gu)].map((match) => match[1]!);
+  assert.ok(codes.length > 0, "planner reason census is empty");
+  const unknown = skippedChecksNextStepFor(["__not_a_planner_reason__"]);
+  assert.match(unknown.en, /technical records/u);
+  for (const code of codes) {
+    const action = skippedChecksNextStepFor([code]);
+    assert.notDeepEqual(
+      action,
+      unknown,
+      `${code} fell through to skippedUnknown`,
+    );
+  }
 });

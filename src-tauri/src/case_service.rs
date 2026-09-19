@@ -4013,7 +4013,10 @@ impl<'a> CaseService<'a> {
             let routed_asset_ids = engine_asset_routes.get(&engine_id);
             let Some(manifest) = self.engines.get(&engine_id) else {
                 let engine_run_id = new_id();
-                let explanation = "The requested engine has no installed manifest.".to_owned();
+                let (reason_code, explanation) = planner_not_executed_reason(
+                    "manifest_unavailable",
+                    "The requested engine has no installed manifest.",
+                );
                 let asset_ids: Vec<Id> = routed_asset_ids
                     .map(|asset_ids| asset_ids.iter().cloned().collect())
                     .unwrap_or_default();
@@ -4022,7 +4025,7 @@ impl<'a> CaseService<'a> {
                     &engine_run_id,
                     &engine_id,
                     asset_ids.clone(),
-                    ("manifest_unavailable", &explanation),
+                    (reason_code, &explanation),
                     None,
                     now,
                 ));
@@ -4030,7 +4033,7 @@ impl<'a> CaseService<'a> {
                     engine_id,
                     engine_run_id,
                     asset_ids,
-                    reason_code: "manifest_unavailable".into(),
+                    reason_code: reason_code.into(),
                     explanation,
                 });
                 continue;
@@ -4048,13 +4051,19 @@ impl<'a> CaseService<'a> {
                 .collect::<Vec<_>>();
             if assets.is_empty() {
                 let engine_run_id = new_id();
-                let explanation = "No ownership-confirmed asset has all unexpired permissions required by this engine.".to_owned();
+                let (reason_code, explanation) = incompatible_authorized_assets_reason(
+                    case,
+                    manifest,
+                    &effective,
+                    routed_asset_ids,
+                    now,
+                );
                 engine_runs.push(not_executed_run(
                     &scan_run_id,
                     &engine_run_id,
                     &manifest.id,
                     asset_ids.clone(),
-                    ("no_compatible_authorized_assets", &explanation),
+                    (reason_code, &explanation),
                     Some(manifest),
                     now,
                 ));
@@ -4062,7 +4071,7 @@ impl<'a> CaseService<'a> {
                     engine_id: manifest.id.clone(),
                     engine_run_id,
                     asset_ids,
-                    reason_code: "no_compatible_authorized_assets".into(),
+                    reason_code: reason_code.into(),
                     explanation,
                 });
                 continue;
@@ -4070,12 +4079,14 @@ impl<'a> CaseService<'a> {
 
             if let Some((reason_code, explanation)) = engine_unavailable(manifest, self.adapters) {
                 let engine_run_id = new_id();
+                let (reason_code, explanation) =
+                    planner_not_executed_reason(reason_code, explanation);
                 engine_runs.push(not_executed_run(
                     &scan_run_id,
                     &engine_run_id,
                     &manifest.id,
                     asset_ids.clone(),
-                    (&reason_code, &explanation),
+                    (reason_code, &explanation),
                     Some(manifest),
                     now,
                 ));
@@ -4083,7 +4094,7 @@ impl<'a> CaseService<'a> {
                     engine_id: manifest.id.clone(),
                     engine_run_id,
                     asset_ids,
-                    reason_code,
+                    reason_code: reason_code.into(),
                     explanation,
                 });
                 continue;
@@ -4165,10 +4176,9 @@ impl<'a> CaseService<'a> {
                             error = %error,
                             "engine task contract could not be planned; preserving sibling work"
                         );
-                        let reason_code = "engine_execution_contract_invalid";
-                        let explanation = ScanReadinessBlocker::EngineExecutionContractInvalid
-                            .diagnostic()
-                            .to_owned();
+                        let (reason_code, explanation) = readiness_planner_skip(
+                            ScanReadinessBlocker::EngineExecutionContractInvalid,
+                        );
                         engine_runs.push(not_executed_run(
                             &scan_run_id,
                             &engine_run_id,
@@ -5758,7 +5768,7 @@ impl<'a> CaseService<'a> {
                 blocked.push(ResumeBlocked {
                     engine_index,
                     phase: "resume_engine_unavailable",
-                    error_code: reason_code,
+                    error_code: reason_code.into(),
                     clear_resume_token: true,
                     explanation: "The installed version does not include this check. Update the app, then start a new scan.".into(),
                 });
@@ -8673,6 +8683,167 @@ fn default_scan_admission_issues(
     }
 }
 
+/// Closed vocabulary of `not_executed.reason_code` values the scan planner can
+/// persist. Frontend skipped-check classification must cover every member.
+pub const PLANNER_NOT_EXECUTED_REASON_CODES: &[&str] = &[
+    "adapter_unavailable",
+    "adapter_version_mismatch",
+    "authorization_reference_empty",
+    "command_unavailable",
+    "direct_network_protocol_mismatch",
+    "direct_network_target_kind_mismatch",
+    "engine_deprecated",
+    "engine_execution_contract_invalid",
+    "engine_release_unavailable",
+    "external_executable_unsupported",
+    "external_scope_missing",
+    "license_review",
+    "manifest_unavailable",
+    "no_compatible_authorized_assets",
+    "no_ownership_confirmed_targets",
+    "provider_target_binding_mismatch",
+    "research_only",
+    "runtime_image_unavailable",
+    "runtime_image_unpinned",
+    "workspace_snapshot_unavailable",
+];
+
+const NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION: &str =
+    "No ownership-confirmed asset has all unexpired permissions required by this engine.";
+
+/// Planner copy for a local engine whose asset never received a workspace
+/// snapshot. Distinct from [`ScanReadinessBlocker::WorkspaceSnapshotUnavailable`]'s
+/// diagnostic, which describes a snapshot that was prepared and is now gone.
+const WORKSPACE_SNAPSHOT_NEVER_ATTACHED_EXPLANATION: &str =
+    "Local project input is missing. Check outcome: not tested.";
+
+const EXTERNAL_SCOPE_MISSING_EXPLANATION: &str =
+    "The approved external connection has no external scope recorded.";
+
+const AUTHORIZATION_REFERENCE_EMPTY_EXPLANATION: &str =
+    "The approved external connection has an empty authorization reference.";
+
+fn planner_not_executed_reason(
+    code: &'static str,
+    explanation: impl Into<String>,
+) -> (&'static str, String) {
+    if !PLANNER_NOT_EXECUTED_REASON_CODES.contains(&code) {
+        tracing::error!(
+            code,
+            "planner reason is missing from PLANNER_NOT_EXECUTED_REASON_CODES"
+        );
+    }
+    debug_assert!(
+        PLANNER_NOT_EXECUTED_REASON_CODES.contains(&code),
+        "planner reason `{code}` is missing from PLANNER_NOT_EXECUTED_REASON_CODES"
+    );
+    (code, explanation.into())
+}
+
+fn readiness_planner_skip(blocker: ScanReadinessBlocker) -> (&'static str, String) {
+    planner_not_executed_reason(blocker.as_str(), blocker.diagnostic())
+}
+
+fn incompatible_authorized_assets_reason(
+    case: &AssessmentCase,
+    manifest: &EngineManifest,
+    effective: &[&ScopeGrant],
+    routed_asset_ids: Option<&BTreeSet<Id>>,
+    now: DateTime<Utc>,
+) -> (&'static str, String) {
+    let assets = case
+        .assets
+        .iter()
+        .filter(|asset| routed_asset_ids.is_none_or(|ids| ids.contains(&asset.id)))
+        .collect::<Vec<_>>();
+    let kind_compatible = assets
+        .iter()
+        .copied()
+        .filter(|asset| {
+            manifest.supports_asset(asset)
+                && declared_web_service_profile_matches(manifest, asset)
+                && declared_network_service_profile_matches(manifest, asset)
+                && declared_host_scan_profile_matches(manifest, asset)
+        })
+        .collect::<Vec<_>>();
+    if kind_compatible.is_empty() {
+        return planner_not_executed_reason(
+            "no_compatible_authorized_assets",
+            NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION,
+        );
+    }
+
+    let confirmed = kind_compatible
+        .iter()
+        .copied()
+        .filter(|asset| asset.owner_confirmed && !asset.candidate)
+        .collect::<Vec<_>>();
+    if confirmed.is_empty() {
+        return readiness_planner_skip(ScanReadinessBlocker::NoOwnershipConfirmedTargets);
+    }
+
+    let provider_ok = confirmed
+        .iter()
+        .copied()
+        .filter(|asset| provider_target_metadata_matches(case, manifest, asset))
+        .collect::<Vec<_>>();
+    if provider_ok.is_empty() {
+        return readiness_planner_skip(ScanReadinessBlocker::ProviderTargetBindingMismatch);
+    }
+
+    let input_ok = provider_ok
+        .iter()
+        .copied()
+        .filter(|asset| local_input_metadata_matches(case, manifest, asset))
+        .collect::<Vec<_>>();
+    if input_ok.is_empty() {
+        let incompatibilities = provider_ok
+            .iter()
+            .copied()
+            .map(|asset| local_input_compatibility(case, manifest, asset))
+            .collect::<Vec<_>>();
+        if incompatibilities
+            .iter()
+            .all(|status| matches!(status, LocalInputCompatibility::SnapshotMissing))
+        {
+            return planner_not_executed_reason(
+                ScanReadinessBlocker::WorkspaceSnapshotUnavailable.as_str(),
+                WORKSPACE_SNAPSHOT_NEVER_ATTACHED_EXPLANATION,
+            );
+        }
+        if incompatibilities.iter().all(|status| {
+            matches!(
+                status,
+                LocalInputCompatibility::UnsupportedContract
+                    | LocalInputCompatibility::McpConfigurationMissing
+            )
+        }) {
+            return planner_not_executed_reason(
+                "no_compatible_authorized_assets",
+                NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION,
+            );
+        }
+        return readiness_planner_skip(ScanReadinessBlocker::WorkspaceSnapshotUnavailable);
+    }
+
+    debug_assert!(
+        input_ok
+            .iter()
+            .copied()
+            .all(|asset| !asset_satisfies_engine_permissions(manifest, asset, effective, now)),
+        "compatible authorized assets should have been returned before this skip"
+    );
+    if let Some(reason) = planner_reason_for_external_grant_blockers(
+        &external_grant_blockers_for_assets(manifest, &input_ok, &case.scope_grants, now),
+    ) {
+        return reason;
+    }
+    planner_not_executed_reason(
+        "no_compatible_authorized_assets",
+        NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION,
+    )
+}
+
 fn compatible_authorized_assets<'a>(
     case: &'a AssessmentCase,
     manifest: &EngineManifest,
@@ -8688,35 +8859,169 @@ fn compatible_authorized_assets<'a>(
         .filter(|asset| declared_web_service_profile_matches(manifest, asset))
         .filter(|asset| declared_network_service_profile_matches(manifest, asset))
         .filter(|asset| declared_host_scan_profile_matches(manifest, asset))
-        .filter(|asset| {
-            let grants = effective
-                .iter()
-                .copied()
-                .filter(|grant| grant.asset_id == asset.id && grant_effective(grant, now))
-                .collect::<Vec<_>>();
-            manifest.required_permissions_satisfied_by(
-                grants
-                    .iter()
-                    .filter(|grant| {
-                        let permission = &grant.permission;
-                        !is_external_permission(permission)
-                            || (grant.external_scope.is_some()
-                                && grant
-                                    .authorization_reference
-                                    .as_deref()
-                                    .is_some_and(|value| !value.trim().is_empty())
-                                && (!is_direct_external_permission(permission)
-                                    || grant.external_scope.as_ref().is_some_and(|scope| {
-                                        manifest
-                                            .direct_network_contract
-                                            .as_ref()
-                                            .is_some_and(|contract| contract.supports(scope))
-                                    })))
-                    })
-                    .map(|grant| &grant.permission),
-            )
-        })
+        .filter(|asset| asset_satisfies_engine_permissions(manifest, asset, effective, now))
         .collect()
+}
+
+fn asset_satisfies_engine_permissions(
+    manifest: &EngineManifest,
+    asset: &Asset,
+    effective: &[&ScopeGrant],
+    now: DateTime<Utc>,
+) -> bool {
+    let grants = effective
+        .iter()
+        .copied()
+        .filter(|grant| grant.asset_id == asset.id && grant_effective(grant, now))
+        .collect::<Vec<_>>();
+    manifest.required_permissions_satisfied_by(
+        grants
+            .iter()
+            .filter(|grant| classify_external_grant_blocker(manifest, grant).is_none())
+            .map(|grant| &grant.permission),
+    )
+}
+
+/// Why an external grant is dropped before it can satisfy an engine. Observed
+/// here so a protocol, target-kind, missing-scope, or empty-reference failure
+/// is not reported as a missing permission. These are planner-only codes:
+/// [`ScanReadinessBlocker`] is case-level, and the same grant can still
+/// authorize a different engine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExternalGrantBlocker {
+    MissingExternalScope,
+    EmptyAuthorizationReference,
+    ProtocolMismatch {
+        declared: String,
+        accepted: Vec<String>,
+    },
+    TargetKindMismatch {
+        declared: String,
+        accepted: Vec<String>,
+    },
+    Unusable,
+}
+
+fn classify_external_grant_blocker(
+    manifest: &EngineManifest,
+    grant: &ScopeGrant,
+) -> Option<ExternalGrantBlocker> {
+    if !is_external_permission(&grant.permission) {
+        return None;
+    }
+    let Some(scope) = grant.external_scope.as_ref() else {
+        return Some(ExternalGrantBlocker::MissingExternalScope);
+    };
+    if !grant_has_authorization_reference(grant) {
+        return Some(ExternalGrantBlocker::EmptyAuthorizationReference);
+    }
+    if !is_direct_external_permission(&grant.permission) {
+        return None;
+    }
+    let Some(contract) = manifest.direct_network_contract.as_ref() else {
+        return Some(ExternalGrantBlocker::Unusable);
+    };
+    if !contract.protocols.contains(&scope.protocol) {
+        return Some(ExternalGrantBlocker::ProtocolMismatch {
+            declared: enum_key(&scope.protocol),
+            accepted: contract.protocols.iter().map(enum_key).collect(),
+        });
+    }
+    if !contract.target_kinds.contains(&scope.target.kind()) {
+        return Some(ExternalGrantBlocker::TargetKindMismatch {
+            declared: enum_key(&scope.target.kind()),
+            accepted: contract.target_kinds.iter().map(enum_key).collect(),
+        });
+    }
+    None
+}
+
+fn external_grant_blockers_for_assets(
+    manifest: &EngineManifest,
+    assets: &[&Asset],
+    grants: &[ScopeGrant],
+    now: DateTime<Utc>,
+) -> Vec<ExternalGrantBlocker> {
+    assets
+        .iter()
+        .copied()
+        .flat_map(|asset| {
+            grants.iter().filter(move |grant| {
+                grant.asset_id == asset.id
+                    && grant_effective(grant, now)
+                    && manifest.required_permissions.contains(&grant.permission)
+            })
+        })
+        .filter_map(
+            |grant| match classify_external_grant_blocker(manifest, grant) {
+                Some(ExternalGrantBlocker::Unusable) => None,
+                other => other,
+            },
+        )
+        .collect()
+}
+
+fn planner_reason_for_external_grant_blockers(
+    blockers: &[ExternalGrantBlocker],
+) -> Option<(&'static str, String)> {
+    for blocker in blockers {
+        if let ExternalGrantBlocker::ProtocolMismatch { declared, accepted } = blocker {
+            return Some(planner_not_executed_reason(
+                "direct_network_protocol_mismatch",
+                protocol_mismatch_explanation(declared, accepted),
+            ));
+        }
+    }
+    for blocker in blockers {
+        if let ExternalGrantBlocker::TargetKindMismatch { declared, accepted } = blocker {
+            return Some(planner_not_executed_reason(
+                "direct_network_target_kind_mismatch",
+                target_kind_mismatch_explanation(declared, accepted),
+            ));
+        }
+    }
+    if blockers
+        .iter()
+        .any(|blocker| matches!(blocker, ExternalGrantBlocker::MissingExternalScope))
+    {
+        return Some(planner_not_executed_reason(
+            "external_scope_missing",
+            EXTERNAL_SCOPE_MISSING_EXPLANATION,
+        ));
+    }
+    if blockers
+        .iter()
+        .any(|blocker| matches!(blocker, ExternalGrantBlocker::EmptyAuthorizationReference))
+    {
+        return Some(planner_not_executed_reason(
+            "authorization_reference_empty",
+            AUTHORIZATION_REFERENCE_EMPTY_EXPLANATION,
+        ));
+    }
+    None
+}
+
+fn protocol_mismatch_explanation(declared: &str, accepted: &[String]) -> String {
+    format!(
+        "The approved scope declares {declared} and this check speaks {}.",
+        join_or(accepted)
+    )
+}
+
+fn target_kind_mismatch_explanation(declared: &str, accepted: &[String]) -> String {
+    format!(
+        "The approved scope declares {declared} and this check accepts {}.",
+        join_or(accepted)
+    )
+}
+
+fn join_or(values: &[String]) -> String {
+    match values {
+        [] => "nothing".to_owned(),
+        [one] => one.clone(),
+        [left, right] => format!("{left} or {right}"),
+        [rest @ .., last] => format!("{}, or {last}", rest.join(", ")),
+    }
 }
 
 /// A declared web-service profile is a scanner selection, not decorative UI
@@ -9048,23 +9353,44 @@ fn execution_manifest_for_verified_single_asset<'a>(
     Ok(execution_manifest)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalInputCompatibility {
+    NotRequired,
+    Compatible,
+    UnsupportedContract,
+    SnapshotMissing,
+    SnapshotMismatch,
+    McpConfigurationMissing,
+}
+
 fn local_input_metadata_matches(
     case: &AssessmentCase,
     manifest: &EngineManifest,
     asset: &Asset,
 ) -> bool {
+    matches!(
+        local_input_compatibility(case, manifest, asset),
+        LocalInputCompatibility::NotRequired | LocalInputCompatibility::Compatible
+    )
+}
+
+fn local_input_compatibility(
+    case: &AssessmentCase,
+    manifest: &EngineManifest,
+    asset: &Asset,
+) -> LocalInputCompatibility {
     if !manifest
         .required_permissions
         .contains(&ScanPermission::LocalArtifactRead)
     {
-        return true;
+        return LocalInputCompatibility::NotRequired;
     }
     let Some(contract) = manifest
         .input_contracts
         .iter()
         .find(|contract| contract.asset_kind == asset.kind)
     else {
-        return false;
+        return LocalInputCompatibility::UnsupportedContract;
     };
     let expected_sha = asset
         .metadata
@@ -9082,10 +9408,10 @@ fn local_input_metadata_matches(
         serde_json::from_value::<WorkspaceSnapshotReference>(value.clone()).ok()
     });
     let Some(reference) = references.next() else {
-        return false;
+        return LocalInputCompatibility::SnapshotMissing;
     };
     if references.next().is_some() {
-        return false;
+        return LocalInputCompatibility::SnapshotMismatch;
     }
     let snapshot_matches = reference.schema_version == WORKSPACE_SNAPSHOT_REFERENCE_SCHEMA
         && reference.working_tree_only
@@ -9093,9 +9419,14 @@ fn local_input_metadata_matches(
         && reference.input_profile.asset_kind() == asset.kind
         && expected_sha == Some(reference.sha256.as_str());
     if !snapshot_matches {
-        return false;
+        return LocalInputCompatibility::SnapshotMismatch;
     }
-    manifest.id != MCP_ARMOR_ENGINE_ID || selected_mcp_configuration(asset).ok().flatten().is_some()
+    if manifest.id == MCP_ARMOR_ENGINE_ID
+        && selected_mcp_configuration(asset).ok().flatten().is_none()
+    {
+        return LocalInputCompatibility::McpConfigurationMissing;
+    }
+    LocalInputCompatibility::Compatible
 }
 
 /// Provider discovery attribution is broader than scanner authorization. A
@@ -9237,26 +9568,26 @@ fn exact_asset_identifier<'a>(asset: &'a Asset, namespace: &str) -> Option<&'a s
 fn engine_unavailable(
     manifest: &EngineManifest,
     adapters: &AdapterRegistry,
-) -> Option<(String, String)> {
+) -> Option<(&'static str, String)> {
     if let Some(explanation) = manifest.release_blocker() {
-        return Some(("engine_release_unavailable".into(), explanation));
+        return Some(("engine_release_unavailable", explanation));
     }
     match manifest.status {
         ManifestStatus::Deprecated => {
             return Some((
-                "engine_deprecated".into(),
+                "engine_deprecated",
                 "The engine manifest is deprecated and cannot be dispatched.".into(),
             ));
         }
         ManifestStatus::ResearchOnly => {
             return Some((
-                "research_only".into(),
+                "research_only",
                 "The engine is catalogued for research only and cannot be dispatched.".into(),
             ));
         }
         ManifestStatus::LicenseReview => {
             return Some((
-                "license_review".into(),
+                "license_review",
                 "The engine is awaiting distribution/license review and is not dispatched.".into(),
             ));
         }
@@ -9264,7 +9595,7 @@ fn engine_unavailable(
     }
     let Some(adapter) = adapters.get(&manifest.id) else {
         return Some((
-            "adapter_unavailable".into(),
+            "adapter_unavailable",
             format!(
                 "No adapter is loaded for engine {} version {}.",
                 manifest.id, manifest.adapter_version
@@ -9273,7 +9604,7 @@ fn engine_unavailable(
     };
     if adapter.adapter_version() != manifest.adapter_version {
         return Some((
-            "adapter_version_mismatch".into(),
+            "adapter_version_mismatch",
             format!(
                 "Loaded adapter version {} does not match manifest version {}.",
                 adapter.adapter_version(),
@@ -9286,13 +9617,13 @@ fn engine_unavailable(
         DistributionMode::ExternalExecutable
     ) {
         return Some((
-            "external_executable_unsupported".into(),
+            "external_executable_unsupported",
             "The constrained executor only accepts pinned container images.".into(),
         ));
     }
     let Some(image) = manifest.image.as_ref() else {
         return Some((
-            "runtime_image_unavailable".into(),
+            "runtime_image_unavailable",
             "No built runtime image is recorded for this pinned source revision.".into(),
         ));
     };
@@ -9303,13 +9634,13 @@ fn engine_unavailable(
             .is_none_or(|digest| !valid_sha256_digest(digest))
     {
         return Some((
-            "runtime_image_unpinned".into(),
+            "runtime_image_unpinned",
             "The runtime image is unavailable or lacks an immutable sha256 digest.".into(),
         ));
     }
     if manifest.command.is_empty() || manifest.command.iter().any(|part| part.trim().is_empty()) {
         return Some((
-            "command_unavailable".into(),
+            "command_unavailable",
             "The manifest has no complete static command.".into(),
         ));
     }
@@ -13115,15 +13446,17 @@ fn effective_grants(case: &AssessmentCase, now: DateTime<Utc>) -> Vec<&ScopeGran
         .collect()
 }
 
+fn grant_has_authorization_reference(grant: &ScopeGrant) -> bool {
+    grant
+        .authorization_reference
+        .as_deref()
+        .is_some_and(|reference| !reference.trim().is_empty())
+}
+
 fn grant_effective(grant: &ScopeGrant, now: DateTime<Utc>) -> bool {
     grant.confirmed_at <= now
         && !grant.confirmed_by.trim().is_empty()
         && grant.expires_at.is_none_or(|expires_at| expires_at > now)
-        && (!is_direct_external_permission(&grant.permission)
-            || grant
-                .authorization_reference
-                .as_deref()
-                .is_some_and(|reference| !reference.trim().is_empty()))
 }
 
 fn is_external_permission(permission: &ScanPermission) -> bool {
@@ -19083,6 +19416,29 @@ mod tests {
                     .unwrap();
                 return (case, asset_id);
             }
+            self.discovered_declared_asset(case_id, kind)
+        }
+
+        fn discovered_repository_without_workspace_snapshot(
+            &self,
+            case_id: &str,
+        ) -> (AssessmentCase, Id) {
+            self.discovered_declared_asset(case_id, AssetKind::Repository)
+        }
+
+        fn discovered_declared_asset(
+            &self,
+            case_id: &str,
+            kind: AssetKind,
+        ) -> (AssessmentCase, Id) {
+            let service = self.service();
+            let before_ids = service
+                .show_case(case_id)
+                .unwrap()
+                .assets
+                .into_iter()
+                .map(|asset| asset.id)
+                .collect::<BTreeSet<_>>();
             let source = service
                 .upsert_source(
                     case_id,
@@ -19103,14 +19459,14 @@ mod tests {
                 connector_version: "1".into(),
                 observed_at: Utc::now(),
                 assets: vec![DiscoveredAsset {
-                    observation_key: "asset".into(),
+                    observation_key: format!("asset-{}", new_id()),
                     kind,
                     name: "Example asset".into(),
                     provider: None,
                     region: None,
                     stable_identifier: AssetIdentifier {
                         namespace: "example:id".into(),
-                        value: "asset-1".into(),
+                        value: new_id(),
                     },
                     additional_identifiers: vec![],
                     internet_exposed: None,
@@ -19122,7 +19478,13 @@ mod tests {
             };
             service.reconcile_discovery_batch(case_id, &batch).unwrap();
             let case = service.show_case(case_id).unwrap();
-            let asset_id = case.assets[0].id.clone();
+            let asset_id = case
+                .assets
+                .iter()
+                .find(|asset| !before_ids.contains(&asset.id))
+                .expect("declared discovery should add one asset")
+                .id
+                .clone();
             (case, asset_id)
         }
 
@@ -28507,7 +28869,7 @@ mod tests {
         assert_eq!(plan.executable[0].assets[0].id, asset_id);
         assert!(plan.not_executed.iter().any(|engine| {
             engine.engine_id == "httpx"
-                && engine.reason_code == "no_compatible_authorized_assets"
+                && engine.reason_code == "direct_network_protocol_mismatch"
                 && engine.asset_ids.is_empty()
         }));
     }
@@ -28611,9 +28973,349 @@ mod tests {
         assert_eq!(plan.executable[0].assets[0].id, asset_id);
         assert!(plan.not_executed.iter().any(|engine| {
             engine.engine_id == "nuclei"
-                && engine.reason_code == "no_compatible_authorized_assets"
+                && engine.reason_code == "direct_network_protocol_mismatch"
                 && engine.asset_ids.is_empty()
         }));
+    }
+
+    fn plan_gitleaks(service: &CaseService<'_>, case_id: &str) -> ScanPlan {
+        service
+            .plan_scan(
+                case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap()
+    }
+
+    fn gitleaks_skip(plan: ScanPlan) -> NotExecutedEngine {
+        assert!(plan.executable.is_empty());
+        assert_eq!(plan.not_executed.len(), 1);
+        assert_eq!(plan.not_executed[0].engine_id, "gitleaks");
+        plan.not_executed.into_iter().next().unwrap()
+    }
+
+    fn plan_httpx(service: &CaseService<'_>, case_id: &str) -> ScanPlan {
+        service
+            .plan_scan(
+                case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["httpx".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap()
+    }
+
+    fn httpx_skip(plan: ScanPlan) -> NotExecutedEngine {
+        assert!(plan.executable.is_empty());
+        assert_eq!(plan.not_executed.len(), 1);
+        assert_eq!(plan.not_executed[0].engine_id, "httpx");
+        plan.not_executed.into_iter().next().unwrap()
+    }
+
+    fn assert_skip_avoids_ownership_and_permission_wording(explanation: &str) {
+        let lower = explanation.to_ascii_lowercase();
+        assert!(!lower.contains("ownership"), "{explanation}");
+        assert!(!lower.contains("permission"), "{explanation}");
+    }
+
+    #[test]
+    fn planner_skips_a_granted_repository_without_a_workspace_snapshot_as_missing_local_input() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_repository_without_workspace_snapshot(&created.id);
+        let service = fixture.service();
+        service
+            .approve_scope(
+                &created.id,
+                ScopeApprovalRequest {
+                    asset_id,
+                    permissions: vec![ScanPermission::LocalArtifactRead],
+                    confirmed_by: "Repository owner".into(),
+                    expires_at: None,
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .unwrap();
+
+        let skipped = gitleaks_skip(plan_gitleaks(&service, &created.id));
+        assert_eq!(
+            skipped.reason_code,
+            ScanReadinessBlocker::WorkspaceSnapshotUnavailable.as_str()
+        );
+        assert_eq!(
+            skipped.explanation,
+            WORKSPACE_SNAPSHOT_NEVER_ATTACHED_EXPLANATION
+        );
+        assert!(
+            !skipped
+                .explanation
+                .to_ascii_lowercase()
+                .contains("ownership"),
+            "{}",
+            skipped.explanation
+        );
+        assert!(
+            !skipped
+                .explanation
+                .to_ascii_lowercase()
+                .contains("permission"),
+            "{}",
+            skipped.explanation
+        );
+    }
+
+    #[test]
+    fn planner_skips_an_unsupported_asset_kind_as_no_compatible_authorized_assets() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Other);
+        let service = fixture.service();
+        service
+            .approve_scope(
+                &created.id,
+                ScopeApprovalRequest {
+                    asset_id,
+                    permissions: vec![ScanPermission::LocalArtifactRead],
+                    confirmed_by: "Asset owner".into(),
+                    expires_at: None,
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .unwrap();
+
+        let skipped = gitleaks_skip(plan_gitleaks(&service, &created.id));
+        assert_eq!(skipped.reason_code, "no_compatible_authorized_assets");
+        assert_eq!(
+            skipped.explanation,
+            NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION
+        );
+    }
+
+    #[test]
+    fn planner_skips_an_unconfirmed_repository_as_ownership_confirmation_required() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let (_, other_id) = fixture.discovered_asset(&created.id, AssetKind::Other);
+        let service = fixture.service();
+        service
+            .approve_scope(
+                &created.id,
+                ScopeApprovalRequest {
+                    asset_id: other_id,
+                    permissions: vec![ScanPermission::LocalArtifactRead],
+                    confirmed_by: "Asset owner".into(),
+                    expires_at: None,
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .unwrap();
+
+        let skipped = gitleaks_skip(plan_gitleaks(&service, &created.id));
+        assert_eq!(
+            skipped.reason_code,
+            ScanReadinessBlocker::NoOwnershipConfirmedTargets.as_str()
+        );
+        assert_eq!(
+            skipped.explanation,
+            ScanReadinessBlocker::NoOwnershipConfirmedTargets.diagnostic()
+        );
+    }
+
+    #[test]
+    fn planner_skips_a_confirmed_repository_missing_local_artifact_read_as_no_compatible_authorized_assets()
+     {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let (_, asset_id) = fixture.discovered_asset(&created.id, AssetKind::Repository);
+        let service = fixture.service();
+        service
+            .approve_scope(
+                &created.id,
+                ScopeApprovalRequest {
+                    asset_id,
+                    permissions: vec![ScanPermission::InventoryRead],
+                    confirmed_by: "Repository owner".into(),
+                    expires_at: None,
+                    authorization_reference: None,
+                    notes: None,
+                    external_scope: None,
+                },
+            )
+            .unwrap();
+
+        let skipped = gitleaks_skip(plan_gitleaks(&service, &created.id));
+        assert_eq!(skipped.reason_code, "no_compatible_authorized_assets");
+        assert_eq!(
+            skipped.explanation,
+            NO_COMPATIBLE_AUTHORIZED_ASSETS_EXPLANATION
+        );
+    }
+
+    #[test]
+    fn planner_skips_httpx_for_a_tcp_domain_grant_as_protocol_mismatch() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Tcp,
+            true,
+        );
+        let service = fixture.service();
+        let skipped = httpx_skip(plan_httpx(&service, &created.id));
+        assert_eq!(skipped.reason_code, "direct_network_protocol_mismatch");
+        assert_eq!(
+            skipped.explanation,
+            "The approved scope declares tcp and this check speaks http or https."
+        );
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+        assert!(skipped.asset_ids.is_empty());
+    }
+
+    #[test]
+    fn planner_plans_httpx_for_the_same_domain_when_the_grant_speaks_https() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        let asset_id = approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let service = fixture.service();
+        let plan = plan_httpx(&service, &created.id);
+        assert_eq!(plan.executable.len(), 1);
+        assert_eq!(plan.executable[0].manifest.id, "httpx");
+        assert_eq!(plan.executable[0].assets[0].id, asset_id);
+        assert!(plan.not_executed.is_empty());
+    }
+
+    #[test]
+    fn planner_skips_httpx_for_an_https_network_grant_as_target_kind_mismatch() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::IpAddress,
+            "198.51.100.0/30",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let service = fixture.service();
+        let skipped = httpx_skip(plan_httpx(&service, &created.id));
+        assert_eq!(skipped.reason_code, "direct_network_target_kind_mismatch");
+        assert_eq!(
+            skipped.explanation,
+            "The approved scope declares network and this check accepts hostname or address."
+        );
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+        assert_ne!(skipped.reason_code, "direct_network_protocol_mismatch");
+    }
+
+    #[test]
+    fn planner_skips_httpx_when_an_external_grant_has_no_external_scope() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let mut stored = fixture.service().show_case(&created.id).unwrap();
+        stored
+            .scope_grants
+            .iter_mut()
+            .for_each(|grant| grant.external_scope = None);
+        fixture
+            .storage
+            .save_case(&mut stored, "test.strip_external_scope")
+            .unwrap();
+
+        let skipped = httpx_skip(plan_httpx(&fixture.service(), &created.id));
+        assert_eq!(skipped.reason_code, "external_scope_missing");
+        assert_eq!(skipped.explanation, EXTERNAL_SCOPE_MISSING_EXPLANATION);
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+    }
+
+    #[test]
+    fn planner_skips_httpx_when_an_external_grant_has_an_empty_authorization_reference() {
+        let fixture = Fixture::new();
+        let created = fixture.create();
+        approve_direct_external_target(
+            &fixture,
+            &created.id,
+            AssetKind::Domain,
+            "app.example.com",
+            ScanPermission::LowImpactExternalConnection,
+            crate::external_scope::TransportProtocol::Https,
+            true,
+        );
+        let mut stored = fixture.service().show_case(&created.id).unwrap();
+        stored
+            .scope_grants
+            .iter_mut()
+            .for_each(|grant| grant.authorization_reference = Some(String::new()));
+        fixture
+            .storage
+            .save_case(&mut stored, "test.empty_authorization_reference")
+            .unwrap();
+
+        let skipped = httpx_skip(plan_httpx(&fixture.service(), &created.id));
+        assert_eq!(skipped.reason_code, "authorization_reference_empty");
+        assert_eq!(
+            skipped.explanation,
+            AUTHORIZATION_REFERENCE_EMPTY_EXPLANATION
+        );
+        assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
+    }
+
+    #[test]
+    fn planner_not_executed_reason_codes_are_unique_and_sorted() {
+        let mut seen = BTreeSet::new();
+        let mut previous = "";
+        for code in PLANNER_NOT_EXECUTED_REASON_CODES {
+            assert!(seen.insert(*code), "duplicate planner reason {code}");
+            assert!(
+                *code > previous,
+                "planner reasons must stay sorted: {previous} before {code}"
+            );
+            previous = *code;
+        }
+        for blocker in [
+            ScanReadinessBlocker::NoOwnershipConfirmedTargets,
+            ScanReadinessBlocker::WorkspaceSnapshotUnavailable,
+            ScanReadinessBlocker::ProviderTargetBindingMismatch,
+            ScanReadinessBlocker::EngineExecutionContractInvalid,
+        ] {
+            assert!(
+                PLANNER_NOT_EXECUTED_REASON_CODES.contains(&blocker.as_str()),
+                "{}",
+                blocker.as_str()
+            );
+        }
     }
 
     #[test]
