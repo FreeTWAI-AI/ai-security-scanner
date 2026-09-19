@@ -6034,6 +6034,133 @@ mod tests {
     }
 
     #[test]
+    fn mixed_complete_and_timed_out_evidence_keeps_the_family_remedy() {
+        let mut case = case_with_catalog_tasks(
+            vec![
+                completed_httpx_task("task-complete"),
+                timed_out_httpx_task("task-timeout"),
+            ],
+            true,
+        );
+        let mut finding = rated_network_finding(&case, "hsts-mixed", Some("task-complete"));
+        let mut timeout_evidence = finding.evidence[0].clone();
+        timeout_evidence.id = "evidence-timeout".into();
+        timeout_evidence.engine_run_id = Some("task-timeout".into());
+        timeout_evidence.artifact_id = "artifact-timeout".into();
+        timeout_evidence.artifact_sha256 = "hash-timeout".into();
+        finding.evidence.push(timeout_evidence);
+        let retained = observation(&finding, "run-1", instant(18));
+        case.findings.push(finding);
+        case.finding_observations.push(retained);
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert_eq!(report.findings[0].evidence_references.len(), 2);
+        assert!(report.actual.checks.iter().any(|check| {
+            check.task_id == "task-complete"
+                && check.status == CoverageDimensionStatus::TestedComplete
+        }));
+        assert!(report.actual.checks.iter().any(|check| {
+            check.task_id == "task-timeout" && check.status == CoverageDimensionStatus::TimedOut
+        }));
+        let finding = &report.findings[0];
+        assert!(!finding_unconfirmed_by_coverage(finding, &report.actual));
+        assert_eq!(
+            finding.next_step,
+            "Correct the service or configuration named by this check."
+        );
+        let step = report
+            .next_steps
+            .iter()
+            .find(|step| step.finding_id.as_deref() == Some("hsts-mixed"))
+            .expect("the mixed-evidence finding keeps a next step");
+        assert_eq!(step.code, NextActionCode::ReviewFinding);
+        assert_eq!(
+            step.action,
+            "Correct the service or configuration named by this check."
+        );
+    }
+
+    #[test]
+    fn same_stored_action_with_different_experts_stays_two_steps() {
+        let mut case = case_with_catalog_tasks(vec![completed_httpx_task("task-1")], true);
+        let shared_recommendation = "Have the recommended specialist review the affected asset and the source rule's official guidance, then plan and approve a correction of the named service.";
+        let mut vulnerability_manager = rated_network_finding(&case, "finding-a", Some("task-1"));
+        vulnerability_manager.recommended_expert_type = "Vulnerability manager".into();
+        vulnerability_manager.recommendation = shared_recommendation.into();
+        let mut application_security = rated_network_finding(&case, "finding-b", Some("task-1"));
+        application_security.recommended_expert_type = "Application security engineer".into();
+        application_security.recommendation = shared_recommendation.into();
+        case.findings.push(vulnerability_manager.clone());
+        case.findings.push(application_security.clone());
+        case.finding_observations
+            .push(observation(&vulnerability_manager, "run-1", instant(18)));
+        case.finding_observations
+            .push(observation(&application_security, "run-1", instant(18)));
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let same_text_different_expert = report
+            .next_steps
+            .iter()
+            .filter(|step| {
+                step.action == "Correct the service or configuration named by this check."
+            })
+            .map(|step| step.recommended_expert_type.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            same_text_different_expert,
+            [
+                Some("Vulnerability manager".to_string()),
+                Some("Application security engineer".to_string())
+            ],
+            "one stored sentence, two experts, two steps"
+        );
+        assert!(
+            report
+                .next_steps
+                .iter()
+                .filter(|step| {
+                    step.action == "Correct the service or configuration named by this check."
+                })
+                .all(|step| step.also_resolves.is_empty())
+        );
+    }
+
+    #[test]
+    fn project_next_steps_never_returns_an_empty_vector() {
+        let empty_actual = ActualCoverage {
+            observed_from: None,
+            observed_until: None,
+            checks: Vec::new(),
+            network_scopes: Vec::new(),
+            unavailable_dimensions: Vec::new(),
+        };
+        let fallback = project_next_steps(&[], &[], &empty_actual);
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0].code, NextActionCode::ReviewCoverage);
+        assert_eq!(
+            fallback[0].action,
+            "Review what was tested before deciding whether you need a broader scan."
+        );
+
+        let case = localhost_case(
+            LocalhostTcpOutcome::Reachable,
+            EngineRunStatus::Completed,
+            true,
+        );
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert!(report.findings.is_empty());
+        assert!(report.coverage_gaps.is_empty());
+        assert!(
+            !report.next_steps.is_empty(),
+            "a complete run with no findings and no coverage gaps still names a next step"
+        );
+        assert_ne!(
+            report.next_steps[0].action,
+            "No additional action is required unless broader coverage is wanted."
+        );
+    }
+
+    #[test]
     fn httpx_only_run_says_it_is_inventory_not_security_checks() {
         let mut task = catalog_task("completed", EngineRunStatus::Completed);
         task.engine_id = "httpx".into();

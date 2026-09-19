@@ -203,6 +203,42 @@ test("coverage fail-closed treats missing and unknown engine runs as unconfirmed
   );
 });
 
+test("mixed complete and timed-out evidence keeps the family remedy", () => {
+  const evidence = [
+    { engineRunId: "complete-task" },
+    { engineRunId: "timeout-task" },
+  ];
+  const checks = [
+    { taskId: "complete-task", status: "tested_complete" as const },
+    { taskId: "timeout-task", status: "timed_out" as const },
+  ];
+  assert.equal(findingUnconfirmedByCoverage(evidence, checks), false);
+  const findings = [{
+    findingId: "finding-1",
+    evidenceReferences: [
+      { engineId: "nuclei", engineRunId: "complete-task" },
+      { engineId: "httpx", engineRunId: "timeout-task" },
+    ],
+  }];
+  assert.equal(
+    beginnerStepAction("en", {
+      action: "Correct the service or configuration named by this check.",
+      family: "network_exposure",
+      findingId: "finding-1",
+      reason: "HSTS status remains unconfirmed — Informational severity, Medium confidence",
+    }, findings, checks),
+    "Correct the service or configuration named by this check.",
+  );
+  assert.equal(
+    findingActionSentence("en", {
+      englishFallback: ENGLISH_ACTION,
+      family: "network_exposure",
+      unconfirmedByCoverage: findingUnconfirmedByCoverage(evidence, checks),
+    }),
+    "Correct the service or configuration named by this check.",
+  );
+});
+
 test("a next step prints the composed family sentence, not a code-label fallback", () => {
   const stored = "Document why this service must remain reachable.";
   const findings = [{

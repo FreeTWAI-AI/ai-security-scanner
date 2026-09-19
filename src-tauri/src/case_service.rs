@@ -13544,6 +13544,7 @@ impl HtmlReportCatalog {
     }
 
     fn format_number(&self, value: usize) -> String {
+        // Grouping separators belong in visible labels, never in `id` or `href`.
         let digits = value.to_string();
         let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
         for (index, character) in digits.chars().enumerate() {
@@ -17197,7 +17198,7 @@ fn html_report_bytes(
             "<li>沒有記錄到已知的涵蓋缺口。</li>",
         ));
     }
-    let mut next_step_items = report
+    let next_step_items = report
         .next_steps
         .iter()
         .map(|step| {
@@ -17321,11 +17322,7 @@ fn html_report_bytes(
                     .iter()
                     .position(|finding| finding.finding_id == *finding_id)
             }) {
-                Some(index) => format!(
-                    "<a href=\"#f{}\">{}</a>",
-                    catalog.format_number(index + 1),
-                    html_escape(&reason),
-                ),
+                Some(index) => format!("<a href=\"#f{}\">{}</a>", index + 1, html_escape(&reason),),
                 None => html_escape(&reason),
             };
             format!(
@@ -17343,12 +17340,6 @@ fn html_report_bytes(
             )
         })
         .collect::<String>();
-    if next_step_items.is_empty() {
-        next_step_items.push_str(catalog.text(
-            "<li>No additional action is required unless broader coverage is wanted.</li>",
-            "<li>除非需要更廣的涵蓋範圍，否則目前不需要其他動作。</li>",
-        ));
-    }
     // Said once, above the steps, when any finding carries it.
     let any_shared_safety = report.findings.iter().any(|finding| {
         finding
@@ -17725,7 +17716,7 @@ fn html_report_bytes(
                     "<h4>{}</h4><ul>{}</ul>",
                     "<h4>{}</h4><ul>{}</ul></article>"
                 ),
-                catalog.format_number(index + 1),
+                index + 1,
                 observation_kind,
                 catalog.text(
                     "Discovery confirmed that this service responded. Reachability is useful inventory, but it does not by itself establish a vulnerability.",
@@ -17851,7 +17842,7 @@ fn html_report_bytes(
                 "<h4>{}</h4><ul>{}</ul>",
                 "<h4>{}</h4><ul>{}</ul></details></article>"
             ),
-            catalog.format_number(index + 1),
+            index + 1,
             html_escape(&finding.title),
             targets,
             severity_slug(&finding.severity),
@@ -32838,12 +32829,11 @@ mod tests {
         assert!(!retained_html.contains(ABSENT_VERIFICATION));
     }
 
-    fn html_report_for_rated_httpx_finding(
+    fn case_for_rated_httpx_finding(
         status: EngineRunStatus,
         error_code: Option<&str>,
         evidence_engine_run_id: Option<&str>,
-        locale: crate::export::ReportLocale,
-    ) -> String {
+    ) -> AssessmentCase {
         let fixture = Fixture::new();
         let created = fixture.create();
         let (mut case, asset_id) = fixture.discovered_asset(&created.id, AssetKind::WebService);
@@ -32978,9 +32968,13 @@ mod tests {
         });
         case.findings.push(finding);
         case.updated_at = now;
+        case
+    }
+
+    fn html_from_export_case(case: &AssessmentCase, locale: crate::export::ReportLocale) -> String {
         String::from_utf8(
             html_report_bytes(
-                &case,
+                case,
                 "run-httpx",
                 &ExportOptions {
                     redaction: RedactionProfile::None,
@@ -32991,6 +32985,32 @@ mod tests {
             .unwrap(),
         )
         .unwrap()
+    }
+
+    fn html_report_for_rated_httpx_finding(
+        status: EngineRunStatus,
+        error_code: Option<&str>,
+        evidence_engine_run_id: Option<&str>,
+        locale: crate::export::ReportLocale,
+    ) -> String {
+        html_from_export_case(
+            &case_for_rated_httpx_finding(status, error_code, evidence_engine_run_id),
+            locale,
+        )
+    }
+
+    fn html_quoted_values(html: &str, open: &str) -> Vec<String> {
+        let mut values = Vec::new();
+        let mut rest = html;
+        while let Some(start) = rest.find(open) {
+            let after = &rest[start + open.len()..];
+            let Some(end) = after.find('"') else {
+                break;
+            };
+            values.push(after[..end].to_string());
+            rest = &after[end + 1..];
+        }
+        values
     }
 
     #[test]
@@ -33050,6 +33070,126 @@ mod tests {
         )));
         assert!(html.contains(&format!("<td>{action}</td>")));
         assert!(html.contains(&format!("<li><strong>{action}</strong> — <a href=\"#f1\">")));
+    }
+
+    #[test]
+    fn html_finding_anchors_stay_plain_numbers_past_a_thousand_findings() {
+        let mut case =
+            case_for_rated_httpx_finding(EngineRunStatus::Completed, None, Some("httpx-task"));
+        let template_finding = case.findings[0].clone();
+        let template_observation = case.finding_observations[0].clone();
+        // Identical clones collapse to one next-step pointing at #f1. Clone
+        // through 1001 so a distinct expert can occupy 1-based index 1000,
+        // then append an OpenPort finding (priority 0) so the observation-card
+        // branch also runs past 999.
+        for index in 2..=1001 {
+            let id = format!("finding-{index:04}");
+            let mut finding = template_finding.clone();
+            finding.id = id.clone();
+            finding.fingerprint = format!("fp-{id}");
+            finding.evidence[0].id = format!("evidence-{id}");
+            finding.evidence[0].finding_id = id.clone();
+            finding.evidence[0].artifact_id = format!("artifact-{id}");
+            finding.evidence[0].artifact_sha256 = format!("{index:064}");
+            if index == 1001 {
+                finding.recommended_expert_type = "Application security engineer".into();
+            }
+            let mut observation = template_observation.clone();
+            observation.id = format!("observation-{id}");
+            observation.finding_id = id.clone();
+            observation.fingerprint = finding.fingerprint.clone();
+            observation.evidence_hashes = vec![finding.evidence[0].artifact_sha256.clone()];
+            observation.finding_snapshot = Some(finding.clone());
+            case.findings.push(finding);
+            case.finding_observations.push(observation);
+        }
+
+        let mut exposure = template_finding;
+        exposure.id = "finding-open-port".into();
+        exposure.fingerprint = "naabu:finding-open-port".into();
+        exposure.title = "Externally reachable network service".into();
+        exposure.severity = Severity::Informational;
+        exposure.severity_basis_code = Some(crate::domain::SeverityBasisCode::OpenPort);
+        exposure.confidence_basis_code = Some(crate::domain::ConfidenceBasisCode::ObservedResponse);
+        exposure.priority = 0;
+        exposure.priority_reasons =
+            vec![crate::finding_narrative::ENGLISH_EXPOSURE_OBSERVATION_REASON.into()];
+        exposure.recommendation = "Record the reachable service as inventory.".into();
+        exposure.official_references.clear();
+        exposure.tags = vec!["port:443".into(), "protocol:tcp".into()];
+        exposure.evidence[0].id = "evidence-open-port".into();
+        exposure.evidence[0].finding_id = exposure.id.clone();
+        exposure.evidence[0].engine_id = "naabu".into();
+        exposure.evidence[0].artifact_sha256 = "9".repeat(64);
+        case.findings.push(exposure.clone());
+        let mut exposure_observation = template_observation;
+        exposure_observation.id = "observation-open-port".into();
+        exposure_observation.finding_id = exposure.id.clone();
+        exposure_observation.fingerprint = exposure.fingerprint.clone();
+        exposure_observation.severity = exposure.severity.clone();
+        exposure_observation.evidence_hashes = vec![exposure.evidence[0].artifact_sha256.clone()];
+        exposure_observation.finding_snapshot = Some(exposure);
+        case.finding_observations.push(exposure_observation);
+
+        let html = html_from_export_case(&case, crate::export::ReportLocale::En);
+        let ids = html_quoted_values(&html, "<article id=\"f");
+        let hrefs = html_quoted_values(&html, "href=\"#f");
+        assert!(
+            ids.len() >= 1000,
+            "the report must emit an article for every finding, including the thousandth; got {}",
+            ids.len()
+        );
+        assert_eq!(
+            ids.len(),
+            case.findings.len(),
+            "every finding, including the exposure observation, must emit an article; dropping the observation-card branch shrinks this silently"
+        );
+        assert!(
+            !hrefs.is_empty(),
+            "the report must emit at least one finding href"
+        );
+        for token in ids.iter().chain(hrefs.iter()) {
+            assert!(
+                token.chars().all(|character| character.is_ascii_digit()),
+                "finding identity {token:?} is not a plain number"
+            );
+        }
+        assert!(
+            ids.iter().any(|id| id == "1000"),
+            "the thousandth finding must keep a comma-free identity"
+        );
+        for href in &hrefs {
+            assert!(
+                ids.iter().any(|id| id == href),
+                "href=#f{href} has no matching id in the same document"
+            );
+        }
+
+        let next_step_hrefs = html
+            .split_once("<h2>What to do next</h2>")
+            .and_then(|(_, rest)| rest.split_once("<ol>"))
+            .and_then(|(_, rest)| rest.split_once("</ol>"))
+            .map(|(list, _)| html_quoted_values(list, "href=\"#f"))
+            .expect("the What to do next list must be present");
+        assert!(
+            next_step_hrefs.iter().any(|href| {
+                href.len() >= 4 && href.chars().all(|character| character.is_ascii_digit())
+            }),
+            "a next-step href must point at a four-digit finding identity; got {next_step_hrefs:?}"
+        );
+
+        let observation_card = format!(
+            "<article id=\"f{}\"><h3>Open network service</h3>",
+            case.findings.len()
+        );
+        assert!(
+            html.contains(&observation_card),
+            "the exposure-observation card must keep a comma-free identity past a thousand findings; missing {observation_card}"
+        );
+        assert!(
+            html.contains("<h2>Observed services (not vulnerabilities)</h2>"),
+            "the observation-card section must run"
+        );
     }
 
     #[test]
