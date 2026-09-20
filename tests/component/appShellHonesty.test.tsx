@@ -267,7 +267,7 @@ test("active runtime setup keeps exact stage and progress visible while mechanic
   expect(getByRole("button", { name: "Stop setup" })).toBeTruthy();
 });
 
-test("a ready docker compatibility runtime does not claim the advanced tools are ready", () => {
+test("compatibility availability does not claim which runtime a scan is using", () => {
   const { container } = renderShell({
     runtime: {
       provider: "docker",
@@ -280,8 +280,8 @@ test("a ready docker compatibility runtime does not claim the advanced tools are
 
   const badge = container.querySelector(".runtime-badge")?.textContent ?? "";
   expect(badge).not.toContain("Advanced local tools ready");
-  expect(badge).toContain("Scanning ready");
-  expect(badge).toContain("the advanced isolated runtime is not in use");
+  expect(badge).toContain("Scanning ready at last check");
+  expect(badge).not.toContain("is not in use");
 });
 
 test("a ready managed local runtime still claims the advanced tools are ready", () => {
