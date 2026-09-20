@@ -4587,8 +4587,6 @@ impl<'a> CaseService<'a> {
                             ) && checkpoint.container_name.is_none()
                                 && checkpoint.scope_sha256.is_none()
                                 && checkpoint.artifact_ids.is_empty()
-                                && checkpoint.runtime_provider.is_none()
-                                && checkpoint.runtime_command_provenance.is_none()
                                 && checkpoint.managed_network.is_none()
                                 && checkpoint.cleanup_completed
                         });
@@ -6096,13 +6094,11 @@ impl<'a> CaseService<'a> {
             }
             // A pre-dispatch retry needs its new resource-free
             // planned checkpoint persisted before desktop preflight or Cancel.
+            // Runtime selection can precede a failure to create execution
+            // resources. Keep that identity so retry uses the recorded runtime.
             // Keep captured evidence and cleanup obligations on their existing
             // recovery path; neither may be replaced with an empty plan.
             if let Some(checkpoint) = candidate.execution.resume_checkpoint.as_mut()
-                && matches!(
-                    engine_run.phase.as_str(),
-                    "preflight_interrupted" | "preflight_failed" | "cancelled_before_dispatch"
-                )
                 && matches!(
                     checkpoint.stage,
                     ExecutionStage::Failed | ExecutionStage::Cancelled
@@ -6113,8 +6109,6 @@ impl<'a> CaseService<'a> {
                 && checkpoint.launcher_plan_sha256.is_none()
                 && checkpoint.artifact_ids.is_empty()
                 && checkpoint.cleanup_completed
-                && checkpoint.runtime_provider.is_none()
-                && checkpoint.runtime_command_provenance.is_none()
                 && checkpoint.managed_network.is_none()
                 && engine_run.raw_artifact_ids.is_empty()
             {
@@ -13260,6 +13254,8 @@ fn resource_free_planned_checkpoint(
     engine_run: &EngineRun,
     operation: &str,
 ) -> AppResult<ExecutionCheckpoint> {
+    // A recorded runtime is metadata, not an execution resource. Parsing still
+    // requires provider/provenance together; preflight revalidates that exact pair.
     let checkpoint =
         ExecutionCheckpoint::from_resume_token(engine_run.resume_token.as_deref().ok_or_else(
             || AppError::NotAuthorized(format!("{operation} found no durable planned checkpoint")),
@@ -13274,8 +13270,6 @@ fn resource_free_planned_checkpoint(
         || checkpoint.scope_sha256.is_some()
         || !checkpoint.artifact_ids.is_empty()
         || !checkpoint.cleanup_completed
-        || checkpoint.runtime_command_provenance.is_some()
-        || checkpoint.runtime_provider.is_some()
         || checkpoint.managed_network.is_some()
     {
         return Err(AppError::NotAuthorized(format!(
@@ -33597,6 +33591,145 @@ mod tests {
     }
 
     #[test]
+    fn runtime_bound_checkpoint_retry_can_prepare_cancel_and_start_again() {
+        // Also cover a plan left Queued by a previous failed retry dispatch.
+        for already_queued in [false, true] {
+            let fixture = Fixture::new();
+            let case_id = repository_case_ready_for_execution(&fixture);
+            let service = fixture.service();
+            let original = service
+                .persist_scan_before_execution_preflight(
+                    &case_id,
+                    ScanPlanRequest {
+                        engine_ids: vec!["gitleaks".into()],
+                        engine_asset_routes: Vec::new(),
+                    },
+                )
+                .unwrap();
+            let run_id = &original.scan_run.id;
+            let engine_run_ids = vec![original.executable[0].engine_run_id.clone()];
+            let mut checkpoint = ExecutionCheckpoint::from_resume_token(
+                original.scan_run.engine_runs[0]
+                    .resume_token
+                    .as_deref()
+                    .unwrap(),
+            )
+            .unwrap();
+            checkpoint.stage = ExecutionStage::Failed;
+            checkpoint.runtime_provider = Some(crate::container_runtime::RuntimeProvider::Docker);
+            checkpoint.runtime_command_provenance =
+                Some(crate::container_runtime::RuntimeCommandProvenance::Compatibility);
+            checkpoint.last_error =
+                Some("internal error: Disk quota exceeded (os error 122)".into());
+            service
+                .apply_execution_report(
+                    &case_id,
+                    &DurableExecutionReport {
+                        checkpoint,
+                        runtime_preflight: None,
+                        cleanup: None,
+                        exit_code: None,
+                        raw_artifacts: Vec::new(),
+                        findings: Vec::new(),
+                        observations: Vec::new(),
+                        warnings: Vec::new(),
+                        unattributed: Vec::new(),
+                        unevaluated_targets: Vec::new(),
+                        security_template_executions: Vec::new(),
+                        manual_review_controls: Vec::new(),
+                    },
+                )
+                .unwrap();
+            if already_queued {
+                let mut case = service.show_case(&case_id).unwrap();
+                let engine = &mut case.scan_runs[0].engine_runs[0];
+                engine.status = EngineRunStatus::Queued;
+                engine.phase = "queued_for_resume".into();
+                engine.finished_at = None;
+                fixture
+                    .storage
+                    .save_case(&mut case, "test.previous_retry_stuck")
+                    .unwrap();
+                assert_eq!(service.recover_interrupted_scans().unwrap(), 1);
+                assert_eq!(
+                    service.show_case(&case_id).unwrap().scan_runs[0].engine_runs[0].phase,
+                    "preflight_interrupted"
+                );
+            }
+            for attempt in [2, 3, 4] {
+                let resumed = service
+                    .persist_resume_before_execution_preflight(&case_id, run_id)
+                    .unwrap();
+                assert_eq!(resumed.executable[0].attempt, attempt);
+                assert_eq!(
+                    resumed.scan_run.scope_grant_ids,
+                    original.scan_run.scope_grant_ids
+                );
+                assert_eq!(
+                    resumed.executable[0].assets[0].id,
+                    original.executable[0].assets[0].id
+                );
+                let preparing = service
+                    .transition_persisted_scan_pre_dispatch(
+                        &case_id,
+                        run_id,
+                        &PersistedPreDispatchTransition::Preparing {
+                            engine_run_ids: engine_run_ids.clone(),
+                        },
+                    )
+                    .unwrap();
+                let engine = &preparing.scan_runs[0].engine_runs[0];
+                assert_eq!(engine.status, EngineRunStatus::Preparing);
+                let checkpoint =
+                    ExecutionCheckpoint::from_resume_token(engine.resume_token.as_deref().unwrap())
+                        .unwrap();
+                assert_eq!(checkpoint.stage, ExecutionStage::Planned);
+                assert_eq!(checkpoint.attempt, attempt);
+                assert!(checkpoint.container_name.is_none());
+                assert!(checkpoint.last_error.is_none());
+                assert_eq!(
+                    checkpoint.runtime_provider,
+                    Some(crate::container_runtime::RuntimeProvider::Docker)
+                );
+                assert_eq!(
+                    checkpoint.runtime_command_provenance,
+                    Some(crate::container_runtime::RuntimeCommandProvenance::Compatibility)
+                );
+                if attempt == 3 {
+                    // Reopening a newly prepared retry must not invent a cleanup
+                    // obligation merely because a runtime was already selected.
+                    assert_eq!(service.recover_interrupted_scans().unwrap(), 1);
+                    assert_eq!(
+                        service.show_case(&case_id).unwrap().scan_runs[0].engine_runs[0].phase,
+                        "preflight_interrupted"
+                    );
+                    continue;
+                }
+                // No worker exists yet: Cancel must still be able to close the plan.
+                let cancelled = service
+                    .cancel_no_worker_scan_work(&case_id, run_id, &engine_run_ids, None)
+                    .unwrap();
+                assert_eq!(
+                    cancelled.scan_runs[0].engine_runs[0].status,
+                    EngineRunStatus::Cancelled
+                );
+                assert!(cancelled.scan_runs[0].completed_at.is_some());
+            }
+            let fresh = service
+                .persist_scan_before_execution_preflight(
+                    &case_id,
+                    ScanPlanRequest {
+                        engine_ids: vec!["gitleaks".into()],
+                        engine_asset_routes: Vec::new(),
+                    },
+                )
+                .unwrap();
+            assert_ne!(fresh.scan_run.id, *run_id);
+            assert_eq!(fresh.executable[0].attempt, 1);
+        }
+    }
+
+    #[test]
     fn outcome_first_resume_persists_retry_before_dependency_preflight() {
         let fixture = Fixture::new();
         let (case_id, baseline_run_id) = repository_case_with_completed_baseline(&fixture);
@@ -38851,7 +38984,10 @@ mod tests {
         semgrep.finished_at = Some(Utc::now());
         semgrep.resume_token = Some(checkpoint.resume_token().unwrap());
         semgrep.mapping_version = Some("2026-08-26.1".into());
-        let frozen_resume_token = semgrep.resume_token.clone();
+        let mut expected_retry_checkpoint = checkpoint.clone();
+        expected_retry_checkpoint.attempt = 2;
+        expected_retry_checkpoint.stage = ExecutionStage::Planned;
+        expected_retry_checkpoint.last_error = None;
         let frozen_scope_contract_sha256 = semgrep.scope_contract_sha256.clone();
         mixed
             .storage
@@ -38883,7 +39019,10 @@ mod tests {
             .unwrap();
         assert_eq!(semgrep.status, EngineRunStatus::Queued);
         assert_eq!(semgrep.phase, "queued_for_resume");
-        assert_eq!(semgrep.resume_token, frozen_resume_token);
+        assert_eq!(
+            semgrep.resume_token,
+            Some(expected_retry_checkpoint.resume_token().unwrap())
+        );
         assert_eq!(semgrep.scope_contract_sha256, frozen_scope_contract_sha256);
         assert_eq!(semgrep.mapping_version.as_deref(), Some("2026-08-26.1"));
         assert!(semgrep.error_code.is_none());

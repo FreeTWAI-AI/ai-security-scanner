@@ -3521,8 +3521,6 @@ fn locally_cancellable_resource_free_engine_ids(run: &ScanRun) -> Vec<Id> {
                 && checkpoint.artifact_ids.is_empty()
                 && checkpoint.cleanup_completed
                 && checkpoint.last_error.is_none()
-                && checkpoint.runtime_command_provenance.is_none()
-                && checkpoint.runtime_provider.is_none()
                 && checkpoint.managed_network.is_none())
             .then(|| engine_run.id.clone())
         })
@@ -9099,6 +9097,63 @@ mod tests {
             )
             .expect("read preserved bytes");
         assert_eq!(still_preserved, preserved_bytes);
+    }
+
+    #[test]
+    fn no_worker_cancel_accepts_runtime_bound_plans_but_not_execution_resources() {
+        let (_directory, state, case_id) = ready_repository_state();
+        let mut plan = state
+            .case_service()
+            .persist_scan_before_execution_preflight(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap();
+        let engine = &plan.scan_run.engine_runs[0];
+        let engine_id = engine.id.clone();
+        let mut checkpoint =
+            ExecutionCheckpoint::from_resume_token(engine.resume_token.as_deref().unwrap())
+                .unwrap();
+        checkpoint.runtime_provider = Some(crate::container_runtime::RuntimeProvider::Docker);
+        checkpoint.runtime_command_provenance =
+            Some(crate::container_runtime::RuntimeCommandProvenance::Compatibility);
+        plan.scan_run.engine_runs[0].resume_token = Some(checkpoint.resume_token().unwrap());
+        assert_eq!(
+            locally_cancellable_resource_free_engine_ids(&plan.scan_run),
+            vec![engine_id]
+        );
+
+        let clean = checkpoint.clone();
+        for mutation in ["container", "scope", "artifact", "cleanup", "runtime_pair"] {
+            let mut checkpoint = clean.clone();
+            match mutation {
+                "container" => {
+                    checkpoint.container_name = Some(
+                        crate::container_runtime::planned_container_name(
+                            &checkpoint.engine_id,
+                            &checkpoint.engine_run_id,
+                            checkpoint.attempt,
+                        )
+                        .unwrap(),
+                    )
+                }
+                "scope" => checkpoint.scope_sha256 = Some("a".repeat(64)),
+                "artifact" => checkpoint.artifact_ids.push("captured-evidence".into()),
+                "cleanup" => checkpoint.cleanup_completed = false,
+                "runtime_pair" => checkpoint.runtime_provider = None,
+                _ => unreachable!(),
+            }
+            // Serialize the deliberately invalid pair too, to exercise parse validation.
+            plan.scan_run.engine_runs[0].resume_token =
+                Some(serde_json::to_string(&checkpoint).unwrap());
+            assert!(
+                locally_cancellable_resource_free_engine_ids(&plan.scan_run).is_empty(),
+                "{mutation}"
+            );
+        }
     }
 
     #[test]
