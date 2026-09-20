@@ -6,6 +6,7 @@ export const findRunCreatedAfterStart = (
 const liveRunStatuses = new Set(["queued", "running", "paused", "preparing"]);
 const liveEngineStatuses = new Set(["pending", "queued", "running", "paused", "preparing"]);
 const plannedEngineStatuses = new Set(["pending", "queued"]);
+const startedEngineStatuses = new Set(["preparing", "running", "paused", "partial", "completed"]);
 const startBlockingReasons = new Set([
   "demo_case",
   "archived_case",
@@ -30,15 +31,22 @@ type ScanWorkRun = {
 
 const hasRecordedStart = (value?: string): boolean => typeof value === "string" && value.length > 0;
 
+/** Missing timestamps alone cannot override a check's recorded execution state. */
+export const isNeverStartedScanRun = (run: ScanWorkRun): boolean => {
+  const engines = run.engineRuns;
+  if (!engines || engines.length === 0) return false;
+  return engines.every((engine) =>
+    !startedEngineStatuses.has(engine.status) && !hasRecordedStart(engine.startedAt));
+};
+
 /** A saved plan that nothing is dispatching is not live scan work. */
 export const isUndispatchedScanPlan = (run: ScanWorkRun): boolean => {
   if (run.status !== "queued") return false;
   if (run.progress !== undefined && run.progress > 0) return false;
   if (hasRecordedStart(run.finishedAt)) return false;
+  if (!isNeverStartedScanRun(run)) return false;
   const engines = run.engineRuns;
-  if (!engines || engines.length === 0) return false;
-  return engines.every((engine) =>
-    plannedEngineStatuses.has(engine.status) && !hasRecordedStart(engine.startedAt));
+  return engines?.every((engine) => plannedEngineStatuses.has(engine.status)) === true;
 };
 
 export const hasActiveScanWork = (

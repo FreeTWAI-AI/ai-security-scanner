@@ -6,6 +6,7 @@ import {
   canStartPreparedScan,
   findRunCreatedAfterStart,
   hasActiveScanWork,
+  isNeverStartedScanRun,
 } from "../../src/freshScanSelection.ts";
 
 const readSource = (path: string) => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -109,6 +110,37 @@ test("an undispatched plan does not count as active scan work and does not block
   );
 });
 
+test("a reconciled plan is still recognized when unavailable checks were never executable", () => {
+  const reconciledPlan = {
+    status: "failed",
+    progress: 100,
+    finishedAt: "2026-09-20T12:01:00Z",
+    engineRuns: [
+      ...Array.from({ length: 8 }, () => ({ status: "failed" })),
+      { status: "not_executed" },
+      { status: "not_executed" },
+    ],
+  };
+
+  assert.equal(isNeverStartedScanRun(reconciledPlan), true);
+  assert.equal(
+    isNeverStartedScanRun({
+      ...reconciledPlan,
+      engineRuns: [{ status: "failed", startedAt: "2026-09-20T12:00:01Z" }],
+    }),
+    false,
+    "one recorded engine start proves that the run genuinely began",
+  );
+  assert.equal(
+    isNeverStartedScanRun({
+      ...reconciledPlan,
+      engineRuns: [{ status: "completed" }],
+    }),
+    false,
+    "a completed engine must preserve the genuine-run presentation even without a legacy start timestamp",
+  );
+});
+
 test("a preparing, running, or paused run still blocks Start", () => {
   for (const status of ["preparing", "running", "paused"]) {
     assert.equal(hasActiveScanWork([{ status }]), true, status);
@@ -126,6 +158,12 @@ test("a preparing, running, or paused run still blocks Start", () => {
       false,
       `engine ${status} work must block a second scan`,
     );
+  }
+});
+
+test("recorded check execution is preserved when a legacy start timestamp is absent", () => {
+  for (const status of ["preparing", "running", "paused", "partial", "completed"]) {
+    assert.equal(isNeverStartedScanRun({ status: "failed", engineRuns: [{ status }] }), false, status);
   }
 });
 

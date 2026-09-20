@@ -42,6 +42,7 @@ import {
   canStartPreparedScan,
   findRunCreatedAfterStart,
   hasActiveScanWork,
+  isNeverStartedScanRun,
   isUndispatchedScanPlan,
 } from "../freshScanSelection";
 import type { UseCaseId } from "../useCases";
@@ -481,7 +482,40 @@ const copy = {
     en: "Checks queued: {count}. Available actions: Continue or Cancel.",
     zhTW: "已排入佇列的檢查：{count} 項。可用操作：繼續或取消。",
   },
+  interruptedBodyContinue: {
+    en: "Checks queued: {count}. Available action: Continue.",
+    zhTW: "已排入佇列的檢查：{count} 項。可用操作：繼續。",
+  },
+  interruptedBodyCancel: {
+    en: "Checks queued: {count}. Available action: Cancel.",
+    zhTW: "已排入佇列的檢查：{count} 項。可用操作：取消。",
+  },
+  interruptedBodyNoAction: {
+    en: "Checks needing attention: {count}.",
+    zhTW: "需要處理的檢查：{count} 項。",
+  },
+  savedPlanTitle: {
+    en: "Your scan plan was saved, but no checks started",
+    zhTW: "掃描計畫已保存，但沒有檢查開始執行",
+  },
+  savedPlanBodyContinueStart: {
+    en: "Checks ready to continue: {count}. Available actions: Continue or Start a new scan.",
+    zhTW: "可繼續的檢查：{count} 項。可用操作：繼續或開始新的掃描。",
+  },
+  savedPlanBodyContinue: {
+    en: "Checks ready to continue: {count}. Available action: Continue.",
+    zhTW: "可繼續的檢查：{count} 項。可用操作：繼續。",
+  },
+  savedPlanBodyStart: {
+    en: "No checks started. Available action: Start a new scan.",
+    zhTW: "沒有檢查開始執行。可用操作：開始新的掃描。",
+  },
+  savedPlanBodyNoAction: {
+    en: "No checks started.",
+    zhTW: "沒有檢查開始執行。",
+  },
   resumeOriginal: { en: "Continue the original scope", zhTW: "繼續原本的範圍" },
+  startNewScan: { en: "Start a new scan", zhTW: "開始新的掃描" },
   cancelKeepRecord: { en: "Cancel and keep the record", zhTW: "取消並保留紀錄" },
   expiredTitle: { en: "Update needed before checking fixes again", zhTW: "再次確認修復前，需要先更新" },
   expiredBody: {
@@ -490,6 +524,8 @@ const copy = {
   },
   runIdTitle: { en: "Local scan run ID", zhTW: "本機掃描輪次 ID" },
   processed: { en: "{percent}% processed", zhTW: "已處理 {percent}%" },
+  noChecksStarted: { en: "No checks started", zhTW: "沒有檢查開始執行" },
+  savedPlanReady: { en: "The saved plan is ready for your next action.", zhTW: "已保存的計畫可進行下一步。" },
   runSummary: {
     en: "Selected assets: {total} · Started {started}",
     zhTW: "已選資產：{total} · 開始於 {started}",
@@ -523,6 +559,7 @@ const copy = {
   partialDetail: { en: "A check ended before completing all work", zhTW: "有檢查在完成全部工作前結束" },
   failedCancelled: { en: "Stopped", zhTW: "已停止" },
   failedCancelledDetail: { en: "A check stopped early or was cancelled", zhTW: "有檢查提早停止或已被取消" },
+  notStartedStatus: { en: "Not started", zhTW: "未開始" },
   notRun: { en: "Not run", zhTW: "未執行" },
   notRunDetail: { en: "Finish setup before running these checks", zhTW: "完成設定後，才能執行這些檢查" },
   notRunTechnical: { en: "Status: not run.", zhTW: "狀態：未執行。" },
@@ -782,6 +819,7 @@ export function ProgressPage({
   const startRunIds = useRef<{ caseId?: string; ids: Set<string> } | undefined>(undefined);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0];
   const selectedRunOverallProgress = selectedRun ? scanRunOverallProgress(selectedRun) : 0;
+  const neverStartedRun = Boolean(selectedRun && isNeverStartedScanRun(selectedRun));
   const exactLocalhostQuickScan = Boolean(
     selectedRun && isExactBuiltInLocalhostQuickScanRun(selectedRun),
   );
@@ -1120,6 +1158,7 @@ export function ProgressPage({
   const canCancel = !localhostCancelRequested && (
     selectedRun.status === "running" || selectedRun.status === "paused" || selectedRun.status === "queued"
   );
+  const savedPlanAfterRestart = neverStartedRun && !activeRunStatuses.has(selectedRun.status);
   const hasReleaseIncompatibleWork = selectedRun.engineRuns.some(
     (engine) => engine.errorCode === "resume_release_incompatible",
   );
@@ -1129,6 +1168,24 @@ export function ProgressPage({
       || engine.phase === "preflight_interrupted"
       || engine.errorCode === "preflight_interrupted",
   );
+  const savedPlanActionCount = recoverableEngines.length;
+  const neverStartedPlannedCount = selectedRun.engineRuns.filter(
+    (engine) => engine.status !== "not_executed",
+  ).length;
+  const interruptedBody = canResume && canCancel
+    ? copy.interruptedBody
+    : canResume
+      ? copy.interruptedBodyContinue
+      : canCancel
+        ? copy.interruptedBodyCancel
+        : copy.interruptedBodyNoAction;
+  const savedPlanBody = canResume && canStart
+    ? copy.savedPlanBodyContinueStart
+    : canResume
+      ? copy.savedPlanBodyContinue
+      : canStart
+        ? copy.savedPlanBodyStart
+        : copy.savedPlanBodyNoAction;
   const incompleteCount = stateCounts.partial + stateCounts.failed + stateCounts.not_executed + stateCounts.cancelled;
   const terminalCount = terminalEngineStates.reduce((sum, state) => sum + stateCounts[state], 0);
   const completedAssetCount = Math.min(selectedRun.totalAssetCount, selectedRun.coveredAssetCount);
@@ -1318,24 +1375,48 @@ export function ProgressPage({
                 onClick={() => selectRun(run.id)}
               >
                 <strong>{scanRunIdentityPresentation(run, locale)}</strong>
-                <span>{index === 0 ? text(copy.latest) : ""}{runStatusMeta[run.status].label} · {showDateTime(run.startedAt)}</span>
+                <span>{index === 0 ? text(copy.latest) : ""}{isNeverStartedScanRun(run) && !activeRunStatuses.has(run.status) ? text(copy.notStartedStatus) : runStatusMeta[run.status].label} · {showDateTime(run.startedAt)}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {interruptedEngines.length > 0 && (
+      {savedPlanAfterRestart && (
+        <InlineNotice tone="warning" title={text(copy.savedPlanTitle)}>
+          <div className="interrupted-run-notice">
+            <p>{text(savedPlanBody, { count: formatNumber(savedPlanActionCount) })}</p>
+            <div className="button-group">
+              {canResume && (
+                <button className="button button--primary button--small" type="button" disabled={busy} onClick={() => void onResume(selectedRun.id)}>
+                  <Icon name="play" size={15} />{text(copy.resumeOriginal)}
+                </button>
+              )}
+              {canStart && (
+                <button className="button button--secondary button--small" type="button" disabled={busy || starting} onClick={requestStart}>
+                  <Icon name="play" size={15} />{text(copy.startNewScan)}
+                </button>
+              )}
+            </div>
+          </div>
+        </InlineNotice>
+      )}
+
+      {interruptedEngines.length > 0 && !savedPlanAfterRestart && (
         <InlineNotice tone="warning" title={text(copy.interruptedTitle)}>
           <div className="interrupted-run-notice">
-            <p>{text(copy.interruptedBody, { count: formatNumber(interruptedEngines.length) })}</p>
+            <p>{text(interruptedBody, { count: formatNumber(interruptedEngines.length) })}</p>
             <div className="button-group">
-              <button className="button button--primary button--small" type="button" disabled={busy || !canResume} onClick={() => void onResume(selectedRun.id)}>
-                <Icon name="play" size={15} />{text(copy.resumeOriginal)}
-              </button>
-              <button className="button button--danger-ghost button--small" type="button" disabled={busy || !canCancel} onClick={() => void onCancel(selectedRun.id)}>
-                <Icon name="stop" size={15} />{text(copy.cancelKeepRecord)}
-              </button>
+              {canResume && (
+                <button className="button button--primary button--small" type="button" disabled={busy} onClick={() => void onResume(selectedRun.id)}>
+                  <Icon name="play" size={15} />{text(copy.resumeOriginal)}
+                </button>
+              )}
+              {canCancel && (
+                <button className="button button--danger-ghost button--small" type="button" disabled={busy} onClick={() => void onCancel(selectedRun.id)}>
+                  <Icon name="stop" size={15} />{text(copy.cancelKeepRecord)}
+                </button>
+              )}
             </div>
           </div>
         </InlineNotice>
@@ -1351,12 +1432,18 @@ export function ProgressPage({
         <div className="run-overview__copy">
           <div className="run-overview__meta">
             <StatusPill
-              label={runMeta.label}
-              tone={runMeta.tone}
+              label={savedPlanAfterRestart ? text(copy.notStartedStatus) : runMeta.label}
+              tone={savedPlanAfterRestart ? "warning" : runMeta.tone}
             />
             <span>{scanRunIdentityPresentation(selectedRun, locale)}</span>
           </div>
-          {!blocked && !sharedInfrastructureFailure && !requestOutcomeSummary && (
+          {savedPlanAfterRestart && (
+            <>
+              <h2>{text(copy.noChecksStarted)}</h2>
+              <p>{text(copy.savedPlanReady)}</p>
+            </>
+          )}
+          {!savedPlanAfterRestart && !blocked && !sharedInfrastructureFailure && !requestOutcomeSummary && (
             <>
               <h2>{text(copy.processed, { percent: formatNumber(selectedRunOverallProgress) })}</h2>
               <p>
@@ -1445,8 +1532,10 @@ export function ProgressPage({
                     ? "check"
                     : "warning"} size={20} /></span>
             <div>
-              <strong>{text(copy.activityStates[activity.state].title)}</strong>
-              {(!activity.active || activity.stale) && <p>{text(copy.activityStates[activity.state].body)}</p>}
+              <strong>{text(savedPlanAfterRestart ? copy.noChecksStarted : copy.activityStates[activity.state].title)}</strong>
+              {savedPlanAfterRestart
+                ? <p>{text(copy.savedPlanReady)}</p>
+                : (!activity.active || activity.stale) && <p>{text(copy.activityStates[activity.state].body)}</p>}
               <span>{text(copy.lastProgress)} · {showDateTime(activity.lastProgressAt)}</span>
               {activity.activeCheckNames.length > 0 && (
                 <span>{text(copy.activeScanTools)} · {activity.activeCheckNames.join(locale === "zh-TW" ? "、" : ", ")}</span>
@@ -1513,13 +1602,14 @@ export function ProgressPage({
 
       {!blocked && !sharedInfrastructureFailure && incompleteCount > 0 && (
         <div className="scan-attention-summary" role="status" aria-label={text(copy.metricsAria)}>
-          {stateCounts.partial > 0 && <span><StatusPill label={text(copy.partial)} tone="warning" /><strong>{formatNumber(stateCounts.partial)}</strong></span>}
-          {stateCounts.failed + stateCounts.cancelled > 0 && <span><StatusPill label={text(copy.failedCancelled)} tone="danger" /><strong>{formatNumber(stateCounts.failed + stateCounts.cancelled)}</strong></span>}
+          {savedPlanAfterRestart && neverStartedPlannedCount > 0 && <span><StatusPill label={text(copy.notStartedStatus)} tone="warning" /><strong>{formatNumber(neverStartedPlannedCount)}</strong></span>}
+          {!savedPlanAfterRestart && stateCounts.partial > 0 && <span><StatusPill label={text(copy.partial)} tone="warning" /><strong>{formatNumber(stateCounts.partial)}</strong></span>}
+          {!savedPlanAfterRestart && stateCounts.failed + stateCounts.cancelled > 0 && <span><StatusPill label={text(copy.failedCancelled)} tone="danger" /><strong>{formatNumber(stateCounts.failed + stateCounts.cancelled)}</strong></span>}
           {stateCounts.not_executed > 0 && <span><StatusPill label={text(copy.notRun)} tone="warning" /><strong>{formatNumber(stateCounts.not_executed)}</strong></span>}
         </div>
       )}
 
-      {!blocked && !sharedInfrastructureFailure && incompleteCount > 0 && (
+      {!savedPlanAfterRestart && !blocked && !sharedInfrastructureFailure && incompleteCount > 0 && (
         <InlineNotice tone="warning" title={text(copy.incompleteTitle)}>
           <p>{text(copy.incompleteBody)}</p>
         </InlineNotice>
@@ -1602,7 +1692,7 @@ export function ProgressPage({
                     </span>
                   </div>
                   {showEngineAttention && <div className="engine-row__progress">
-                    {engine.status === "not_executed" ? (
+                    {savedPlanAfterRestart || engine.status === "not_executed" ? (
                       <div className="engine-not-executed">
                         <Icon name="info" size={16} />
                         <span><strong>{text(copy.notStarted)}</strong><small>{text(engineNextStepFor(engine))}</small></span>
@@ -1667,8 +1757,12 @@ export function ProgressPage({
                   </div>}
                   <div className="engine-row__result">
                     <StatusPill
-                      label={localhostSummary ? text(localhostSummary.outcomeLabel) : meta.label}
-                      tone={localhostTone ?? meta.tone}
+                      label={localhostSummary
+                        ? text(localhostSummary.outcomeLabel)
+                        : savedPlanAfterRestart
+                          ? text(copy.notStartedStatus)
+                          : meta.label}
+                      tone={localhostTone ?? (savedPlanAfterRestart ? "warning" : meta.tone)}
                     />
                     <span>{localhostSummary
                       ? `127.0.0.1:${String(localhostSummary.port)}`
@@ -1748,6 +1842,7 @@ export function ProgressPage({
             const historyRequestOutcome = scanRequestOutcomeBeginnerSummary(run.requestOutcome);
             const historyBlocked = blockedRunSummary(run);
             const historySharedFailure = sharedInfrastructureFailureSummary(run);
+            const historyNeverStarted = isNeverStartedScanRun(run) && !activeRunStatuses.has(run.status);
             return (
               <button key={run.id} type="button" className={run.id === selectedRun.id ? "history-row history-row--active" : "history-row"} onClick={() => selectRun(run.id)}>
                 <span className="history-row__line" aria-hidden="true" />
@@ -1762,10 +1857,15 @@ export function ProgressPage({
                       : text(copy.blockedTitle)
                     : historySharedFailure
                       ? text(copy.sharedFailureTitle)
-                      : runStatusMeta[run.status].label}
-                  tone={historyRequestOutcome || historyBlocked ? "warning" : historySharedFailure ? "danger" : runStatusMeta[run.status].tone}
+                      : historyNeverStarted
+                        ? text(copy.notStartedStatus)
+                        : runStatusMeta[run.status].label}
+                  tone={historyRequestOutcome || historyBlocked || historyNeverStarted ? "warning" : historySharedFailure ? "danger" : runStatusMeta[run.status].tone}
                 />
-                <b>{historyBlocked || historySharedFailure ? text(copy.historyNotStarted) : `${formatNumber(scanRunOverallProgress(run))}%`}</b>
+                <b>{historyBlocked || historySharedFailure ? text(copy.historyNotStarted)
+                  : historyNeverStarted
+                    ? text(copy.historyNotStarted)
+                    : `${formatNumber(scanRunOverallProgress(run))}%`}</b>
               </button>
             );
           })}

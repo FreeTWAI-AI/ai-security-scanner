@@ -42,6 +42,9 @@ const engine = (
   status,
   progress: status === "completed" ? 100 : 40,
   phase: status,
+  startedAt: ["running", "paused", "completed", "partial", "failed", "cancelled"].includes(status)
+    ? "2026-09-04T12:00:01Z"
+    : undefined,
   assetIds: ["asset-1"],
   rawArtifactCount: 0,
   findingCount: 0,
@@ -255,13 +258,13 @@ test.each([
   {
     locale: "en",
     title: "Your scan paused when the app closed",
-    body: "Checks queued: 1. Available actions: Continue or Cancel.",
+    body: "Checks queued: 1. Available action: Continue.",
     recovery: "Continue the original scope",
   },
   {
     locale: "zh-TW",
     title: "應用程式關閉時，掃描已暫停",
-    body: "已排入佇列的檢查：1 項。可用操作：繼續或取消。",
+    body: "已排入佇列的檢查：1 項。可用操作：繼續。",
     recovery: "繼續原本的範圍",
   },
 ])("a check interrupted during preparation explains recovery in $locale", ({ locale, title, body, recovery }) => {
@@ -271,6 +274,7 @@ test.each([
       phase: "preflight_interrupted",
       errorCode: "preflight_interrupted",
       resumable: true,
+      startedAt: "2026-09-04T12:00:01Z",
     }),
   ]));
 
@@ -281,6 +285,7 @@ test.each([
   expect(notice!.textContent).toContain(body);
   const recoveryControl = within(notice!).getByRole("button", { name: recovery }) as HTMLButtonElement;
   expect(recoveryControl.disabled).toBe(false);
+  expect(within(notice!).queryByRole("button", { name: /cancel|取消/u })).toBeNull();
 });
 
 test.each([
@@ -294,15 +299,181 @@ test.each([
   },
 ])("$label still reaches the shared interruption explanation", ({ overrides }) => {
   const { container } = renderProgress(run([
-    engine("interrupted-check", "failed", { ...overrides, resumable: true }),
+    engine("interrupted-check", "failed", {
+      ...overrides,
+      resumable: true,
+      startedAt: "2026-09-04T12:00:01Z",
+    }),
   ]));
 
   const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
     (candidate) => candidate.textContent?.includes("Your scan paused when the app closed"),
   );
   expect(notice).toBeTruthy();
-  expect(notice!.textContent).toContain("Checks queued: 1. Available actions: Continue or Cancel.");
+  expect(notice!.textContent).toContain("Checks queued: 1. Available action: Continue.");
   expect(within(notice!).getByRole("button", { name: "Continue the original scope" })).toBeTruthy();
+  expect(within(notice!).queryByRole("button", { name: "Cancel and keep the record" })).toBeNull();
+});
+
+test("a real restart after a check began keeps the interruption notice and both live actions", () => {
+  const { container } = renderProgress(run([
+    engine("interrupted-check", "paused", {
+      phase: "interrupted_restart",
+      errorCode: "desktop_process_restarted",
+      resumable: true,
+      startedAt: "2026-09-04T12:00:01Z",
+      finishedAt: undefined,
+    }),
+  ], "paused", { progress: 40, finishedAt: undefined }));
+
+  const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
+    (candidate) => candidate.textContent?.includes("Your scan paused when the app closed"),
+  );
+  expect(notice).toBeTruthy();
+  expect(notice!.textContent).toContain("Checks queued: 1. Available actions: Continue or Cancel.");
+  expect((within(notice!).getByRole("button", { name: "Continue the original scope" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((within(notice!).getByRole("button", { name: "Cancel and keep the record" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(container.textContent).not.toContain("Your scan plan was saved, but no checks started");
+});
+
+test.each([
+  {
+    locale: "en",
+    title: "Your scan plan was saved, but no checks started",
+    body: "Checks ready to continue: 8. Available actions: Continue or Start a new scan.",
+    continueLabel: "Continue the original scope",
+    startLabel: "Start a new scan",
+    noChecks: "No checks started",
+    ready: "The saved plan is ready for your next action.",
+    notStarted: "Not started",
+    notRun: "Not run",
+    stopped: "Stopped",
+  },
+  {
+    locale: "zh-TW",
+    title: "掃描計畫已保存，但沒有檢查開始執行",
+    body: "可繼續的檢查：8 項。可用操作：繼續或開始新的掃描。",
+    continueLabel: "繼續原本的範圍",
+    startLabel: "開始新的掃描",
+    noChecks: "沒有檢查開始執行",
+    ready: "已保存的計畫可進行下一步。",
+    notStarted: "未開始",
+    notRun: "未執行",
+    stopped: "已停止",
+  },
+])("a saved plan that never started is presented truthfully in $locale", ({
+  locale,
+  title,
+  body,
+  continueLabel,
+  startLabel,
+  noChecks,
+  ready,
+  notStarted,
+  notRun,
+  stopped,
+}) => {
+  window.localStorage.setItem(localeStorageKey, locale);
+  const onResume = vi.fn(() => Promise.resolve());
+  const onStart = vi.fn(() => Promise.resolve());
+  const onCancel = vi.fn(() => Promise.resolve());
+  const plannedChecks = Array.from({ length: 8 }, (_, index) => engine(
+    `planned-${String(index + 1)}`,
+    "failed",
+    {
+      progress: 0,
+      phase: "preflight_interrupted",
+      errorCode: "preflight_interrupted",
+      resumable: true,
+      recoveryAction: "restart_check",
+      startedAt: undefined,
+    },
+  ));
+  const unavailableChecks = ["agentic-radar", "mcp-armor"].map((id) => engine(
+    id,
+    "not_executed",
+    {
+      progress: 0,
+      phase: "not_executed",
+      errorCode: "engine_release_unavailable",
+    },
+  ));
+  const savedPlan = run(
+    [...plannedChecks, ...unavailableChecks],
+    "failed",
+    { progress: 100 },
+  );
+
+  const { container } = render(
+    <I18nProvider>
+      <ProgressPage
+        caseId="case-1"
+        assets={[asset()]}
+        runs={[savedPlan]}
+        findings={[]}
+        selectedRunId={savedPlan.id}
+        readiness={{
+          caseId: "case-1",
+          checkedAt: "2026-09-04T12:05:00Z",
+          ready: true,
+          state: "ready",
+          authorizedTargetCount: 1,
+          pendingTargetCount: 0,
+          compatibleEngineCount: 8,
+          runnableEngineCount: 8,
+        }}
+        onStart={onStart}
+        onRetryLocalhostQuickScan={() => Promise.resolve()}
+        onFixSetup={() => {}}
+        onPause={() => Promise.resolve()}
+        onResume={onResume}
+        onCancel={onCancel}
+      />
+    </I18nProvider>,
+  );
+
+  const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
+    (candidate) => candidate.textContent?.includes(title),
+  );
+  expect(notice).toBeTruthy();
+  expect(notice!.textContent).toContain(body);
+  const continueButton = within(notice!).getByRole("button", { name: continueLabel }) as HTMLButtonElement;
+  const startButton = within(notice!).getByRole("button", { name: startLabel }) as HTMLButtonElement;
+  expect(continueButton.disabled).toBe(false);
+  expect(startButton.disabled).toBe(false);
+  expect(within(notice!).queryByRole("button", { name: /cancel|取消/u })).toBeNull();
+  fireEvent.click(continueButton);
+  fireEvent.click(startButton);
+  expect(onResume).toHaveBeenCalledWith(savedPlan.id);
+  expect(onStart).toHaveBeenCalledTimes(1);
+  expect(onCancel).not.toHaveBeenCalled();
+
+  const overview = container.querySelector<HTMLElement>(".run-overview");
+  expect(overview?.querySelector("h2")?.textContent).toBe(noChecks);
+  expect(overview?.textContent).toContain(ready);
+  expect(overview?.textContent).not.toMatch(/processed|已處理/u);
+  expect(overview?.querySelector("[role='progressbar']")).toBeNull();
+
+  const attention = container.querySelector<HTMLElement>(".scan-attention-summary");
+  const notStartedPill = within(attention!).getByText(notStarted);
+  const notRunPill = within(attention!).getByText(notRun);
+  expect(notStartedPill.parentElement?.textContent).toContain("8");
+  expect(notRunPill.parentElement?.textContent).toContain("2");
+  expect(attention?.textContent).not.toContain(stopped);
+  expect(container.querySelector(".scan-activity__current strong")?.textContent).toBe(noChecks);
+  expect(container.querySelector(".history-row b")?.textContent).toBe(notStarted);
+  expect(container.querySelector(".engine-row [role='progressbar']")).toBeNull();
+});
+
+test("a live dispatch waiting to start does not offer recovery for a saved terminal plan", () => {
+  const { container } = renderProgress(run([
+    engine("queued-check", "pending", { progress: 0, startedAt: undefined }),
+    engine("unavailable-check", "not_executed", { progress: 0, startedAt: undefined }),
+  ], "queued", { progress: 0, finishedAt: undefined }));
+
+  expect(container.textContent).not.toContain("Your scan plan was saved, but no checks started");
+  expect(container.querySelector(".run-overview [role='progressbar']")).not.toBeNull();
+  expect(within(container).queryByRole("button", { name: "Start a new scan" })).toBeNull();
 });
 
 test("a check that never ran is still accounted for on screen", () => {
@@ -407,7 +578,11 @@ test("no engine state is rendered without a label", () => {
 
 test("queued work is named directly in the progress overview and check row", () => {
   const { container } = renderProgress(
-    run([engine("queued-check", "pending", { phase: "planned" })], "queued"),
+    run(
+      [engine("queued-check", "pending", { phase: "planned", progress: 0 })],
+      "queued",
+      { progress: 0, finishedAt: undefined },
+    ),
   );
 
   const activity = container.querySelector<HTMLElement>(".scan-activity__current");
