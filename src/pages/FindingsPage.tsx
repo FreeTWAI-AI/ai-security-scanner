@@ -593,6 +593,7 @@ const copy = {
   manualReviewCount: { en: "No automated verdict", zhTW: "未回傳自動判定" },
   coverageGaps: { en: "Recorded coverage gaps", zhTW: "已記錄的涵蓋缺口" },
   coverageAttention: { en: "Coverage gaps and checks without verdicts", zhTW: "涵蓋缺口與未回傳判定的檢查" },
+  recordNotes: { en: "Record notes", zhTW: "記錄備註" },
   reportFindings: { en: "Problems found", zhTW: "發現的問題" },
   askedTitle: { en: "What you asked to scan", zhTW: "你要求掃描的內容" },
   testedTitle: { en: "What was actually tested", zhTW: "實際完成的測試" },
@@ -852,6 +853,16 @@ const incompleteGapKinds = new Set<BeginnerMasterReport["coverageGaps"][number][
   "unattributed",
 ]);
 
+// Older reports and fixtures omit `class`. Absence keeps the conservative
+// coverage-loss reading rather than becoming a quieter record note.
+const isRecordNoteGap = (
+  gap: BeginnerMasterReport["coverageGaps"][number],
+): boolean => gap.class === "record_note";
+
+const isCoverageLossGap = (
+  gap: BeginnerMasterReport["coverageGaps"][number],
+): boolean => !isRecordNoteGap(gap);
+
 const assetNextActionDestination = {
   // The retry lives in Progress.
   retry_check: "progress",
@@ -961,14 +972,17 @@ function AssetResultBoard({
       check.status === "tested_complete" && checkResultKind(check) === "security_check");
     const gaps = report.coverageGaps.filter((gap) =>
       gap.targetAssetIds.includes(target.assetId));
-    const firstApplicableGap = gaps.find((gap) => gap.kind !== "excluded");
-    const firstIncompleteGap = gaps.find((gap) => incompleteGapKinds.has(gap.kind));
+    const firstApplicableGap = gaps.find((gap) =>
+      isCoverageLossGap(gap) && gap.kind !== "excluded");
+    const firstIncompleteGap = gaps.find((gap) =>
+      isCoverageLossGap(gap) && incompleteGapKinds.has(gap.kind));
     const hasIncompleteOutcome = checks.some((check) => incompleteCheckStatuses.has(check.status));
     // A deliberate `not_tested` boundary attached to a completed task (for
     // example SSH host-level exclusions) does not erase that task's bounded
     // result. A different requested task that did not run still makes the
     // asset incomplete when another security check did complete.
-    const unfinishedRequestedGap = gaps.find((gap) => gap.kind === "not_tested"
+    const unfinishedRequestedGap = gaps.find((gap) => isCoverageLossGap(gap)
+      && gap.kind === "not_tested"
       && Boolean(gap.taskId)
       && !checks.some((check) => check.taskId === gap.taskId && check.status === "tested_complete"));
     const hasIncompleteGap = Boolean(firstIncompleteGap);
@@ -1286,25 +1300,35 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
       || securityFindingIds.has(step.findingId)
       || (step.alsoResolves ?? []).some((findingId) => securityFindingIds.has(findingId)))
     .sort((left, right) => left.priority - right.priority);
+  const coverageLossGaps = report.coverageGaps.filter(isCoverageLossGap);
+  const recordNotes = report.coverageGaps.filter(isRecordNoteGap);
   const firstRequestedTarget = report.requested.targets[0];
   const firstTestedCheck = testedChecks[0];
   const firstTestedEngine = firstTestedCheck ? engineByTaskId.get(firstTestedCheck.taskId) : undefined;
-  const firstCoverageGap = report.coverageGaps[0];
-  const firstGapTargets = firstCoverageGap?.targetAssetIds
-    .map((assetId) => targetLabelById.get(assetId) ?? assetId)
-    .join(locale === "en" ? ", " : "、");
-  const firstGapUnattributedText = firstCoverageGap?.unattributed
-    ? findingUnattributedGap(
-        locale,
-        firstCoverageGap.dimension.split(":")[0] ?? firstCoverageGap.dimension,
-        firstCoverageGap.unattributed,
-        {
-          dimension: firstCoverageGap.dimension,
-          reason: firstCoverageGap.reason,
-          nextAction: firstCoverageGap.nextAction,
-        },
-      )
-    : undefined;
+  const firstCoverageGap = coverageLossGaps[0];
+  const firstRecordNote = recordNotes[0];
+  const coverageGapLine = (gap: BeginnerMasterReport["coverageGaps"][number]): string => {
+    const targets = gap.targetAssetIds
+      .map((assetId) => targetLabelById.get(assetId) ?? assetId)
+      .join(locale === "en" ? ", " : "、");
+    const unattributedText = gap.unattributed
+      ? findingUnattributedGap(
+          locale,
+          gap.dimension.split(":")[0] ?? gap.dimension,
+          gap.unattributed,
+          {
+            dimension: gap.dimension,
+            reason: gap.reason,
+            nextAction: gap.nextAction,
+          },
+        )
+      : undefined;
+    return `${targets || text(copy.requestedScope)} · ${unattributedText
+      ? unattributedText.dimension
+      : localizedCoverageDimension(gap.dimension, locale)} · ${unattributedText
+      ? unattributedText.reason
+      : coverageGapProse(locale, gap.reason)}`;
+  };
   const appendRemainingCount = (value: string, count: number): string => count > 0
     ? `${value} · ${text(copy.moreItems, { count: formatNumber(count) })}`
     : value;
@@ -1321,15 +1345,11 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
       )
     : text(copy.noTestedDimension);
   const gapSummary = firstCoverageGap
-    ? appendRemainingCount(
-        `${firstGapTargets || text(copy.requestedScope)} · ${firstGapUnattributedText
-          ? firstGapUnattributedText.dimension
-          : localizedCoverageDimension(firstCoverageGap.dimension, locale)} · ${firstGapUnattributedText
-          ? firstGapUnattributedText.reason
-          : coverageGapProse(locale, firstCoverageGap.reason)}`,
-        report.coverageGaps.length - 1,
-      )
+    ? appendRemainingCount(coverageGapLine(firstCoverageGap), coverageLossGaps.length - 1)
     : text(noRecordedGapDetail);
+  const recordNoteSummary = firstRecordNote
+    ? appendRemainingCount(coverageGapLine(firstRecordNote), recordNotes.length - 1)
+    : undefined;
   const nextStepActionText = (step: (typeof orderedNextSteps)[number]): string =>
     beginnerStepAction(locale, step, report.findings, report.actual.checks);
   const nextStepSummary = orderedNextSteps[0]
@@ -1486,10 +1506,16 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
           <dt>{text(copy.testedTitle)} <span>{formatNumber(testedChecks.length)}</span></dt>
           <dd>{testedSummary}</dd>
         </div>
-        <div className={report.coverageGaps.length > 0 ? "report-outcome-strip__warning" : undefined}>
-          <dt>{text(coverageItemsTitle)} <span>{formatNumber(report.coverageGaps.length)}</span></dt>
+        <div className={coverageLossGaps.length > 0 ? "report-outcome-strip__warning" : undefined}>
+          <dt>{text(coverageItemsTitle)} <span>{formatNumber(coverageLossGaps.length)}</span></dt>
           <dd>{gapSummary}</dd>
         </div>
+        {recordNotes.length > 0 && (
+          <div>
+            <dt>{text(copy.recordNotes)} <span>{formatNumber(recordNotes.length)}</span></dt>
+            <dd>{recordNoteSummary}</dd>
+          </div>
+        )}
         <div>
           <dt>{text(copy.nextTitle)} <span>{formatNumber(orderedNextSteps.length)}</span></dt>
           <dd>{nextStepSummary}</dd>
@@ -1508,7 +1534,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
         <summary>
           {text(copy.scopeLimitations)} · {text(hasManualReview ? copy.scopeAttentionSummary : copy.scopeSummary, {
             completed: formatNumber(report.coverageCounts.testedComplete),
-            gaps: formatNumber(report.coverageGaps.length),
+            gaps: formatNumber(coverageLossGaps.length),
           })}
         </summary>
       <div className="metrics-grid metrics-grid--four" aria-label={text(copy.masterTitle)}>
@@ -1529,10 +1555,16 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
         />
         <MetricCard
           label={text(coverageItemsLabel)}
-          value={formatNumber(report.coverageGaps.length)}
-          detail={report.coverageGaps.length > 0 ? text(coverageItemsTitle) : text(noRecordedGapDetail)}
+          value={formatNumber(coverageLossGaps.length)}
+          detail={coverageLossGaps.length > 0 ? text(coverageItemsTitle) : text(noRecordedGapDetail)}
           icon="warning"
-          tone={report.coverageGaps.length > 0 ? "warning" : "default"}
+          tone={coverageLossGaps.length > 0 ? "warning" : "default"}
+        />
+        <MetricCard
+          label={text(copy.recordNotes)}
+          value={formatNumber(recordNotes.length)}
+          icon="info"
+          tone="default"
         />
         <MetricCard
           label={text(copy.reportFindings)}
@@ -1649,9 +1681,9 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
 
         <article className="coverage-card">
           <h3>{text(coverageItemsTitle)}</h3>
-          {report.coverageGaps.length > 0 ? (
+          {coverageLossGaps.length > 0 ? (
             <ul className="detail-list">
-              {report.coverageGaps.map((gap, index) => {
+              {coverageLossGaps.map((gap, index) => {
                 const targets = gap.targetAssetIds
                   .map((assetId) => targetLabelById.get(assetId) ?? assetId)
                   .join(locale === "en" ? ", " : "、");
@@ -1707,6 +1739,39 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
             </details>
           )}
         </article>
+        {recordNotes.length > 0 && (
+          <article className="coverage-card">
+            <h3>{text(copy.recordNotes)}</h3>
+            <ul className="detail-list">
+              {recordNotes.map((gap, index) => {
+                const targets = gap.targetAssetIds
+                  .map((assetId) => targetLabelById.get(assetId) ?? assetId)
+                  .join(locale === "en" ? ", " : "、");
+                const unattributedText = gap.unattributed
+                  ? findingUnattributedGap(
+                      locale,
+                      gap.dimension.split(":")[0] ?? gap.dimension,
+                      gap.unattributed,
+                      { dimension: gap.dimension, reason: gap.reason, nextAction: gap.nextAction },
+                    )
+                  : undefined;
+                return (
+                  <li key={`${gap.taskId ?? "request"}-${gap.dimension}-${index}`}>
+                    <strong>{targets || text(copy.requestedScope)}</strong>
+                    <span>{unattributedText
+                      ? unattributedText.dimension
+                      : localizedCoverageDimension(gap.dimension, locale)} · {unattributedText
+                      ? unattributedText.reason
+                      : coverageGapProse(locale, gap.reason)}</span>
+                    <span>{unattributedText
+                      ? unattributedText.nextAction
+                      : coverageGapProse(locale, gap.nextAction)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </article>
+        )}
       </div>
 
       <div className="section-heading">

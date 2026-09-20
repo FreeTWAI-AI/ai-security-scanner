@@ -1663,6 +1663,224 @@ test("an absent coverage gap is stated once within the requested-check scope", (
   );
 });
 
+const recordNotesOnlyGaps = (): BeginnerMasterReport["coverageGaps"] => [
+  {
+    kind: "unavailable",
+    class: "record_note",
+    targetAssetIds: [],
+    dimension: "requested scan stage",
+    reason:
+      "Recorded stage selection: unavailable. Current project settings: excluded from this historical record.",
+    nextActionCode: "preserve_visible_limitation",
+    nextAction: "Open the saved scope details.",
+  },
+  {
+    kind: "unavailable",
+    class: "record_note",
+    targetAssetIds: [],
+    dimension: "automatic scope reductions or truncations",
+    reason:
+      "This run did not retain an exact reduction record. An empty list therefore cannot be interpreted as proof that no requested dimension was reduced.",
+    nextActionCode: "preserve_visible_limitation",
+    nextAction: "Open the saved scope details.",
+  },
+  {
+    kind: "unavailable",
+    class: "record_note",
+    targetAssetIds: [],
+    dimension: "run-frozen target label or type",
+    reason:
+      "At least one target identifier is frozen with the run, but its displayed label or type comes from current project data or is unavailable. The report labels that provenance and does not call it historical fact.",
+    nextActionCode: "preserve_visible_limitation",
+    nextAction: "Open the saved scope details.",
+  },
+];
+
+const completedRunWithOnlyRecordNotes = (): BeginnerMasterReport => {
+  const base = report("complete");
+  return report("complete", {
+    actual: {
+      ...base.actual,
+      checks: [{
+        taskId: "task-1",
+        checkId: "nuclei",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [{
+          dimension: "completed planned work units",
+          value: "1 of 1",
+          observation: "The planned security check completed.",
+        }],
+      }],
+    },
+    coverageGaps: recordNotesOnlyGaps(),
+    coverageCounts: counts({ testedComplete: 1 }),
+  });
+};
+
+const outcomeStripCell = (container: HTMLElement, title: string): HTMLElement => {
+  const strip = container.querySelector<HTMLElement>(".report-outcome-strip");
+  if (!strip) throw new Error("the outcome strip did not render");
+  const cell = Array.from(strip.querySelectorAll<HTMLElement>(":scope > div")).find((candidate) =>
+    (candidate.querySelector("dt")?.textContent ?? "").includes(title));
+  if (!cell) throw new Error(`no outcome-strip cell titled "${title}"`);
+  return cell;
+};
+
+const metricCard = (container: HTMLElement, label: string): HTMLElement => {
+  const card = Array.from(container.querySelectorAll<HTMLElement>(".metric-card")).find(
+    (candidate) => candidate.querySelector(".metric-card__label")?.textContent === label,
+  );
+  if (!card) throw new Error(`the metric card labelled "${label}" did not render`);
+  return card;
+};
+
+const coverageCard = (container: HTMLElement, title: string): HTMLElement => {
+  const card = Array.from(container.querySelectorAll<HTMLElement>(".coverage-card")).find(
+    (candidate) => candidate.querySelector("h3")?.textContent === title,
+  );
+  if (!card) throw new Error(`the coverage card titled "${title}" did not render`);
+  return card;
+};
+
+test("completed checks with only record notes report zero coverage gaps and keep the explanations", () => {
+  const englishReasons = [
+    "Recorded stage selection: unavailable. Current project settings: excluded from this historical record.",
+    "This run did not retain an exact reduction record. An empty list therefore cannot be interpreted as proof that no requested dimension was reduced.",
+    "At least one target identifier is frozen with the run, but its displayed label or type comes from current project data or is unavailable. The report labels that provenance and does not call it historical fact.",
+  ];
+  const chineseReasons = [
+    "已記錄的階段選擇：無法取得。目前專案設定：不納入此歷史記錄。",
+    "本輪沒有保留精確的縮減記錄。因此清單為空，並不能證明沒有任何要求的項目被縮減。",
+    "至少有一個目標的識別資料是與本輪一起凍結的，但畫面上顯示的名稱或類型來自目前的專案資料，或是無法取得。報告會標示這項來源，不會把它當成歷史事實。",
+  ];
+
+  for (const [locale, gapsTitle, coverageLabel, notesLabel, emptyGaps, reasons] of [
+    ["en", "What was not tested", "Recorded coverage gaps", "Record notes", "No gap was recorded within the requested checks.", englishReasons],
+    ["zh-TW", "沒有測到的內容", "已記錄的涵蓋缺口", "記錄備註", "要求的檢查內沒有記錄到缺口。", chineseReasons],
+  ] as const) {
+    window.localStorage.setItem(localeStorageKey, locale);
+    const { container, unmount } = renderReport(completedRunWithOnlyRecordNotes());
+
+    const notTested = outcomeStripCell(container, gapsTitle);
+    expect(notTested.className).not.toContain("report-outcome-strip__warning");
+    expect(notTested.querySelector("dt span")?.textContent).toBe("0");
+    expect(notTested.textContent).toContain(emptyGaps);
+
+    const notesCell = outcomeStripCell(container, notesLabel);
+    expect(notesCell.className).not.toContain("report-outcome-strip__warning");
+    expect(notesCell.querySelector("dt span")?.textContent).toBe("3");
+
+    const coverageMetric = metricCard(container, coverageLabel);
+    expect(coverageMetric.querySelector(".metric-card__value")?.textContent).toBe("0");
+    expect(coverageMetric.className).not.toContain("metric-card--warning");
+
+    const notesMetric = metricCard(container, notesLabel);
+    expect(notesMetric.querySelector(".metric-card__value")?.textContent).toBe("3");
+    expect(notesMetric.className).not.toContain("metric-card--warning");
+
+    const gapsCard = coverageCard(container, gapsTitle);
+    expect(gapsCard.textContent).toContain(emptyGaps);
+    for (const reason of reasons) {
+      expect(gapsCard.textContent).not.toContain(reason);
+    }
+
+    const notesCard = coverageCard(container, notesLabel);
+    for (const reason of reasons) {
+      expect(notesCard.textContent).toContain(reason);
+    }
+    unmount();
+  }
+});
+
+test("real coverage loss still counts and still shows attention", () => {
+  const { container } = renderReport(report("partial", {
+    actual: {
+      checks: [{
+        taskId: "task-1",
+        checkId: "nuclei",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageGaps: [
+      {
+        kind: "not_tested",
+        class: "coverage_loss",
+        taskId: "task-not-run",
+        targetAssetIds: ["asset-1"],
+        dimension: "requested security check",
+        reason: "The requested security check did not run.",
+        nextActionCode: "retry_check",
+        nextAction: "Retry this check.",
+      },
+      ...recordNotesOnlyGaps().slice(0, 1),
+    ],
+    coverageCounts: counts({ testedComplete: 1, notTested: 1 }),
+  }));
+
+  const notTested = outcomeStripCell(container, "What was not tested");
+  expect(notTested.className).toContain("report-outcome-strip__warning");
+  expect(notTested.querySelector("dt span")?.textContent).toBe("1");
+  expect(notTested.textContent).toContain("The requested security check did not run.");
+
+  const notesCell = outcomeStripCell(container, "Record notes");
+  expect(notesCell.className).not.toContain("report-outcome-strip__warning");
+  expect(notesCell.querySelector("dt span")?.textContent).toBe("1");
+
+  const coverageMetric = metricCard(container, "Recorded coverage gaps");
+  expect(coverageMetric.querySelector(".metric-card__value")?.textContent).toBe("1");
+  expect(coverageMetric.className).toContain("metric-card--warning");
+
+  const notesMetric = metricCard(container, "Record notes");
+  expect(notesMetric.querySelector(".metric-card__value")?.textContent).toBe("1");
+  expect(notesMetric.className).not.toContain("metric-card--warning");
+
+  expect(coverageCard(container, "What was not tested").textContent).toContain(
+    "The requested security check did not run.",
+  );
+  expect(coverageCard(container, "Record notes").textContent).toContain(
+    "Recorded stage selection: unavailable. Current project settings: excluded from this historical record.",
+  );
+});
+
+test("a record note does not make a completed asset look incomplete", () => {
+  const { container } = renderReport(report("complete", {
+    actual: {
+      checks: [{
+        taskId: "task-1",
+        checkId: "nuclei",
+        resultKind: "security_check",
+        targetAssetIds: ["asset-1"],
+        status: "tested_complete",
+        testedDimensions: [],
+      }],
+      networkScopes: [],
+      unavailableDimensions: [],
+    },
+    coverageGaps: [{
+      kind: "unavailable",
+      class: "record_note",
+      targetAssetIds: ["asset-1"],
+      dimension: "request outcome integrity",
+      reason:
+        "The request-level outcome contradicts the run's durable task state and was ignored.",
+      nextActionCode: "retry_check",
+      nextAction: "Retry this scan to create a consistent coverage record.",
+    }],
+    coverageCounts: counts({ testedComplete: 1 }),
+  }));
+
+  const row = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(row?.dataset.assetResult).toBe("no_problems_completed");
+  expect(row?.dataset.assetResult).not.toBe("incomplete_failed");
+});
+
 test("a completed localhost connection check puts its exact exclusions in the master report", () => {
   const base = report("complete");
   const { container } = renderReport(report("complete", {

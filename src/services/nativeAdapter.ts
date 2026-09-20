@@ -9,6 +9,7 @@ import type {
   AssetType,
   BeginnerCheckResultKind,
   BeginnerCheckResultKindWire,
+  BeginnerCoverageGapClass,
   BeginnerCoverageGapKind,
   BeginnerFindingGroupPresentationScope,
   BeginnerInventoryItem,
@@ -452,6 +453,7 @@ export interface NativeBeginnerMasterReport {
   };
   coverage_gaps: Array<{
     kind: string;
+    class?: unknown;
     task_id: string | null;
     target_asset_ids: string[];
     dimension: string;
@@ -2957,6 +2959,22 @@ const mapBeginnerCoverageGapKind = (value: unknown): BeginnerCoverageGapKind =>
     ? value as BeginnerCoverageGapKind
     : "unavailable";
 
+const BEGINNER_COVERAGE_GAP_CLASSES: readonly BeginnerCoverageGapClass[] = [
+  "coverage_loss",
+  "record_note",
+];
+
+// Absence is a report saved before the field existed and keeps the
+// conservative historical meaning. An unrecognized present value is not
+// absence: it still means the recorded coverage needs attention, the same
+// way an unrecognized kind becomes unavailable.
+const mapBeginnerCoverageGapClass = (value: unknown): BeginnerCoverageGapClass => {
+  if (value === undefined || value === null) return "coverage_loss";
+  return BEGINNER_COVERAGE_GAP_CLASSES.includes(value as BeginnerCoverageGapClass)
+    ? value as BeginnerCoverageGapClass
+    : "coverage_loss";
+};
+
 const BEGINNER_REPORT_DATA_AVAILABILITIES = ["recorded", "current_case_fallback", "unavailable"] as const;
 
 // An unknown provenance value must expose the report dimension as unavailable.
@@ -3035,6 +3053,7 @@ export const adaptBeginnerMasterReport = (
   },
   coverageGaps: report.coverage_gaps.map((gap) => ({
     kind: mapBeginnerCoverageGapKind(gap.kind),
+    class: mapBeginnerCoverageGapClass(gap.class),
     taskId: gap.task_id ?? undefined,
     targetAssetIds: [...gap.target_asset_ids],
     dimension: gap.dimension,

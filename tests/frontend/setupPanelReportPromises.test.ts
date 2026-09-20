@@ -93,7 +93,8 @@ test("every check that did not complete is listed, so the panel's promise has so
     "CoverageDimensionStatus::TimedOut",
   ]) assert.ok(report.includes(`${status} => (`), `${status} has no gap arm`);
   assert.match(report, /dimension: format!\("\{\}: \{dimension\}", check_id\(task\)\)/u);
-  assert.match(findingsPage, /report\.coverageGaps\.map\(\(gap, index\) => \{/u);
+  assert.match(findingsPage, /coverageLossGaps\.map\(\(gap, index\) => \{/u);
+  assert.match(findingsPage, /recordNotes\.map\(\(gap, index\) => \{/u);
 });
 
 test("the no-runnable blocker gives one version action", () => {

@@ -654,6 +654,7 @@ test("beginner report adapter preserves the backend's run-bound coverage semanti
 const beginnerStatusReportFixture = (overrides: {
   resultKind?: unknown;
   gapKind?: unknown;
+  gapClass?: unknown;
 } = {}) => ({
   schema_version: "1.1.0",
   case_id: "case-status",
@@ -698,6 +699,9 @@ const beginnerStatusReportFixture = (overrides: {
   },
   coverage_gaps: [{
     kind: Object.prototype.hasOwnProperty.call(overrides, "gapKind") ? overrides.gapKind : "failed",
+    ...(Object.prototype.hasOwnProperty.call(overrides, "gapClass")
+      ? { class: overrides.gapClass }
+      : {}),
     task_id: "task-status",
     target_asset_ids: ["asset-status"],
     dimension: "Status boundary",
@@ -966,6 +970,35 @@ test("beginner coverage gap kinds preserve known values and fail closed to unava
   for (const gapKind of [undefined, null, "future_gap", true]) {
     const report = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapKind }));
     assert.equal(report.coverageGaps[0]?.kind, "unavailable");
+  }
+});
+
+test("an older coverage-gap class is coverage loss, a present class round-trips, and an unrecognized class fails closed", () => {
+  const absent = adaptBeginnerMasterReport(beginnerStatusReportFixture());
+  assert.equal(absent.coverageGaps[0]?.class, "coverage_loss");
+
+  for (const gapClass of [undefined, null]) {
+    const report = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapClass }));
+    assert.equal(report.coverageGaps[0]?.class, "coverage_loss");
+  }
+
+  const coverageLoss = adaptBeginnerMasterReport(
+    beginnerStatusReportFixture({ gapClass: "coverage_loss" }),
+  );
+  assert.equal(coverageLoss.coverageGaps[0]?.class, "coverage_loss");
+
+  const recordNote = adaptBeginnerMasterReport(
+    beginnerStatusReportFixture({ gapClass: "record_note" }),
+  );
+  assert.equal(recordNote.coverageGaps[0]?.class, "record_note");
+
+  // Unrecognized is not absence. The kind mapper's unrecognized path is
+  // `includes() ? value : unavailable` — fail closed to the value that still
+  // means coverage needs attention. The class mapper uses the same shape with
+  // `coverage_loss` as that conservative fallback, never `record_note`.
+  for (const gapClass of ["future_class", true]) {
+    const report = adaptBeginnerMasterReport(beginnerStatusReportFixture({ gapClass }));
+    assert.equal(report.coverageGaps[0]?.class, "coverage_loss");
   }
 });
 

@@ -925,6 +925,7 @@ export type BeginnerCoverageGapKind =
   | "unavailable"
   | "unattributed"
   | "manual_review";
+export type BeginnerCoverageGapClass = "coverage_loss" | "record_note";
 export type BeginnerNextActionCode =
   | "review_finding"
   | "confirm_finding_after_incomplete_check"
@@ -1049,6 +1050,12 @@ export interface BeginnerActualCoverage {
 
 export interface BeginnerCoverageGap {
   kind: BeginnerCoverageGapKind;
+  /**
+   * Older saved reports omitted this field. Absence is coverage loss — the
+   * same conservative historical meaning the backend default uses — and is
+   * filled in by the adapter rather than left for each surface to guess.
+   */
+  class: BeginnerCoverageGapClass;
   taskId?: string;
   targetAssetIds: string[];
   dimension: string;
