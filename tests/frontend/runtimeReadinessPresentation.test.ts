@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   classifyRuntimeReadiness,
+  classifyRuntimeReadyBadgeKey,
   runtimeReadinessCheckingPhases,
   runtimeReadinessNeedsSetupPhases,
   runtimeReadinessReadyPhases,
@@ -43,4 +44,32 @@ test("an available runtime is ready regardless of phase", () => {
   for (const phase of phases) {
     assert.equal(classifyRuntimeReadiness(true, phase), "ready", String(phase));
   }
+});
+
+test("a ready managed local runtime keeps the advanced tools label", () => {
+  assert.equal(classifyRuntimeReadyBadgeKey("managed_local"), "runtime.badge.ready");
+});
+
+test("a ready docker or podman runtime uses the compatibility label", () => {
+  assert.equal(classifyRuntimeReadyBadgeKey("docker"), "runtime.badge.readyCompatibility");
+  assert.equal(classifyRuntimeReadyBadgeKey("podman"), "runtime.badge.readyCompatibility");
+});
+
+test("an unrecognised ready provider keeps the existing ready label", () => {
+  for (const provider of [undefined, "", "none", "mystery", "MANAGED_LOCAL", "Docker"]) {
+    assert.equal(classifyRuntimeReadyBadgeKey(provider), "runtime.badge.ready", String(provider));
+  }
+});
+
+test("an unavailable compatibility runtime is not ready", () => {
+  // Docker/Podman only rename a badge that is already in the ready arm.
+  // An unavailable reading still follows the existing not-ready rules.
+  for (const phase of runtimeReadinessNeedsSetupPhases) {
+    assert.equal(classifyRuntimeReadiness(false, phase), "needsSetup", phase);
+  }
+  for (const phase of runtimeReadinessCheckingPhases) {
+    assert.equal(classifyRuntimeReadiness(false, phase), "checking", phase);
+  }
+  assert.equal(classifyRuntimeReadiness(false, "running"), "needsSetup");
+  assert.notEqual(classifyRuntimeReadiness(false, "running"), "ready");
 });

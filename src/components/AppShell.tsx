@@ -13,7 +13,10 @@ import {
   reconcileMobileNavigationOpen,
 } from "../mobileNavigation";
 import { completePageTransition } from "../pageNavigation";
-import { classifyRuntimeReadiness } from "../runtimeReadinessPresentation";
+import {
+  classifyRuntimeReadiness,
+  classifyRuntimeReadyBadgeKey,
+} from "../runtimeReadinessPresentation";
 import {
   hasUnconfirmedManagedRuntimeCompletion,
   isDeveloperBuildPackagedRuntimeVerificationFailed,
@@ -251,7 +254,7 @@ export function AppShell({
   const runtimeBadgeLabel: TranslationKey = mode !== "native"
     ? "runtime.badge.demo"
     : runtime?.available
-      ? "runtime.badge.ready"
+      ? classifyRuntimeReadyBadgeKey(runtime.provider)
       : runtimeSetupNonRetryable
         ? runtimeAdmissionFailureLabel
         : runtimeSetupWorking

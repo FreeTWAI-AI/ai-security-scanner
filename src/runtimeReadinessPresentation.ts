@@ -37,3 +37,20 @@ export const classifyRuntimeReadiness = (
   // Fail safe toward honesty: do not demand setup from them.
   return "checking";
 };
+
+export type RuntimeReadyBadgeKey =
+  | "runtime.badge.ready"
+  | "runtime.badge.readyCompatibility";
+
+const runtimeReadyCompatibilityProviders: ReadonlySet<string> = new Set(["docker", "podman"]);
+
+export const classifyRuntimeReadyBadgeKey = (
+  provider: string | undefined,
+): RuntimeReadyBadgeKey => {
+  if (provider !== undefined && runtimeReadyCompatibilityProviders.has(provider)) {
+    return "runtime.badge.readyCompatibility";
+  }
+  // Unrecognised providers, including none, keep the existing ready label
+  // rather than inventing a claim about which runtime is running.
+  return "runtime.badge.ready";
+};
