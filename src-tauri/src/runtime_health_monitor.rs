@@ -71,7 +71,7 @@ pub(crate) fn managed_runtime_health_precludes_fallback(
 ) -> bool {
     match observation {
         RuntimeHealthObservation::Settled(health) => health.available,
-        RuntimeHealthObservation::Reconciling(_) => true,
+        RuntimeHealthObservation::Reconciling(_) => false,
     }
 }
 
@@ -82,9 +82,31 @@ pub(crate) fn select_runtime_health(
 ) -> RuntimeHealthObservation {
     match managed {
         Some(observation) if managed_runtime_health_precludes_fallback(&observation) => observation,
-        Some(_) => describe_compatibility_fallback(compatibility),
+        Some(RuntimeHealthObservation::Reconciling(managed)) => match compatibility {
+            RuntimeHealthObservation::Settled(health)
+            | RuntimeHealthObservation::Reconciling(health)
+                if health.available =>
+            {
+                RuntimeHealthObservation::Reconciling(describe_reconciling_compatibility_fallback(
+                    health,
+                ))
+            }
+            _ => RuntimeHealthObservation::Reconciling(managed),
+        },
+        Some(RuntimeHealthObservation::Settled(_)) => {
+            describe_compatibility_fallback(compatibility)
+        }
         None => compatibility,
     }
+}
+
+#[cfg(any(feature = "desktop", test))]
+fn describe_reconciling_compatibility_fallback(mut health: RuntimeHealth) -> RuntimeHealth {
+    health.detail = format!(
+        "advanced isolated runtime has not reported its state yet and is not in use; scans will run with the {} compatibility runtime",
+        health.provider
+    );
+    health
 }
 
 #[cfg(any(feature = "desktop", test))]
@@ -319,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_available_reading_wins_unchanged() {
+    fn settled_available_managed_reading_wins_unchanged() {
         let managed = runtime_health(
             "managed_local",
             true,
@@ -378,13 +400,12 @@ mod tests {
     }
 
     #[test]
-    fn managed_starting_stays_reconciling_without_compatibility_demotion() {
-        let managed_detail = "managed runtime is still starting";
+    fn managed_starting_reports_available_compatibility_runtime_while_staying_reconciling() {
         let managed = RuntimeHealthObservation::Reconciling(runtime_health(
             "managed_local",
             false,
             "starting",
-            managed_detail,
+            "managed runtime is still starting",
         ));
         let compatibility = RuntimeHealthObservation::Settled(runtime_health(
             "docker",
@@ -399,10 +420,77 @@ mod tests {
             panic!("a starting managed runtime must remain reconciling");
         };
 
+        assert!(reported.available);
+        assert_eq!(reported.provider, "docker");
+        assert_eq!(reported.phase, "running");
+        assert!(
+            reported
+                .detail
+                .contains("advanced isolated runtime has not reported its state yet")
+        );
+        assert!(!reported.detail.contains("failed"));
+        assert!(!reported.detail.contains("unavailable"));
+    }
+
+    #[test]
+    fn managed_starting_without_available_compatibility_stays_unchanged() {
+        let managed_detail = "managed runtime is still starting";
+        let managed = RuntimeHealthObservation::Reconciling(runtime_health(
+            "managed_local",
+            false,
+            "starting",
+            managed_detail,
+        ));
+        let compatibility = RuntimeHealthObservation::Settled(runtime_health(
+            "none",
+            false,
+            "unavailable",
+            "no compatible runtime was detected",
+        ));
+
+        let RuntimeHealthObservation::Reconciling(reported) =
+            select_runtime_health(Some(managed), compatibility)
+        else {
+            panic!("a starting managed runtime must remain reconciling");
+        };
+
         assert!(!reported.available);
         assert_eq!(reported.provider, "managed_local");
         assert_eq!(reported.phase, "starting");
         assert_eq!(reported.detail, managed_detail);
+    }
+
+    #[test]
+    fn managed_status_error_reports_available_compatibility_runtime_while_staying_reconciling() {
+        let managed = RuntimeHealthObservation::Reconciling(runtime_health(
+            "managed_local",
+            false,
+            "error",
+            "operation is not authorized",
+        ));
+        let compatibility = RuntimeHealthObservation::Settled(runtime_health(
+            "podman",
+            true,
+            "running",
+            "podman service is available",
+        ));
+
+        let RuntimeHealthObservation::Reconciling(reported) =
+            select_runtime_health(Some(managed), compatibility)
+        else {
+            panic!("a managed status error must remain reconciling");
+        };
+
+        assert!(reported.available);
+        assert_eq!(reported.provider, "podman");
+        assert_eq!(reported.phase, "running");
+        assert!(
+            reported
+                .detail
+                .contains("advanced isolated runtime has not reported its state yet")
+        );
+        assert!(!reported.detail.contains("failed"));
+        assert!(!reported.detail.contains("unavailable"));
     }
 
     #[test]
