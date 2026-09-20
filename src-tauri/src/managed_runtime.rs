@@ -4141,9 +4141,6 @@ impl ManagedRuntimeManager {
         &self,
         command_budget: Duration,
     ) -> AppResult<ManagedRuntimeStatus> {
-        let command_deadline = Instant::now().checked_add(command_budget).ok_or_else(|| {
-            AppError::Runtime("managed runtime status deadline overflowed".into())
-        })?;
         let target = match self.loaded.target() {
             Ok(target) => target,
             Err(error) => {
@@ -4182,6 +4179,13 @@ impl ManagedRuntimeManager {
             ));
         }
         let command = self.runtime_command(target)?;
+        // Payload verification and command preparation may take longer than
+        // the provider-command budget. Start that budget only once they finish,
+        // so large verified bundles still get a bounded machine-state query.
+        // Inventory and server readiness continue to share this one deadline.
+        let command_deadline = Instant::now().checked_add(command_budget).ok_or_else(|| {
+            AppError::Runtime("managed runtime status deadline overflowed".into())
+        })?;
         let Some(inventory_timeout) = remaining_command_budget(command_deadline) else {
             return Ok(self.status_value(
                 // The payload is installed, but the machine truth is unknown.
