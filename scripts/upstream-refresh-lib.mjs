@@ -61,16 +61,6 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function isoDate(value) {
-  return new Date(value).toISOString().slice(0, 10);
-}
-
-function addUtcDays(dateString, days) {
-  const date = new Date(`${dateString}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 function timestampPath(value) {
   return new Date(value).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
 }
@@ -373,25 +363,8 @@ export function mechanicalProvider({ root, resolved }) {
     });
   }
 
-  if (attributions.length > 0) {
-    const knowledgeDate = isoDate(resolved.generatedAt);
-    const supportUntil = addUtcDays(knowledgeDate, 90);
-    for (const [field, after] of [["knowledge_date", knowledgeDate], ["support_until", supportUntil]]) {
-      if (proposedPlan[field] === after) continue;
-      attributions.push({
-        provider: "mechanical",
-        file: resolved.planRelative,
-        field,
-        before: proposedPlan[field] ?? null,
-        after,
-        reason: field === "knowledge_date"
-          ? "The knowledge date records when the offline refresh proposal was produced."
-          : "The support window retains the plan's 90-day maintenance interval.",
-      });
-      proposedPlan[field] = after;
-    }
-  }
-
+  // Proposal time is recorded in generated_at; inspecting local bytes does not
+  // establish a newer engine/data knowledge date or extend its support window.
   const text = `${JSON.stringify(proposedPlan, null, 2)}\n`;
   const changes = new Map();
   if (text !== resolved.planText) {
@@ -400,7 +373,7 @@ export function mechanicalProvider({ root, resolved }) {
   return {
     id: "mechanical",
     status: "completed",
-    rationale: "Deterministic offline updates only: exact revision metadata, maintenance dates, and recorded file digests.",
+    rationale: "Deterministic offline updates only: exact revision metadata and recorded file digests. Existing knowledge and support dates are preserved.",
     changes,
     attributions,
   };

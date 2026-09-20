@@ -69,6 +69,8 @@ Create an offline bundle with `npm run upstream:refresh -- --engine <id> [--kind
 
 `mechanical` is the formal default deterministic offline path. The optional AI path must be selected explicitly with `--provider cli --ai-cli <executable>`; repeat `--ai-cli-arg <arg>` when the executable needs arguments. Any model-authored files are attributed with before and after digests in `report.md` for human review.
 
+The bundle's `generated_at` records when the proposal was produced. An offline refresh preserves the existing `knowledge_date` and `support_until`; inspecting local source or recomputing hashes does not establish newer scanner knowledge or extend support.
+
 The proposal step records one of three PR decisions: `--open-pr` prints the local, push, and PR-creation commands; `--no-open-pr` prints only local commands; omitting both leaves the decision undecided and prints the flags for choosing later. These tools only print commands for a human to review and run; they never execute them on the client's behalf.
 
 ## 6. Downstream patch exception

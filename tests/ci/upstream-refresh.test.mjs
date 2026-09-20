@@ -963,7 +963,7 @@ test("a cli edit to a hash-recorded build input fails input-hash verification an
   }
 });
 
-test("changes.patch applies cleanly with git apply --check", async () => {
+test("a revision patch applies without advancing artifact knowledge or support dates", async () => {
   const setup = createFixture();
   const target = mkdtempSync(join(tmpdir(), "upstream-refresh-apply-"));
   try {
@@ -981,6 +981,10 @@ test("changes.patch applies cleanly with git apply --check", async () => {
       cwd: target,
       encoding: "utf8",
     });
+    const planPath = join(target, "engines", "images", "sample", "plan.json");
+    const beforePlan = JSON.parse(readFileSync(planPath, "utf8"));
+    run("git", ["apply", join(result.bundlePath, "changes.patch")], { cwd: target });
+    const afterPlan = JSON.parse(readFileSync(planPath, "utf8"));
     const proposedPlan = JSON.parse(readFileSync(join(result.bundlePath, "proposal.json")));
     assert.deepEqual({
       applyStatus: applyCheck.status,
@@ -988,12 +992,22 @@ test("changes.patch applies cleanly with git apply --check", async () => {
       changedFiles: proposedPlan.changes.files,
       digestUpdated: proposedPlan.changes.attributions.some(({ field }) => field === "build_recipe.dependency_lock.sha256"),
       artifactCoordinate: proposedPlan.inputs.plan.final_artifact_coordinate,
+      candidateRevision: afterPlan.source.revision,
+      generatedAt: proposedPlan.generated_at,
+      knowledgeDate: afterPlan.knowledge_date,
+      supportUntil: afterPlan.support_until,
+      finalArtifact: afterPlan.final_artifact,
     }, {
       applyStatus: 0,
       applyError: "",
       changedFiles: ["engines/images/sample/plan.json"],
       digestUpdated: true,
       artifactCoordinate: `ghcr.io/example/sample:1.0.0@sha256:${"2".repeat(64)}`,
+      candidateRevision: setup.revisions.get("sample").candidate,
+      generatedAt: fixedNow.toISOString(),
+      knowledgeDate: beforePlan.knowledge_date,
+      supportUntil: beforePlan.support_until,
+      finalArtifact: beforePlan.final_artifact,
     });
   } finally {
     setup.cleanup();
