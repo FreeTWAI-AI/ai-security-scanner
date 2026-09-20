@@ -51,11 +51,29 @@ const pageLabelKeys = Object.fromEntries(
   }),
 ) as Record<PageId, string>;
 
+const quotedString = String.raw`"((?:\\.|[^"\\])*)"`;
+const bilingualTuple = new RegExp(
+  String.raw`\[\s*${quotedString}\s*,\s*${quotedString}\s*,?\s*\]`,
+  "gu",
+);
+const looksLikeEnglishProse = (text: string): boolean =>
+  /[A-Za-z]/u.test(text) && !/\p{Script=Han}/u.test(text);
+const looksLikeChineseProse = (text: string): boolean => /\p{Script=Han}/u.test(text);
+
 const bilingualValues = (source: string): Array<{ locale: "en" | "zhTW"; text: string }> => {
   const values: Array<{ locale: "en" | "zhTW"; text: string }> = [];
   for (const locale of ["en", "zhTW"] as const) {
     const quoted = new RegExp(String.raw`\b${locale}:\s*"((?:\\.|[^"\\])*)"`, "gu");
     for (const match of source.matchAll(quoted)) values.push({ locale, text: match[1] ?? "" });
+  }
+  // A two-element array of quoted strings is bilingual copy only when the
+  // first has a Latin letter and no Han character, and the second has a Han
+  // character. Identifier pairs, enum tables, and same-locale arrays fail that.
+  for (const match of source.matchAll(bilingualTuple)) {
+    const english = match[1] ?? "";
+    const chinese = match[2] ?? "";
+    if (!looksLikeEnglishProse(english) || !looksLikeChineseProse(chinese)) continue;
+    values.push({ locale: "en", text: english }, { locale: "zhTW", text: chinese });
   }
   return values;
 };
@@ -220,4 +238,26 @@ test("short-form Progress copy is a dead end; progress headings and controls are
     namesAsDestination("請開啟進度頁面查看目前掃描狀態。", "進度頁面", "zhTW"),
     true,
   );
+});
+
+test("tuple tables of bilingual prose are copy; identifier pairs are not", () => {
+  const values = bilingualValues(`
+    const prose = [
+      ["Finish or retry them from Progress.", "請到進度頁完成或重試。"],
+      [
+        "Open Progress and finish or cancel this check.",
+        "前往進度頁完成或取消這項檢查。",
+      ],
+    ];
+    const identifiers = ["queued", "running"];
+    const scopes = ["low_impact_external", "active_external"];
+    const triple = ["role", "group", "user"];
+  `);
+  const texts = values.map((value) => value.text);
+  assert.deepEqual(texts, [
+    "Finish or retry them from Progress.",
+    "請到進度頁完成或重試。",
+    "Open Progress and finish or cancel this check.",
+    "前往進度頁完成或取消這項檢查。",
+  ]);
 });
