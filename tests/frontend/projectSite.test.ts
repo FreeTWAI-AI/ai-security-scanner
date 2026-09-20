@@ -43,8 +43,8 @@ test("the bilingual project site lists every integrated upstream engine exactly 
   assert.match(site, /多種安全工具[\s\S]*一份清楚報告/u);
   assert.match(site, /completed sibling results survive/iu);
   assert.match(site, /其他已完成結果仍會保留/u);
-  assert.match(readme, /Selected assets → applicable upstream tools → thin adapters → one prioritized report organized by asset/u);
-  assert.match(readmeZh, /選定資產 → 適用的上游工具 → 薄層轉接器 → 一份依資產整理、排好優先順序的報告/u);
+  assert.match(readme, /Selected assets and authorization → thin adapters → upstream scanners → output converters → one standardized report organized by asset/u);
+  assert.match(readmeZh, /選定資產與授權 → 薄層轉接器 → 上游掃描器 → 輸出轉換器 → 一份依資產整理的標準化報告/u);
 });
 
 test("the displayed GitHub stars match the dated API snapshot", async () => {
