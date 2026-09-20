@@ -6059,7 +6059,7 @@ impl<'a> CaseService<'a> {
             ));
         }
 
-        for candidate in &candidates {
+        for candidate in &mut candidates {
             let engine_run = &mut case.scan_runs[run_index].engine_runs[candidate.engine_index];
             if let Some(request) = candidate.naabu_request.as_ref() {
                 if engine_run
@@ -6091,6 +6091,39 @@ impl<'a> CaseService<'a> {
                 engine_run.exit_code = None;
                 engine_run.cleanup_removed = None;
                 engine_run.cleanup_detail = None;
+                engine_run.error_code = None;
+                engine_run.error_message = None;
+            }
+            // A pre-dispatch retry needs its new resource-free
+            // planned checkpoint persisted before desktop preflight or Cancel.
+            // Keep captured evidence and cleanup obligations on their existing
+            // recovery path; neither may be replaced with an empty plan.
+            if let Some(checkpoint) = candidate.execution.resume_checkpoint.as_mut()
+                && matches!(
+                    engine_run.phase.as_str(),
+                    "preflight_interrupted" | "preflight_failed" | "cancelled_before_dispatch"
+                )
+                && matches!(
+                    checkpoint.stage,
+                    ExecutionStage::Failed | ExecutionStage::Cancelled
+                )
+                && checkpoint.attempt < candidate.execution.attempt
+                && checkpoint.container_name.is_none()
+                && checkpoint.scope_sha256.is_none()
+                && checkpoint.launcher_plan_sha256.is_none()
+                && checkpoint.artifact_ids.is_empty()
+                && checkpoint.cleanup_completed
+                && checkpoint.runtime_provider.is_none()
+                && checkpoint.runtime_command_provenance.is_none()
+                && checkpoint.managed_network.is_none()
+                && engine_run.raw_artifact_ids.is_empty()
+            {
+                checkpoint.attempt = candidate.execution.attempt;
+                checkpoint.stage = ExecutionStage::Planned;
+                checkpoint.last_error = None;
+                checkpoint.failure_code = None;
+                engine_run.resume_token = Some(checkpoint.resume_token()?);
+                engine_run.last_execution_report_sha256 = None;
                 engine_run.error_code = None;
                 engine_run.error_message = None;
             }
@@ -33477,6 +33510,90 @@ mod tests {
             EngineRunStatus::Queued
         );
         assert_eq!(after.status, CaseStatus::Verifying);
+    }
+
+    #[test]
+    fn stranded_plan_resume_can_prepare_cancel_and_start_again() {
+        let fixture = Fixture::new();
+        let case_id = repository_case_ready_for_execution(&fixture);
+        let service = fixture.service();
+        let original = service
+            .persist_scan_before_execution_preflight(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap();
+        let run_id = &original.scan_run.id;
+        let engine_run_ids = vec![original.executable[0].engine_run_id.clone()];
+        assert_eq!(service.recover_interrupted_scans().unwrap(), 1);
+
+        for attempt in [2, 3] {
+            let resumed = service
+                .persist_resume_before_execution_preflight(&case_id, run_id)
+                .unwrap();
+            assert_eq!(resumed.executable[0].attempt, attempt);
+            assert_eq!(
+                resumed.scan_run.scope_grant_ids,
+                original.scan_run.scope_grant_ids
+            );
+            assert_eq!(
+                resumed.executable[0].assets[0].id,
+                original.executable[0].assets[0].id
+            );
+            let preparing = service
+                .transition_persisted_scan_pre_dispatch(
+                    &case_id,
+                    run_id,
+                    &PersistedPreDispatchTransition::Preparing {
+                        engine_run_ids: engine_run_ids.clone(),
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                preparing.scan_runs[0].engine_runs[0].status,
+                EngineRunStatus::Preparing
+            );
+            let checkpoint = ExecutionCheckpoint::from_resume_token(
+                preparing.scan_runs[0].engine_runs[0]
+                    .resume_token
+                    .as_deref()
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(checkpoint.stage, ExecutionStage::Planned);
+            assert_eq!(checkpoint.attempt, attempt);
+            assert!(checkpoint.container_name.is_none());
+            assert!(checkpoint.last_error.is_none());
+
+            let cancelled = service
+                .transition_persisted_scan_pre_dispatch(
+                    &case_id,
+                    run_id,
+                    &PersistedPreDispatchTransition::Cancel {
+                        engine_run_ids: engine_run_ids.clone(),
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                cancelled.scan_runs[0].engine_runs[0].status,
+                EngineRunStatus::Cancelled
+            );
+            assert!(cancelled.scan_runs[0].completed_at.is_some());
+        }
+        let fresh = service
+            .persist_scan_before_execution_preflight(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap();
+        assert_ne!(fresh.scan_run.id, *run_id);
+        assert_eq!(fresh.executable[0].attempt, 1);
     }
 
     #[test]
