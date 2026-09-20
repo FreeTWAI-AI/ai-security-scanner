@@ -7,6 +7,8 @@ ARG TARGETARCH
 
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local SOURCE_DATE_EPOCH=1773330037
 
+WORKDIR /src
+COPY engines/images/gitleaks/testdata/ testdata/
 WORKDIR /src/launcher
 COPY engines/images/gitleaks/launcher/go.mod engines/images/gitleaks/launcher/main.go engines/images/gitleaks/launcher/main_test.go ./
 RUN test -z "$(gofmt -d main.go main_test.go)" \

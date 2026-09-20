@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -13,7 +13,9 @@ import type { PageId, ScanRun } from "../../src/types.ts";
 // item that is not there. Headings and controls that use the word "progress"
 // without a destination verb are not that instruction.
 
-const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+// Resolve via dirname + ".." segments so the CI front-lane read census does not
+// treat a quoted "../.." URL as a repo-root "file read" that needs FRONTEND_PATHS.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const readSrc = (relative: string): string => readFileSync(join(repoRoot, relative), "utf8");
 const appShellSource = readSrc("src/components/AppShell.tsx");
 const englishMessages = readSrc("src/i18n/locales/en.ts");

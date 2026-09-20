@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
 import { classifyChangedPaths } from "../../scripts/ci/classify-changes.mjs";
@@ -49,9 +49,11 @@ for (const file of testFiles) {
     if (!resolved.href.startsWith(repoRoot.href)) continue;
     // Fixture data can look like a relative path -- `nativeAdapter.test.ts`
     // carries a `../private/person@example.com?token=secret` redaction sample.
-    // Only something that exists on disk is a read.
-    if (!existsSync(resolved)) continue;
+    // Only a real file is a read. A quoted "../.." that resolves to the repo
+    // root is a directory, not a contract the frontend lane must schedule.
+    if (!existsSync(resolved) || !statSync(resolved).isFile()) continue;
     const path = resolved.href.slice(repoRoot.href.length);
+    if (!path) continue;
     if (!readsByTest.has(path)) readsByTest.set(path, new Set());
     readsByTest.get(path).add(name);
   }

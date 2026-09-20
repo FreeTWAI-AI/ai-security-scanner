@@ -36,8 +36,8 @@ jobs:
       - name: Validate the dedicated non-shell launcher
         run: |
           docker run --rm \
-            -v "${PWD}/engines/images/gitleaks/launcher:/src:ro" \
-            -w /src \
+            -v "${PWD}/engines/images/gitleaks:/gitleaks:ro" \
+            -w /gitleaks/launcher \
             golang:1.26.3-alpine@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d \
             sh -ceu 'test -z "$(gofmt -d main.go main_test.go)"; go test ./...'
 
