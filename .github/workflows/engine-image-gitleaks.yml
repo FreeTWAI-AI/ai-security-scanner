@@ -7,6 +7,8 @@ on:
     paths:
       - engines/images/gitleaks/**
       - '!engines/images/gitleaks/plan.json'
+      - '!engines/images/gitleaks/testdata/**'
+      - '!engines/images/gitleaks/**/*.md'
   workflow_dispatch:
 
 permissions:
