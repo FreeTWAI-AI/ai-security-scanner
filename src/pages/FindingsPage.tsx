@@ -241,12 +241,12 @@ const copy = {
     zhTW: "已完成的範圍內沒有觀察到問題",
   },
   emptyNoRunDescription: {
-    en: "Add what you want to scan, then start the check from Scan progress.",
-    zhTW: "先加入想掃描的目標，再到掃描進度開始檢查。",
+    en: "Add what you want to scan, then start the check from New scan.",
+    zhTW: "先加入想掃描的目標，再到「開始新掃描」開始檢查。",
   },
   emptyIncompleteDescription: {
-    en: "Retry unfinished checks from Scan progress.",
-    zhTW: "請到「掃描進度」重試未完成的檢查。",
+    en: "Open the scan to retry unfinished checks.",
+    zhTW: "打開這次掃描以重試未完成的檢查。",
   },
   emptyUnknownDescription: {
     en: "Sources without usable information: {count}. Open Scan setup to connect or check them.",

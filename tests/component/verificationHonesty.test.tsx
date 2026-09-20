@@ -88,8 +88,8 @@ afterEach(() => {
 });
 
 test.each([
-  ["running", "active-run is running. Open Scan progress."],
-  ["paused", "active-run is paused. Open Scan progress to Continue or Cancel."],
+  ["running", "active-run is running. Open it from My scans."],
+  ["paused", "active-run is paused. Open it from My scans to Continue or Cancel."],
 ] as const)("an active %s scan returns verification to Progress directly", (status, expected) => {
   const { container } = renderVerification(
     undefined,

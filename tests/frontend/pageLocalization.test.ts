@@ -61,7 +61,7 @@ test("non-scan actions use truthful saved-state toasts while scan execution keep
   const action = app.slice(actionStart, actionEnd);
   assert.match(action, /nonExecutionActionToastCopy\[key as keyof typeof nonExecutionActionToastCopy\]/u);
   assert.match(action, /nonExecutionCopy\?\.acceptedTitle \?\? \{ en: "Local work started"/u);
-  assert.match(action, /nonExecutionCopy\?\.acceptedDetail \?\? \{ en: "Open Scan progress to follow each scanner\."/u);
+  assert.match(action, /nonExecutionCopy\?\.acceptedDetail \?\? \{ en: "Each scanner's status appears as the work runs\."/u);
   assert.match(action, /nonExecutionCopy\?\.failedTitle \?\? \{ en: "Local action failed"/u);
 });
 

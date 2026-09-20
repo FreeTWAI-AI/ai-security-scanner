@@ -1712,7 +1712,7 @@ export default function App() {
         detail: lifecycleToast
           ? text(lifecycleToast.detail)
           : response.accepted
-          ? text(nonExecutionCopy?.acceptedDetail ?? { en: "Open Scan progress to follow each scanner.", zhTW: "可到「掃描進度」查看每個工具的狀態。" })
+          ? text(nonExecutionCopy?.acceptedDetail ?? { en: "Each scanner's status appears as the work runs.", zhTW: "工作進行時會顯示每個工具的狀態。" })
           : nonExecutionCopy
             ? text(nonExecutionCopy.failedDetail)
           : result.mode === "demo"

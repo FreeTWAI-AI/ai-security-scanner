@@ -400,8 +400,8 @@ const pageCopy = {
   noticeDetails: { en: "Why this result appears", zhTW: "為什麼會出現這個結果" },
   interruptedTitle: { en: "Checks paused when the app restarted: {count}", zhTW: "應用程式重新啟動時，有 {count} 項檢查暫停" },
   interrupted: {
-    en: "Open Scan progress to continue where you left off or cancel the unfinished work.",
-    zhTW: "請打開「掃描進度」，從中斷處繼續，或取消未完成的工作。",
+    en: "Open the scan to continue where you left off or cancel the unfinished work.",
+    zhTW: "打開這次掃描，從中斷處繼續，或取消未完成的工作。",
   },
   interruptedDetails: {
     en: "Run {id} restart checkpoint recorded.",

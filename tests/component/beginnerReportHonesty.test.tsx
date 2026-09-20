@@ -950,7 +950,7 @@ test("a clean terminal run is not an empty state, while incomplete and failed ru
   expect(failed.querySelector(".empty-state")).not.toBeNull();
   expect(failed.querySelector("[data-report-outcome='no_problems_completed']")).toBeNull();
   expect(failed.querySelector(".empty-state h2")?.textContent).toContain("Scan needs attention");
-  expect(failed.querySelector(".empty-state")?.textContent).toContain("Retry unfinished checks");
+  expect(failed.querySelector(".empty-state")?.textContent).toContain("retry unfinished checks");
 
   const { container: connection } = renderReport(report("complete"), [], [localhostRun()]);
   expect(connection.querySelector(".empty-state")).not.toBeNull();
@@ -1062,7 +1062,7 @@ test.each(nonSecurityStatusCases)(
       description: "The completed work records inventory or connectivity only. Choose an applicable security check to look for weaknesses.",
     } : {
       title: "Scan needs attention",
-      description: "Retry unfinished checks from Scan progress.",
+      description: "Open the scan to retry unfinished checks.",
     });
   },
 );
@@ -1087,7 +1087,7 @@ test("failed non-security work uses the existing Traditional Chinese incomplete 
     headerTitle: "問題清單",
     headerDescription: "查看這輪掃描的結果與下一步。",
     emptyTitle: "掃描需要處理",
-    emptyDescription: "請到「掃描進度」重試未完成的檢查。",
+    emptyDescription: "打開這次掃描以重試未完成的檢查。",
   });
 });
 
@@ -1109,7 +1109,7 @@ test("a terminal run with an empty check list does not claim completed checks fo
   expect(empty.querySelector("h2")?.textContent).not.toContain("Inventory or connectivity results");
   expect(empty.textContent).not.toContain("The completed work records inventory or connectivity only");
   expect(empty.querySelector("h2")?.textContent).toContain("Scan needs attention");
-  expect(empty.textContent).toContain("Retry unfinished checks");
+  expect(empty.textContent).toContain("retry unfinished checks");
   const pill = statePill(container);
   expect(pill.textContent).toContain("No checks completed");
   expect(pill.className).toContain("status-pill--danger");
@@ -1124,7 +1124,7 @@ test("a terminal run with an empty check list does not claim completed checks fo
   );
   const zhEmpty = emptyState(zh);
   expect(zhEmpty.querySelector("h2")?.textContent).toContain("掃描需要處理");
-  expect(zhEmpty.textContent).toContain("請到「掃描進度」重試未完成的檢查。");
+  expect(zhEmpty.textContent).toContain("打開這次掃描以重試未完成的檢查。");
   expect(zhEmpty.textContent).not.toContain("已完成的檢查在實際測試範圍內沒有記錄問題");
 });
 
@@ -1157,7 +1157,7 @@ test("a terminal run whose security checks all failed does not claim completed c
   expect(empty.querySelector("h2")?.textContent).not.toContain("Inventory or connectivity results");
   expect(empty.textContent).not.toContain("The completed work records inventory or connectivity only");
   expect(empty.querySelector("h2")?.textContent).toContain("Scan needs attention");
-  expect(empty.textContent).toContain("Retry unfinished checks");
+  expect(empty.textContent).toContain("retry unfinished checks");
   const pill = statePill(container);
   expect(pill.textContent).toContain("No checks completed");
   expect(pill.className).toContain("status-pill--danger");

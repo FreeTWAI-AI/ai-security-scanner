@@ -178,8 +178,8 @@ const summaryForOutcome = (
         },
         outcomeLabel: { en: "Failed; no observation", zhTW: "失敗；沒有觀察結果" },
         nextStep: {
-          en: "Open Scan progress for the saved failure, then try this one check again.",
-          zhTW: "請到「掃描進度」查看已保存的失敗紀錄，再重試這一項檢查。",
+          en: "Open the scan for the saved failure, then try this one check again.",
+          zhTW: "打開這次掃描查看已保存的失敗紀錄，再重試這一項檢查。",
         },
       };
     case "missing":

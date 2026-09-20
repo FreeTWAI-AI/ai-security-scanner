@@ -77,10 +77,10 @@ const copy = {
   },
   runUnavailableTitle: { en: "Choose a saved scan before exporting", zhTW: "請先選擇一筆已保存的掃描" },
   runUnavailableBody: {
-    en: "No available saved scan is selected. Go to Results and choose a saved scan, or return to Scan progress to start one.",
-    zhTW: "目前沒有選定可用的已保存掃描。請前往「結果」選擇一筆掃描，或回到「掃描進度」開始新的掃描。",
+    en: "No available saved scan is selected. Go to Results and choose a saved scan, or start one from New scan.",
+    zhTW: "目前沒有選定可用的已保存掃描。請前往「掃描結果」選擇一筆掃描，或從「開始新掃描」開始。",
   },
-  chooseRun: { en: "Choose a scan in Results", zhTW: "前往「結果」選擇掃描" },
+  chooseRun: { en: "Choose a scan in Results", zhTW: "前往「掃描結果」選擇掃描" },
   retryPreview: { en: "Try preview again", zhTW: "重新取得預覽" },
   // One of these three replaces the single unconditional sentence that used to
   // sit here. That sentence promised "Passwords and access keys are never

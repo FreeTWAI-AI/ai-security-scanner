@@ -56,12 +56,12 @@ const copy = {
   comparisonRunIds: { en: "Scan run IDs", zhTW: "掃描輪次 ID" },
   activeTitle: { en: "Another scan is active", zhTW: "目前有另一輪掃描進行中" },
   activePaused: {
-    en: "{run} is paused. Open Scan progress to Continue or Cancel.",
-    zhTW: "{run} 目前已暫停。請到掃描進度繼續或取消。",
+    en: "{run} is paused. Open it from My scans to Continue or Cancel.",
+    zhTW: "{run} 目前已暫停。請到「我的掃描」打開它，即可繼續或取消。",
   },
   activeRunning: {
-    en: "{run} is running. Open Scan progress.",
-    zhTW: "{run} 正在掃描。請開啟掃描進度。",
+    en: "{run} is running. Open it from My scans.",
+    zhTW: "{run} 正在掃描。請到「我的掃描」打開它。",
   },
   noBaselineTitle: { en: "Run your first scan to create a starting point", zhTW: "先完成第一次掃描，建立比較起點" },
   readyTitle: { en: "Ready to prepare the follow-up check", zhTW: "可以準備後續檢查" },
