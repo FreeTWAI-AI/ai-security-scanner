@@ -15894,12 +15894,12 @@ fn html_coverage_matrix(
         ),
         catalog.text("What each check reached", "每個檢查涵蓋到的範圍"),
         catalog.text(
-            "One row per requested asset, one column per check that ran. An empty cell means no check of that kind was planned for that asset, which is not a result.",
-            "每一列是一項要求掃描的資產，每一欄是一項執行過的檢查。空白代表該資產沒有安排這類檢查，而不是檢查結果。"
+            "One row per requested asset, one column per check in this run. An empty cell means no check of that kind was planned for that asset, which is not a result.",
+            "每一列是一項要求掃描的資產，每一欄是本輪的一項檢查。空白代表該資產沒有安排這類檢查，而不是檢查結果。"
         ),
         catalog.text(
-            "One row per selected asset, one column per check that ran",
-            "每個選定資產一列，每項執行過的檢查一欄",
+            "One row per selected asset, one column per check in this run",
+            "每個選定資產一列，本輪每項檢查一欄",
         ),
         catalog.text("Asset", "資產"),
         header,
@@ -19406,13 +19406,11 @@ fn html_report_bytes(
         ),
         catalog.text(" ", ""),
         untrusted_evidence_terms,
-        // Said because it is true of the printed copy, and it has to keep
-        // saying what is true: framework attribution and the asset inventory
-        // print whether or not anyone opened them, and the technical record
-        // prints only if a reader did.
+        // The inventory prints regardless of its disclosure state; the
+        // technical record prints only if a reader opened it.
         catalog.text(
-            "Framework attribution and the complete asset inventory are collapsed on screen and printed in full. Per-finding evidence, source rules, framework coordinates and the run's task records stay collapsed technical detail; a printed copy carries those only where a reader opened them before printing.",
-            "框架授權陳述與完整資產清單雖然在畫面上收合，列印時會完整輸出。各問題的證據、來源規則、框架座標與本輪工作紀錄仍屬收合的技術細節；列印出來的版本只會包含列印前已展開的部分。",
+            "Framework sources and attribution are shown in the framework section. The complete asset inventory is collapsed on screen and printed in full. Per-finding evidence, source rules, framework coordinates and the run's task records stay collapsed technical detail; a printed copy carries those only where a reader opened them before printing.",
+            "框架來源與出處聲明顯示於框架區塊。完整資產清單在畫面上收合，列印時會完整輸出。各問題的證據、來源規則、框架座標與本輪工作紀錄仍屬收合的技術細節；列印出來的版本只會包含列印前已展開的部分。",
         ),
     ));
     if catalog.locale == crate::export::ReportLocale::ZhHant {
