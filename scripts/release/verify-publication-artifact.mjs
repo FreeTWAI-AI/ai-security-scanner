@@ -32,7 +32,7 @@ const ENGINE_SPECS = Object.freeze({
     workflow: ".github/workflows/engine-images-local-k8s.yml",
     smokeFiles: ["trivy-oci.json", "trivy-library.json"],
   },
-  grype: { tag: "0.117.0-3", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["grype.json"] },
+  grype: { tag: "0.117.0-4", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["grype.json"] },
   kubescape: { tag: "4.0.12-3", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["kubescape.json"] },
   "kube-bench": { tag: "0.16.0-4", group: "local", workflow: ".github/workflows/engine-images-local-k8s.yml", smokeFiles: ["kube-bench.json"] },
   "mcp-armor": {

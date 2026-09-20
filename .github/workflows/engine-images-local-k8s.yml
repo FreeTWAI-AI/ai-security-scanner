@@ -135,7 +135,7 @@ jobs:
             output_kind: json
             offline_data: trivy
           - engine: grype
-            tag: 0.117.0-3
+            tag: 0.117.0-4
             version: 0.117.0
             version_args: version
             dockerfile: engines/images/grype/Dockerfile

@@ -37,7 +37,7 @@ const specs = {
   semgrep: { tag: "1.174.0-3", group: "local", smokeFiles: ["semgrep.json"] },
   trufflehog: { tag: "3.97.0-3", group: "local", smokeFiles: ["trufflehog.jsonl"] },
   trivy: { tag: "0.74.0-4", group: "local", smokeFiles: ["trivy-oci.json", "trivy-library.json"] },
-  grype: { tag: "0.117.0-3", group: "local", smokeFiles: ["grype.json"] },
+  grype: { tag: "0.117.0-4", group: "local", smokeFiles: ["grype.json"] },
   kubescape: { tag: "4.0.12-3", group: "local", smokeFiles: ["kubescape.json"] },
   "kube-bench": { tag: "0.16.0-4", group: "local", smokeFiles: ["kube-bench.json"] },
   scubagear: { tag: "1.8.0-6", group: "m365" },

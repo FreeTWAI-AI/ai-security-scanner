@@ -236,7 +236,7 @@ const managedLocalK8sContracts = new Map([
     ],
   }],
   ["grype", {
-    tag: "0.117.0-3",
+    tag: "0.117.0-4",
     planKind: "managed_build",
     license: { disposition: "allow", sourceOfferPath: null },
     immutableDockerfileInputs: [

@@ -16,8 +16,8 @@
   "verified_upstream_artifact": null,
   "final_artifact": {
     "repository": "ghcr.io/teddashh/ai-security-scanner-engine-grype",
-    "tag": "0.117.0-3",
-    "digest": "sha256:190276c0036949fde3f356ec663386c24d80bd3ea4ea53cdf73d2c6ce31c455f"
+    "tag": "0.117.0-4",
+    "digest": "sha256:56b0d675e3b8d539890e853699c114493a72a54cca0bbe254eceee7ec2b4c517"
   },
   "build_recipe": {
     "source_revision": "b5fa92bbcbef655497e3be840a2f718380e2cdd3",
@@ -57,7 +57,7 @@
   "dockerfile": {
     "emitted": true,
     "path": "engines/images/grype/Dockerfile",
-    "sha256": "sha256:569e39d3e1eaa177fe3529f330532ae05b0a95a8762bcccba8faafafb8f7aca5",
+    "sha256": "sha256:1774a13f2e6e481ed6d52eed5d946a72cbd4442d504731754f7545c076b4f20d",
     "reason": null
   },
   "wrapper": {
@@ -106,8 +106,8 @@
       "linux/arm64"
     ],
     "platform_digests": {
-      "linux/amd64": "sha256:cf9cad056a522987327a8610870dcf3e05ca5be9b081a9678285123d3741dfba",
-      "linux/arm64": "sha256:da01a068339fc72d75d08d62a063de918ee7a986110c2bad14ac7003f5966638"
+      "linux/amd64": "sha256:b656a1a8b00d00f554cb0558c8ba28b55f3ebf8ce80b5dbe1c074ec6a980296f",
+      "linux/arm64": "sha256:46c4ede69e9cb5f166d0369a4f1f5de9b223d7cb8b7b78a23f89218f59f9ed36"
     },
     "anonymous_pull_verified": true,
     "evidence_artifact": "grype-image-evidence-33196902246-1",
