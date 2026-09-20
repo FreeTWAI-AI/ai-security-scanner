@@ -852,7 +852,7 @@ test("an in-progress asset keeps its wait-or-cancel action on the per-asset boar
       dimension: "unfinished check dimension",
       reason: "This check has no terminal outcome.",
       nextActionCode: "wait_or_cancel",
-      nextAction: "Open Progress and finish or cancel this check.",
+      nextAction: "Open Review scanner status and finish or cancel this check.",
     }],
     coverageCounts: counts({ notTested: 1 }),
   }));
@@ -1745,7 +1745,7 @@ test("two gaps of the same kind give the reader two different reasons", () => {
           dimension: "trivy: unfinished check dimension",
           reason: "This check has no terminal outcome.",
           nextActionCode: "wait_or_cancel",
-          nextAction: "Open Progress and finish or cancel this check.",
+          nextAction: "Open Review scanner status and finish or cancel this check.",
         },
       ],
     }),

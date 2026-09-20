@@ -2192,7 +2192,7 @@ fn append_naabu_coverage_gaps(
                 NextActionCode::RetryCheck
             },
             if task_is_active(task) {
-                "Open Progress and finish or cancel this check."
+                "Open Review scanner status and finish or cancel this check."
             } else {
                 "Retry the work without a tested outcome."
             },
@@ -2236,7 +2236,7 @@ fn append_naabu_coverage_gaps(
                     NextActionCode::PreserveVisibleLimitation
                 },
                 if task_is_active(task) {
-                    "Open Progress and finish or cancel this check."
+                    "Open Review scanner status and finish or cancel this check."
                 } else {
                     "Open the saved scope details."
                 },
@@ -2342,7 +2342,7 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
             "unfinished check dimension",
             "This check has no terminal outcome.",
             NextActionCode::WaitOrCancel,
-            "Open Progress and finish or cancel this check.",
+            "Open Review scanner status and finish or cancel this check.",
         ),
     };
     gaps.push(CoverageGap {
@@ -4710,6 +4710,22 @@ mod tests {
             engine_runs: tasks,
         });
         case
+    }
+
+    #[test]
+    fn wait_or_cancel_next_action_names_scanner_status_control_not_progress_page() {
+        let task = catalog_task("active", EngineRunStatus::Running);
+        let mut gaps = Vec::new();
+
+        append_task_gap(&task, CoverageDimensionStatus::InProgress, &mut gaps);
+
+        let gap = gaps.first().expect("in-progress task coverage gap");
+        assert_eq!(gap.next_action_code, NextActionCode::WaitOrCancel);
+        assert_eq!(
+            gap.next_action,
+            "Open Review scanner status and finish or cancel this check."
+        );
+        assert!(!gap.next_action.to_ascii_lowercase().contains("progress"));
     }
 
     #[test]

@@ -14498,8 +14498,8 @@ fn html_gap_next_action(gap: &CoverageGap, catalog: HtmlReportCatalog) -> String
             .to_owned(),
         NextActionCode::WaitOrCancel => catalog
             .text(
-                "Open Progress and finish or cancel this check.",
-                "前往進度頁完成或取消這項檢查。",
+                "Open Review scanner status and finish or cancel this check.",
+                "請開啟「查看掃描器狀態」完成或取消這項檢查。",
             )
             .to_owned(),
         NextActionCode::StartExpectedServiceAndRetry => catalog
@@ -14600,8 +14600,8 @@ fn html_asset_state_steps(states: &[HtmlAssetResultStatus], catalog: HtmlReportC
                 HtmlAssetResultStatus::IncompleteOrFailed => (
                     catalog.text("Incomplete or failed", "未完成或失敗"),
                     catalog.text(
-                        "finish or retry this asset's remaining checks from Progress",
-                        "到進度頁完成或重試這個資產的其餘檢查",
+                        "open Review scanner status to finish or retry this asset's remaining checks",
+                        "請開啟「查看掃描器狀態」完成或重試這個資產的其餘檢查",
                     ),
                 ),
                 HtmlAssetResultStatus::NotTested => (
@@ -16082,8 +16082,8 @@ fn html_asset_result_section(
                 action.push(' ');
             }
             action.push_str(catalog.text(
-                "Some checks are incomplete. Finish or retry them from Progress.",
-                "另有檢查尚未完成；請到進度頁完成或重試。",
+                "Some checks are incomplete. Open Review scanner status to finish or retry them.",
+                "另有檢查尚未完成；請開啟「查看掃描器狀態」完成或重試。",
             ));
         }
         if action.is_empty() && !states_taking_their_own_step.contains(&status) {
@@ -19391,6 +19391,39 @@ mod tests {
     use crate::external_scope::{ResolvedExternalPlan, freeze_external_plan};
     use crate::naabu_work_plan::{NaabuWorkPlanIdentity, build_naabu_work_plan};
     use chrono::Duration;
+
+    #[test]
+    fn wait_or_cancel_html_action_names_scanner_status_control_not_progress_page() {
+        let gap = CoverageGap {
+            kind: CoverageGapKind::NotTested,
+            task_id: Some("task-running".into()),
+            target_asset_ids: vec!["asset-1".into()],
+            dimension: "unfinished check dimension".into(),
+            reason: "This check has no terminal outcome.".into(),
+            next_action_code: NextActionCode::WaitOrCancel,
+            next_action: "Open Review scanner status and finish or cancel this check.".into(),
+            unattributed: None,
+        };
+
+        let english = html_gap_next_action(
+            &gap,
+            HtmlReportCatalog::new(crate::export::ReportLocale::En),
+        );
+        assert_eq!(
+            english,
+            "Open Review scanner status and finish or cancel this check."
+        );
+        assert!(!english.to_ascii_lowercase().contains("progress"));
+
+        let chinese = html_gap_next_action(
+            &gap,
+            HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant),
+        );
+        assert_eq!(chinese, "請開啟「查看掃描器狀態」完成或取消這項檢查。");
+        assert!(!chinese.contains("進度頁"));
+        assert!(!chinese.contains("進度頁面"));
+        assert!(!chinese.contains("掃描進度"));
+    }
 
     #[test]
     fn input_profile_rejection_code_wins_over_generic_execution_failure() {

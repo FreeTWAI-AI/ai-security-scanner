@@ -1364,8 +1364,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "重新啟動已取消的工作。",
   ],
   [
-    "Open Progress and finish or cancel this check.",
-    "前往進度頁完成或取消這項檢查。",
+    "Open Review scanner status and finish or cancel this check.",
+    "請開啟「查看掃描器狀態」完成或取消這項檢查。",
   ],
   [
     "Retry the work without a tested outcome.",
@@ -1404,8 +1404,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "請檢視目標設定，然後重新執行這項檢查。",
   ],
   [
-    "Open Progress and finish or cancel this check.",
-    "前往進度頁完成或取消這項檢查。",
+    "Open Review scanner status and finish or cancel this check.",
+    "請開啟「查看掃描器狀態」完成或取消這項檢查。",
   ],
   [
     "Restore the packaged scanner information, then run the missing checks.",
