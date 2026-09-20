@@ -574,7 +574,7 @@ test("the first layer gives every requested asset one evidence-derived result st
   expect(row("team-a/api").textContent).toContain("1 problem was found.");
   expect(row("team-a/api").textContent).toContain("Some checks are incomplete");
   expect(row("team-a/api").querySelector(".asset-result-row__outcome span")?.textContent)
-    .toContain("Some checks are incomplete. Finish or retry them from Progress.");
+    .toContain("Some checks are incomplete. Open Review scanner status to finish or retry them.");
   expect(row("team-a/api").querySelector("button")?.textContent)
     .toContain("Review scanner status");
   // One frozen finding can apply to more than one target; each target must get credit for it.
@@ -859,7 +859,7 @@ test("an in-progress asset keeps its wait-or-cancel action on the per-asset boar
 
   const row = container.querySelector<HTMLElement>(".asset-result-row");
   expect(row?.dataset.assetResult).toBe("incomplete_failed");
-  expect(row?.textContent).toContain("Open Progress and finish or cancel this check");
+  expect(row?.textContent).toContain("Open Review scanner status and finish or cancel this check");
 });
 
 test("the asset result board gives a Traditional Chinese beginner the same bounded statuses and action", () => {

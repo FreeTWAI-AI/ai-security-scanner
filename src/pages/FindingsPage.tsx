@@ -395,8 +395,8 @@ const copy = {
     zhTW: "先檢視這個資產最高優先的問題。",
   },
   assetProblemIncomplete: {
-    en: "Some checks are incomplete. Finish or retry them from Progress.",
-    zhTW: "另有檢查尚未完成；請到進度頁完成或重試。",
+    en: "Some checks are incomplete. Open Review scanner status to finish or retry them.",
+    zhTW: "另有檢查尚未完成；請開啟「查看掃描器狀態」完成或重試。",
   },
   assetNoProblemSummaryOne: {
     en: "1 completed security check reported no problems.",
@@ -415,8 +415,8 @@ const copy = {
     zhTW: "至少一項要求的檢查沒有產生完整結果。",
   },
   assetIncompleteAction: {
-    en: "Finish or retry this asset's remaining checks from Progress.",
-    zhTW: "到進度頁完成或重試這個資產的其餘檢查。",
+    en: "Open Review scanner status to finish or retry this asset's remaining checks.",
+    zhTW: "請開啟「查看掃描器狀態」完成或重試這個資產的其餘檢查。",
   },
   assetNotTestedSummary: {
     en: "No completed security check is recorded for this asset.",
@@ -693,7 +693,10 @@ const copy = {
   actionRetry: { en: "Retry this check.", zhTW: "重新執行這項檢查。" },
   actionScope: { en: "Review the requested scope, then retry.", zhTW: "確認要求的範圍後再重試。" },
   actionCompatible: { en: "Choose an available check for this target.", zhTW: "為這個目標選擇可用的檢查。" },
-  actionWait: { en: "Open Progress and finish or cancel this check.", zhTW: "前往進度頁完成或取消這項檢查。" },
+  actionWait: {
+    en: "Open Review scanner status and finish or cancel this check.",
+    zhTW: "請開啟「查看掃描器狀態」完成或取消這項檢查。",
+  },
   actionStartService: { en: "Start the expected local service, then retry.", zhTW: "先啟動預期的本機服務，再重試。" },
   actionReviewCoverage: { en: "Open the coverage gap and complete the missing check.", zhTW: "查看涵蓋缺口並完成缺少的檢查。" },
   actionReviewManualControl: {

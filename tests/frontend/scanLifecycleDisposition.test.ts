@@ -133,7 +133,7 @@ test("a cancelled localhost record with a contradictory observation remains unco
   });
   assert.equal(
     scanLifecycleToastPresentation(disposition).detail.en,
-    "Open Progress to check the current scan state.",
+    "Open the scan to check the current scan state.",
   );
 });
 
@@ -266,8 +266,8 @@ test("lifecycle toast copy is bilingual, bounded, and honest for every dispositi
     tone: "warning",
     title: { en: "Scan action status unavailable", zhTW: "掃描動作狀態無法取得" },
     detail: {
-      en: "Open Progress to check the current scan state.",
-      zhTW: "請開啟進度頁面查看目前掃描狀態。",
+      en: "Open the scan to check the current scan state.",
+      zhTW: "請打開這次掃描查看目前掃描狀態。",
     },
   });
 });

@@ -8,8 +8,10 @@ import { pageForSelectedRunLifecycle } from "../../src/pageNavigation.ts";
 import type { PageId, ScanRun } from "../../src/types.ts";
 
 // Active work has one destination; the sidebar does not list it. Routing takes
-// the reader there. Guidance that names that page's label as a place to open
-// sends a beginner to a menu item that is not there.
+// the reader there. Guidance that names that page's label — or the short form
+// Progress / 進度頁 / 進度頁面 — as a place to open sends a beginner to a menu
+// item that is not there. Headings and controls that use the word "progress"
+// without a destination verb are not that instruction.
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const readSrc = (relative: string): string => readFileSync(join(repoRoot, relative), "utf8");
@@ -66,16 +68,23 @@ const messageFor = (source: string, key: string): string => {
   return match[1];
 };
 
+const englishDestinationLeadIn = String.raw`open|go to|from|return to|continue in`;
+const chineseDestinationLeadIn = String.raw`請到|打開|開啟|回到|再到|可以到|可到|前往|到|從`;
+const chineseQuotedDestinationLeadIn = String.raw`請到|打開|開啟|回到|再到|從|可以到|可到|前往`;
+
 const namesAsDestination = (text: string, label: string, locale: "en" | "zhTW"): boolean => {
   if (!text.includes(label)) return false;
   if (locale === "en") {
     return new RegExp(
-      String.raw`(?:open|go to|from|return to|continue in)\s+${escapeRegExp(label)}`,
+      String.raw`(?:${englishDestinationLeadIn})\s+${escapeRegExp(label)}\b`,
       "iu",
     ).test(text);
   }
-  if (text.includes(`「${label}」`) && /請到|打開|開啟|回到|再到|從|可以到|可到/u.test(text)) return true;
-  return new RegExp(`(?:請到|打開|開啟|回到|再到|可以到|可到)${escapeRegExp(label)}`, "u").test(text);
+  if (
+    text.includes(`「${label}」`)
+    && new RegExp(chineseQuotedDestinationLeadIn, "u").test(text)
+  ) return true;
+  return new RegExp(`(?:${chineseDestinationLeadIn})${escapeRegExp(label)}`, "u").test(text);
 };
 
 const listCopyFiles = (): string[] => {
@@ -127,10 +136,18 @@ test("user-facing guidance does not name a destination absent from the sidebar",
   const deadEndLabels = [...routedAbsentIds].flatMap((id) => {
     const labelKey = pageLabelKeys[id];
     assert.ok(labelKey, `${id} should have a page label key`);
-    return [
+    const labels = [
       { locale: "en" as const, label: messageFor(englishMessages, labelKey) },
       { locale: "zhTW" as const, label: messageFor(chineseMessages, labelKey) },
     ];
+    if (labelKey === "nav.progress.label") {
+      labels.push(
+        { locale: "en", label: "Progress" },
+        { locale: "zhTW", label: "進度頁" },
+        { locale: "zhTW", label: "進度頁面" },
+      );
+    }
+    return labels;
   });
   for (const { label } of deadEndLabels) assert.ok(label.length > 0);
 
@@ -158,5 +175,49 @@ test("Chinese 可到 copy names a destination absent from the sidebar, and in-pl
   assert.equal(
     namesAsDestination("請重新整理「掃描進度」。", label, "zhTW"),
     false,
+  );
+});
+
+test("short-form Progress copy is a dead end; progress headings and controls are not", () => {
+  assert.equal(
+    namesAsDestination("Finish or retry them from Progress.", "Progress", "en"),
+    true,
+  );
+  assert.equal(
+    namesAsDestination("Open Progress and finish or cancel this check.", "Progress", "en"),
+    true,
+  );
+  assert.equal(namesAsDestination("Overall scan progress", "Progress", "en"), false);
+  assert.equal(namesAsDestination("Check progress", "Progress", "en"), false);
+  assert.equal(
+    namesAsDestination("Current scan progress: {progress}%", "Progress", "en"),
+    false,
+  );
+  assert.equal(namesAsDestination("View scan progress", "Progress", "en"), false);
+  assert.equal(namesAsDestination("Refresh Scan progress", "Progress", "en"), false);
+  assert.equal(namesAsDestination("Scan progress", "Progress", "en"), false);
+  assert.equal(
+    namesAsDestination("進度頁會列出每項檢查。", "進度頁", "zhTW"),
+    false,
+  );
+  assert.equal(
+    namesAsDestination("開始連線時會顯示在進度頁。", "進度頁", "zhTW"),
+    false,
+  );
+  assert.equal(
+    namesAsDestination("請到進度頁完成或重試。", "進度頁", "zhTW"),
+    true,
+  );
+  assert.equal(
+    namesAsDestination("到進度頁完成或重試這個資產的其餘檢查。", "進度頁", "zhTW"),
+    true,
+  );
+  assert.equal(
+    namesAsDestination("前往進度頁完成或取消這項檢查。", "進度頁", "zhTW"),
+    true,
+  );
+  assert.equal(
+    namesAsDestination("請開啟進度頁面查看目前掃描狀態。", "進度頁面", "zhTW"),
+    true,
   );
 });
