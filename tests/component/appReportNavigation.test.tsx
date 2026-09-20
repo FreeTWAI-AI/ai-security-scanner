@@ -84,6 +84,19 @@ test("choosing a saved run explicitly cancels the automatic switch to the runnin
   expect(view.queryByText(/Showing a finished scan/)).toBeNull();
 });
 
+test("My scans opens the active run after viewing an earlier report", async () => {
+  const view = await openApp();
+  const navigation = within(view.getByRole("navigation"));
+  fireEvent.click(navigation.getByRole("button", { name: "Results" }));
+  await view.findByLabelText("Report run");
+  fireEvent.change(view.getByLabelText("Report run"), { target: { value: saved.id } });
+  fireEvent.click(navigation.getByRole("button", { name: "My scans" }));
+  fireEvent.click(await view.findByRole("button", { name: "View scan progress" }));
+  await view.findByRole("heading", { name: "Follow your scan" });
+  const picker = within(view.getByRole("group", { name: "Choose a scan run" }));
+  expect(picker.getByRole("button", { name: /Scan 2/ }).getAttribute("aria-pressed")).toBe("true");
+});
+
 test("without a saved report each Results click focuses the waiting notice, then completion opens Results", async () => {
   snapshot.workspace!.runs = [active];
   const view = await openApp();

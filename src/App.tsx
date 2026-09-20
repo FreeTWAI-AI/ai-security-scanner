@@ -2451,7 +2451,12 @@ export default function App() {
           }}
           onOpenCase={(caseId) => void openCaseAtUsefulStep(caseId)}
           onContinue={() => navigate("coverage")}
-          onOpenProgress={() => navigate("progress")}
+          onOpenProgress={() => {
+            const run = workspace?.runs.find((item) => ["queued", "running", "paused"].includes(item.status))
+              ?? workspace?.runs[0];
+            if (run) selectReportRun(run.id);
+            navigate("progress");
+          }}
           onOpenResults={() => navigate("findings")}
           onSelectVerificationBaseline={setVerificationBaselineRunId}
           onStartRescan={(baselineRunId) => currentCaseId

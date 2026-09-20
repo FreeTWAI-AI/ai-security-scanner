@@ -164,6 +164,19 @@ test("cancelled is never promoted to a result, while mixed saved work remains pa
   assert.equal(mixed.outcome === "result_already_final" ? mixed.resultStatus : undefined, "partial");
 });
 
+test("cancelled planned checks remain cancelled alongside checks that were not executable", () => {
+  const stopped = run("partial", [
+    engine({ id: "gitleaks", engineId: "gitleaks", taskKind: { kind: "catalog_engine" }, status: "cancelled", phase: "cancelled_before_dispatch" }),
+    engine({ id: "agentic-radar", engineId: "agentic-radar", taskKind: { kind: "catalog_engine" }, status: "not_executed", phase: "not_executed" }),
+  ]);
+  const disposition = deriveCancelLifecycleDisposition(workspace(stopped), stopped.id);
+  assert.equal(disposition.outcome, "cancelled");
+  assert.equal(scanLifecycleToastPresentation(disposition).title.en, "This check is cancelled");
+  assert.equal(deriveResumeLifecycleDisposition(workspace(stopped), stopped.id).outcome, "unconfirmed");
+  const neverExecutable = run("partial", stopped.engineRuns.filter((item) => item.status === "not_executed"));
+  assert.equal(deriveCancelLifecycleDisposition(workspace(neverExecutable), neverExecutable.id).outcome, "result_already_final");
+});
+
 test("result-won dispositions preserve reachable, closed, timed-out, and failed truth", () => {
   for (const [outcome, runStatus, engineStatus, expectedCopy] of [
     ["reachable", "completed", "completed", /connection was accepted/u],

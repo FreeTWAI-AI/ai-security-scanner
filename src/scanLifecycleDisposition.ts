@@ -53,7 +53,15 @@ const terminalEngineStatuses = new Set<EngineRunStatus>([
   "cancelled",
 ]);
 
+const cancelledWorkIsTerminal = (run: ScanRun): boolean => run.engineRuns.length === 0
+  ? run.status === "cancelled"
+  : run.engineRuns.some((engine) => engine.status === "cancelled")
+    && run.engineRuns.every((engine) => engine.status === "cancelled" || engine.status === "not_executed");
+
 const terminalResultStatus = (run: ScanRun): LifecycleResultStatus | undefined => {
+  // Planner skips do not turn successful cancellation into a result that
+  // supposedly finished before the user's stop request.
+  if (cancelledWorkIsTerminal(run)) return undefined;
   if (run.status === "completed" || run.status === "partial" || run.status === "failed") {
     return run.status;
   }
@@ -101,12 +109,7 @@ export const deriveCancelLifecycleDisposition = (
     };
   }
 
-  const cancelledIsTerminal = (
-    run.engineRuns.length === 0 && run.status === "cancelled"
-  ) || (
-    run.engineRuns.length > 0 && run.engineRuns.every((engine) => engine.status === "cancelled")
-  );
-  if (cancelledIsTerminal) {
+  if (cancelledWorkIsTerminal(run)) {
     // The fixed localhost contract never commits an observation under a
     // Cancelled terminal state. Preserve contradictory data for Technical
     // details and refresh authoritative truth instead of inventing either a
@@ -152,10 +155,7 @@ export const deriveResumeLifecycleDisposition = (
       localhostOutcome: savedLocalhostOutcome(run),
     };
   }
-  if (
-    (run.engineRuns.length === 0 && run.status === "cancelled")
-    || (run.engineRuns.length > 0 && run.engineRuns.every((engine) => engine.status === "cancelled"))
-  ) {
+  if (cancelledWorkIsTerminal(run)) {
     // A stale active aggregate must not turn terminal cancellation into a
     // queued restart. Cancellation has no result-won status to resume.
     return { action: "resume", outcome: "unconfirmed", runId };
