@@ -258,7 +258,7 @@ test("AIDEFEND inputs use the framework lane and mapping schema also exercises R
   assert.equal(embeddedMapping.release_contract, false);
 });
 
-test("installer and managed-runtime inputs schedule their focused heavyweight lanes", () => {
+test("platform startup, installer and managed-runtime inputs schedule their focused heavyweight lanes", () => {
   assert.deepEqual(classifyChangedPaths([
     "runtime/managed-runtime.schema.json",
     "src-tauri/src/bin/cli.rs",
@@ -275,6 +275,13 @@ test("installer and managed-runtime inputs schedule their focused heavyweight la
     release_contract: true,
     windows_runtime: true,
   });
+  // Startup messages select the locale through different Unix and Windows APIs.
+  const result = classifyChangedPaths(["src-tauri/src/startup_failure.rs"]);
+  assert.equal(result.rust_core, true);
+  assert.equal(result.desktop, true);
+  assert.equal(result.windows_runtime, true);
+  assert.equal(result.engine, false);
+  assert.equal(result.release_contract, false);
 });
 
 test("the vendored Linux desktop security patch runs its provenance and build gates", () => {

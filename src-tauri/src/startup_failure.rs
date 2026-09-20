@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use crate::process_lease::DATA_DIRECTORY_LEASE_CONTENTION_MESSAGE;
+#[cfg(any(unix, test))]
 use std::ffi::OsStr;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -124,6 +125,7 @@ pub(crate) fn display_language() -> DisplayLanguage {
     DisplayLanguage::English
 }
 
+#[cfg(any(unix, test))]
 fn display_language_from_unix_locales(
     lc_all: Option<&OsStr>,
     lc_messages: Option<&OsStr>,
