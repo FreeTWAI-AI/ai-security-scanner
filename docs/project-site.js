@@ -4,11 +4,11 @@ const description = document.querySelector('meta[name="description"]');
 const pageCopy = {
   en: {
     title: "ai-security-scanner — Many security tools, one clear report",
-    description: "Run applicable open-source security checks across repositories, websites, internal systems, cloud, containers, and Kubernetes, then read one prioritized report.",
+    description: "Use the desktop app or Claude Code and Codex Agent Skills to run upstream security checks and read one standardized report. Public installers are currently Linux-only.",
   },
   "zh-TW": {
     title: "ai-security-scanner — 多種安全工具，一份清楚報告",
-    description: "針對程式碼專案、網站、內部系統、雲端、容器與 Kubernetes 執行適用的開源安全檢查，再閱讀一份排好優先順序的報告。",
+    description: "透過桌面程式或 Claude Code／Codex Agent Skills 執行上游安全檢查，閱讀一份標準化報告。公開安裝檔目前僅提供 Linux。",
   },
 };
 

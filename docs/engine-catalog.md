@@ -2,7 +2,7 @@
 
 Status: current source catalog companion
 
-Last updated: 2026-09-13
+Last updated: 2026-09-20
 
 Exact artifact facts: [`engines/catalog.json`](../engines/catalog.json)
 
@@ -90,6 +90,24 @@ The source and license below identify the pinned engine family. Exact release, s
 | Component inventory | [Syft](https://github.com/anchore/syft) | Apache-2.0 | Managed OCI image producing a preserved SBOM artifact. Inventory is not a vulnerability conclusion. |
 | Kubernetes posture | [Kubescape](https://github.com/kubescape/kubescape) | Apache-2.0 | Managed OCI image with pinned offline framework inputs over explicit local manifests; submission and host scanning disabled. |
 | Kubernetes CIS | [kube-bench](https://github.com/aquasecurity/kube-bench) | Apache-2.0 | Managed OCI image over an immutable, digest-verified node configuration snapshot; no privileged live-host mounts. |
+| MCP configuration | [MCP Armor](https://github.com/aira-security/mcp-armor/tree/6af4cee4665ab6242f02a88952f9127b6a04922a) | Apache-2.0 source; model terms separately excluded | Published, digest-pinned configuration-only image; dispatchable but not default-enabled. A retained patch runs only the existing hardcoded-secret and excessive-tool-permission checks against one exact configuration snapshot. It cannot contact or start an MCP server and does not import or download the prompt-injection model. Findings from completed checks survive partial coverage; a clean result requires the exact two-check ledger to complete. Missing configuration is not tested. See the [pinned decision](research/mcp-armor-evaluation.md). |
+
+### Grype repository support
+
+The source catalog at [commit 3990168](https://github.com/teddashh/ai-security-scanner/commit/3990168be5154804c8a70c97f8c8f6e827221cbc) pins
+`ghcr.io/teddashh/ai-security-scanner-engine-grype:0.117.0-4` to
+`sha256:56b0d675e3b8d539890e853699c114493a72a54cca0bbe254eceee7ec2b4c517`.
+The launcher accepts repository working-tree snapshots, allowing upstream Grype to report known
+package vulnerabilities from recognized dependencies as well as single-image OCI inputs.
+
+A controlled Linux repository scan after rebuilding that source recorded 81 Grype findings
+(10 critical, 32 high, 33 medium, 6 low), status `completed`, exit code 0, and the pinned digest.
+Its final HTML report preserved those results. Counts depend on the selected repository and pinned
+database; this fixture result is not a coverage guarantee for another project.
+
+This is current source behavior, not a claim about the earlier public installer. The pin commit
+also records known inconsistencies in image publication metadata; scan results do not establish
+build provenance.
 
 ### Experimental, non-dispatchable engine contracts
 
@@ -103,7 +121,6 @@ convention.
 |---|---|---|---|
 | Model endpoint probes | [garak](https://github.com/NVIDIA/garak/tree/93aa9cdec309ec4170559676f1826ea2a679920c) | Apache-2.0 | Reads probe/detector failure counts without inventing severity; real endpoint testing and packaging remain blocked. |
 | Agent workflow inventory | [Agentic Radar](https://github.com/splx-ai/agentic-radar/tree/65a7e4bd01e2034c7cb52e9620eeed287688cc53) | Apache-2.0 | Normalizes a patched machine-readable workflow graph as observations, never its generic category warnings as findings. |
-| MCP configuration | [MCP Armor](https://github.com/aira-security/mcp-armor/tree/6af4cee4665ab6242f02a88952f9127b6a04922a) | Apache-2.0 source; model terms separately excluded | A retained patch runs only the existing hardcoded-secret and excessive-tool-permission checks against one exact configuration snapshot. It cannot contact or start an MCP server and does not import or download the prompt-injection model. Findings from completed checks survive partial coverage; a clean result requires the exact two-check ledger to complete. See the [pinned decision](research/mcp-armor-evaluation.md). |
 
 ### Provider scope and credentials
 

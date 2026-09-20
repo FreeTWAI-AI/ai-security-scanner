@@ -994,6 +994,10 @@ h1 {
     line-height: 0.98;
   }
 
+  .accent-word {
+    white-space: normal;
+  }
+
   .hero {
     gap: 62px;
     padding-top: 58px;

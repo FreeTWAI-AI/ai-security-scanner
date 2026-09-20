@@ -6,7 +6,8 @@
 
 ## 使用產品
 
-- [開始使用](getting-started.zh-TW.md)：安裝桌面程式並完成第一次掃描。
+- [開始使用](getting-started.zh-TW.md)：安裝目前提供的 Linux 桌面程式並完成第一次掃描。
+- [Agent Skills](getting-started.zh-TW.md#透過-agent-skill-使用)：透過 Claude Code 或 Codex 從原始碼建置、掃描選定目標並保存最終報告。
 - [掃描範圍](scanning-scope.zh-TW.md)：精確目標界線、掃描設定與引擎行為。
 - [結果與匯出](results-and-exports.zh-TW.md)：閱讀優先順序、涵蓋範圍、證據與保存報告。
 
@@ -21,7 +22,7 @@
 
 ## 開發與維護
 
-- [目前開發狀態](development-status.md)：目前實作、驗證基準與尚未通過的閘門。
+- [目前開發狀態](development-status.md)：目前實作、已記錄的驗證與剩餘工作。
 - [參與開發](../CONTRIBUTING.md)：產品優先順序、實作規則與驗證方式。
 - [引擎維護](engine-maintenance.md)：上游更新、adapter 邊界與 patch 例外。
 - [引擎與報告層契約](engine-alignment-handover.zh-TW.md)：目前的引擎語意、資產路徑、報告行為與完成判準。

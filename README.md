@@ -2,17 +2,19 @@
 
 [Project website](https://teddashh.github.io/ai-security-scanner/) · [繁體中文](README.zh-TW.md) · [Documentation](docs/README.md) · [Releases](https://github.com/teddashh/ai-security-scanner/releases)
 
-One desktop app for security checks across repositories, websites, and internal systems. Select the assets, start one scan, and receive one prioritized report with findings, affected assets, evidence, and next actions.
+Security checks across repositories, websites, and internal systems, through a desktop app or an Agent Skill for Claude Code and Codex. Select the targets, confirm authorization for network checks, and start one scan. Established upstream scanners provide the detection; thin adapters and output converters bring their results into one standardized, prioritized report.
 
 ## Start here
 
-Download the installer for your operating system from [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases):
+Public installers are currently **Linux-only** (checked September 20, 2026). Download from [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases):
 
 | Platform | Installer |
 | --- | --- |
-| Windows x86-64 | NSIS `.exe` or `.msi` |
-| macOS | Universal `.dmg` |
 | Linux x86-64 | Debian `.deb` |
+| Windows | Not currently offered |
+| macOS | Not currently offered |
+
+For current `main` features, including the Grype repository fix, build from source with the [Agent Skill workflow](docs/getting-started.md#use-with-an-agent-skill). The public installer is an earlier build.
 
 Open the app and choose one path:
 
@@ -21,6 +23,21 @@ Open the app and choose one path:
 - **Check a project folder** scans a read-only local snapshot for secrets, vulnerable dependencies, risky code, and unsafe configuration.
 
 Review the exact assets and network boundaries, then select **Start scan**. Results open when the run finishes.
+
+## Use with Claude Code or Codex
+
+Agent Skills are a first-class way to build and operate the product from a source checkout. Both agents use the same operating instructions and the product's desktop/typed CLI interfaces:
+
+| Agent | Repository skill |
+| --- | --- |
+| Claude Code | [ai-security-scanner](.claude/skills/ai-security-scanner/SKILL.md) |
+| Codex | [ai-security-scanner](.codex/skills/ai-security-scanner/SKILL.md) |
+
+Open this checkout in either agent and ask:
+
+> Use the ai-security-scanner skill to build this checkout, help me select a local project folder, run its applicable security checks, and save the final HTML report.
+
+The skill guides **build → target selection and authorization → scan → final report**. You choose the scope; the product selects applicable upstream checks. See [setup and build commands](docs/getting-started.md#use-with-an-agent-skill).
 
 ## One report for every selected asset
 
@@ -38,7 +55,9 @@ Completed results remain available when an independent check fails. Reports can 
 
 The current runnable engine set integrates 22 upstream projects. The catalog separately retains experimental, non-dispatchable AI contracts; those are not current scan capabilities. See [Development status](docs/development-status.md). The product runs only the tools that apply to each selected asset, keeps their original identifiers, severity, evidence, and remediation, then organizes every completed result in the same report.
 
-**Selected assets → applicable upstream tools → thin adapters → one prioritized report organized by asset**
+**Selected assets and authorization → thin adapters → upstream scanners → output converters → one standardized report organized by asset**
+
+Detection rules remain upstream. Product-owned prioritization, deduplication, and plain-language guidance live in the shared report layer.
 
 ### Repositories, dependencies, and infrastructure as code
 
@@ -52,6 +71,8 @@ The current runnable engine set integrates 22 upstream projects. The catalog sep
 | [Checkov](https://github.com/bridgecrewio/checkov) | Applicable infrastructure and configuration checks across the selected read-only snapshot. |
 | [KICS](https://github.com/Checkmarx/kics) | Infrastructure-as-code misconfiguration checks from the upstream query pack. |
 | [Syft](https://github.com/anchore/syft) | Software component inventory and preserved SBOM output; inventory is not a vulnerability result. |
+
+The current source catalog pins the Grype image to **`0.117.0-4`**, digest `sha256:56b0d675…`. It can scan local repository dependencies for known vulnerabilities; a controlled repository scan recorded **81 Grype findings**. That is a fixture result, not an expected count for every project. See the [exact pin and recorded result](docs/engine-catalog.md#grype-repository-support).
 
 ### Websites and internal systems
 

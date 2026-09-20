@@ -4,15 +4,38 @@
 
 ## 安裝
 
-從 [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases) 下載目前版本。
+目前公開安裝檔**僅提供 Linux**（2026 年 9 月 20 日確認），請從 [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases) 下載。
 
 | 平台 | 建議套件 |
 | --- | --- |
-| Windows x86-64 | 一般安裝使用 NSIS `.exe`；集中部署使用 `.msi` |
-| macOS | Universal `.dmg` |
 | Linux x86-64 | Debian `.deb` |
+| Windows | 目前未提供 |
+| macOS | 目前未提供 |
 
 安裝完成後啟動 **ai-security-scanner**。選定的檢查需要本機掃描環境時，應用程式會直接準備。
+
+## 透過 Agent Skill 使用
+
+若要使用目前 `main` 的實作，包含 Grype 專案掃描，請從原始碼建置。公開安裝檔仍是較早的版本；從原始碼建置到掃描的路徑已在 Linux 實測。
+
+在 **Claude Code** 或 **Codex** 開啟本儲存庫，使用其中的 `ai-security-scanner` skill：[Claude Code 指引](../.claude/skills/ai-security-scanner/SKILL.md) · [Codex 指引](../.codex/skills/ai-security-scanner/SKILL.md)。兩份內容相同，都透過產品介面提供建置與操作入口。
+
+可以這樣要求 Agent：
+
+> 使用 ai-security-scanner skill 建置這份原始碼，協助我選擇本機專案資料夾、執行適用的安全檢查，並保存最終 HTML 報告。
+
+安裝 Node.js 24 或更新版本、Rust 1.98，以及 Tauri 的 Linux 開發相依套件後，可使用以下建置指令：
+
+```sh
+npm ci
+cargo build --locked --no-default-features --features cli --bin ai-security-scanner-cli
+./target/debug/ai-security-scanner-cli doctor
+npm run tauri dev
+```
+
+Agent 可檢查執行環境、引導選擇目標、透過產品執行適用檢查，再解讀與匯出最終報告。本機資料夾由你選定，網路目標授權也由你確認，Skill 不會代為授權。掃描中的工作顯示於進度頁面，結果與匯出使用已達終態的掃描。
+
+目前 Grype 映像固定為 `0.117.0-4`（`sha256:56b0d675…`），已有本機專案弱點掃描結果。詳見[完整釘選與實測紀錄](engine-catalog.md#grype-repository-support)。
 
 ## 選擇第一次掃描
 
@@ -58,4 +81,4 @@
 
 ## 繼續評估
 
-從**案件**重新開啟專案、查看過去終態結果、增減資產、重試未完成檢查，或把後續掃描與已完成基準比較。
+從**我的掃描**重新開啟專案、查看過去終態結果、增減資產、重試未完成檢查，或把後續掃描與已完成基準比較。

@@ -1,6 +1,6 @@
 # Development status
 
-_Updated 2026-09-19._
+_Updated 2026-09-20._
 
 This page summarizes current engineering status for contributors. It is not a product specification
 or release declaration. [The product specification](product-spec.md) remains the source of truth for
@@ -8,6 +8,10 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 
 ## At a glance
 
+- Public installers are Linux-only: Linux x86-64 Debian `.deb`. Windows and macOS installers are
+  not currently offered. Current source features are newer than the public installer.
+- The Linux source build-to-scan path is available through the paired repository
+  [Agent Skills](getting-started.md#use-with-an-agent-skill), using the same product interfaces.
 - The engine catalog contains 24 records: 22 integrated, runnable engines and 2 experimental AI
   integrations that remain non-runnable.
 - Repository, website/API, infrastructure, cloud, Microsoft 365, and Kubernetes paths use bounded
@@ -33,9 +37,18 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 The two experimental entries, Garak and Agentic Radar, remain `runnable: false`. Research artifacts
 and local image identifiers are not substitutes for a published digest or an authorized runtime path.
 
-## Current verification baseline
+## Grype repository scan
 
-The latest recorded local baseline for these lanes completed successfully:
+The current catalog pins Grype to `0.117.0-4`. A controlled Linux repository scan recorded 81 Grype
+findings (10 critical, 32 high, 33 medium, 6 low), with Grype completed and exit code 0. The full run
+recorded 192 findings, 8 completed checks, and 2 not executed: Agentic Radar had no runnable release,
+and MCP Armor had no selected MCP configuration. These are results for that fixture, not promised
+counts for other repositories. See [the exact pin and recorded result](engine-catalog.md#grype-repository-support).
+
+## Recorded verification baseline
+
+The following test counts are the successful local baseline recorded on September 19, 2026; they
+are not a new test run for this documentation update:
 
 - Rust core and CLI: 1,752 tests.
 - Frontend unit tests: 696 tests.

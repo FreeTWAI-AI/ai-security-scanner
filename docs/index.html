@@ -4,10 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#102c37">
-    <meta name="description" content="Run applicable open-source security checks across repositories, websites, internal systems, cloud, containers, and Kubernetes, then read one prioritized report.">
+    <meta name="description" content="Use the desktop app or Claude Code and Codex Agent Skills to run upstream security checks and read one standardized report. Public installers are currently Linux-only.">
     <meta property="og:type" content="website">
     <meta property="og:title" content="ai-security-scanner — Many security tools, one clear report">
-    <meta property="og:description" content="Choose the assets. Run applicable upstream security checks. Read one report organized by asset and priority.">
+    <meta property="og:description" content="Choose targets and confirm scope. Run upstream scanners through the desktop app or Claude Code and Codex Agent Skills. Read one standardized report. Public installers: Linux only.">
     <meta property="og:url" content="https://teddashh.github.io/ai-security-scanner/">
     <meta property="og:image" content="https://teddashh.github.io/ai-security-scanner/project-mark.svg">
     <meta name="twitter:card" content="summary">
@@ -53,9 +53,9 @@
             <span class="lang-en">One report</span>
             <span class="lang-zh" lang="zh-Hant">統一報告</span>
           </a>
-          <a href="#staying-current">
-            <span class="lang-en">Staying current</span>
-            <span class="lang-zh" lang="zh-Hant">維持更新</span>
+          <a href="#agent-skills">
+            <span class="lang-en">Agent Skills</span>
+            <span class="lang-zh" lang="zh-Hant">Agent Skills</span>
           </a>
           <a class="nav-github" href="https://github.com/teddashh/ai-security-scanner">GitHub ↗</a>
         </nav>
@@ -70,28 +70,32 @@
       <section class="hero" id="top">
         <div class="hero-content">
           <p class="eyebrow">
-            <span class="lang-en">Open source · desktop · local first</span>
-            <span class="lang-zh" lang="zh-Hant">開源 · 桌面應用 · 本機優先</span>
+            <span class="lang-en">Open source · desktop + Agent Skills · local first</span>
+            <span class="lang-zh" lang="zh-Hant">開源 · 桌面 + Agent Skills · 本機優先</span>
           </p>
           <h1>
             <span class="lang-en">Many security tools. <span class="accent-word">One clear report.</span></span>
             <span class="lang-zh" lang="zh-Hant">多種安全工具，<span class="accent-word">一份清楚報告。</span></span>
           </h1>
           <p class="hero-copy">
-            <span class="lang-en">Choose the repositories, websites, internal systems, cloud sources, containers, and Kubernetes inputs you are responsible for. ai-security-scanner runs the applicable upstream checks and brings the completed results together—organized by asset, priority, evidence, and next action.</span>
-            <span class="lang-zh" lang="zh-Hant">選擇你負責的程式碼專案、網站、內部系統、雲端來源、容器與 Kubernetes 輸入。ai-security-scanner 會執行適用的上游檢查，再把已完成結果依資產、優先順序、證據與下一步集中整理。</span>
+            <span class="lang-en">Choose your repositories, websites, and internal systems, then confirm the network scope. Use the desktop app or Claude Code and Codex Agent Skills to run applicable upstream scanners and read one standardized report with affected assets, evidence, priorities, and next actions.</span>
+            <span class="lang-zh" lang="zh-Hant">選擇程式碼專案、網站與內部系統，確認網路範圍與授權。透過桌面程式或 Claude Code／Codex Agent Skills 執行適用的上游掃描器，再從一份標準化報告查看受影響資產、證據、優先順序與下一步。</span>
           </p>
           <div class="button-row">
             <a class="button button-primary" href="https://github.com/teddashh/ai-security-scanner/releases">
-              <span class="lang-en">Download from Releases</span>
-              <span class="lang-zh" lang="zh-Hant">前往 Releases 下載</span>
+              <span class="lang-en">Download for Linux</span>
+              <span class="lang-zh" lang="zh-Hant">下載 Linux 版</span>
               <span aria-hidden="true">→</span>
             </a>
-            <a class="button button-secondary" href="https://github.com/teddashh/ai-security-scanner">
-              <span class="lang-en">View source</span>
-              <span class="lang-zh" lang="zh-Hant">查看原始碼</span>
+            <a class="button button-secondary" href="#agent-skills">
+              <span class="lang-en">Use Claude Code / Codex</span>
+              <span class="lang-zh" lang="zh-Hant">使用 Claude Code／Codex</span>
             </a>
           </div>
+          <p class="snapshot-note">
+            <span class="lang-en">Public downloads: Linux x86-64 <code>.deb</code> only; Windows and macOS installers are not currently offered (checked September 20, 2026). Build from source for current features, including the Grype repository fix.</span>
+            <span class="lang-zh" lang="zh-Hant">公開安裝檔僅提供 Linux x86-64 <code>.deb</code>；Windows／macOS 目前未提供（2026 年 9 月 20 日確認）。目前原始碼功能包含 Grype 專案掃描修正，需從原始碼建置使用。</span>
+          </p>
           <ul class="hero-metrics" aria-label="Project summary">
             <li>
               <strong>22</strong>
@@ -227,12 +231,12 @@
             <article class="flow-card">
               <span class="flow-number">01</span>
               <h3>
-                <span class="lang-en">Choose what you own</span>
-                <span class="lang-zh" lang="zh-Hant">選擇你負責的資產</span>
+                <span class="lang-en">Choose targets and confirm scope</span>
+                <span class="lang-zh" lang="zh-Hant">選定目標與確認授權</span>
               </h3>
               <p>
-                <span class="lang-en">Add repositories, complete website URLs, or exact approved internal systems. Advanced cloud, container, IaC, and Kubernetes sources stay optional.</span>
-                <span class="lang-zh" lang="zh-Hant">加入程式碼專案、完整網站 URL 或精確獲准的內部系統；雲端、容器、IaC 與 Kubernetes 來源維持選用。</span>
+                <span class="lang-en">Choose local folders, complete website URLs, or exact internal hosts. Review the targets and confirm authorization for network checks. Advanced sources stay optional.</span>
+                <span class="lang-zh" lang="zh-Hant">選擇本機資料夾、完整網站 URL 或精確內部主機，確認目標與網路檢查授權；進階來源維持選用。</span>
               </p>
             </article>
             <article class="flow-card">
@@ -242,8 +246,8 @@
                 <span class="lang-zh" lang="zh-Hant">只執行適用工具</span>
               </h3>
               <p>
-                <span class="lang-en">Each scanner receives only the asset and scope it can check. One unavailable tool does not erase findings from completed siblings.</span>
-                <span class="lang-zh" lang="zh-Hant">每個掃描器只會取得它能檢查的資產與範圍；單一工具無法執行時，不會抹去其他已完成結果。</span>
+                <span class="lang-en">Thin adapters pass the selected inputs to established upstream scanners; output converters preserve their findings. Detection rules remain upstream.</span>
+                <span class="lang-zh" lang="zh-Hant">薄層轉接器把選定輸入交給既有上游掃描器，輸出轉換器保留其結果；偵測規則沿用上游。</span>
               </p>
             </article>
             <article class="flow-card">
@@ -253,16 +257,16 @@
                 <span class="lang-zh" lang="zh-Hant">閱讀一份優先排序報告</span>
               </h3>
               <p>
-                <span class="lang-en">See affected assets, impact, evidence, the smallest next action, verification guidance, and exactly what was not tested.</span>
-                <span class="lang-zh" lang="zh-Hant">直接看到受影響資產、可能影響、證據、最小下一步、驗證方式，以及哪些項目尚未測試。</span>
+                <span class="lang-en">When the run finishes, see affected assets, impact, evidence, next actions, and untested work in one standardized report. An independent check failure preserves completed findings.</span>
+                <span class="lang-zh" lang="zh-Hant">掃描結束後，從一份標準化報告查看受影響資產、影響、證據、下一步與未測試項目。個別檢查失敗時仍保留已完成結果。</span>
               </p>
             </article>
           </div>
           <div class="pipeline" aria-label="Result pipeline">
             <div class="pipeline-stage">
               <small>
-                <span class="lang-en">Selected assets</span>
-                <span class="lang-zh" lang="zh-Hant">選定資產</span>
+                <span class="lang-en">Selected assets and authorization</span>
+                <span class="lang-zh" lang="zh-Hant">選定資產與授權</span>
               </small>
               <strong>
                 <span class="lang-en">Repositories · websites · endpoints · cloud · containers · Kubernetes</span>
@@ -272,8 +276,8 @@
             <span class="pipeline-arrow" aria-hidden="true">→</span>
             <div class="pipeline-stage">
               <small>
-                <span class="lang-en">Applicable upstream tools</span>
-                <span class="lang-zh" lang="zh-Hant">適用上游工具</span>
+                <span class="lang-en">Adapters · upstream scanners · converters</span>
+                <span class="lang-zh" lang="zh-Hant">轉接器 · 上游掃描器 · 轉換器</span>
               </small>
               <strong>
                 <span class="lang-en">Original detector behavior, identifiers, severity, and evidence</span>
@@ -283,8 +287,8 @@
             <span class="pipeline-arrow" aria-hidden="true">→</span>
             <div class="pipeline-stage">
               <small>
-                <span class="lang-en">Product-owned report</span>
-                <span class="lang-zh" lang="zh-Hant">產品統一報告</span>
+                <span class="lang-en">Standardized product report</span>
+                <span class="lang-zh" lang="zh-Hant">產品標準化報告</span>
               </small>
               <strong>
                 <span class="lang-en">One asset view, clear priorities, next actions, and coverage gaps</span>
@@ -294,6 +298,29 @@
           </div>
         </section>
       </div>
+
+      <section class="section" id="agent-skills">
+        <div class="section-heading">
+          <h2>
+            <span class="lang-en">Claude Code and Codex. The same scan workflow.</span>
+            <span class="lang-zh" lang="zh-Hant">Claude Code 與 Codex，共用同一套掃描流程。</span>
+          </h2>
+          <p>
+            <span class="lang-en">Agent Skills are a first-class entry point. Open the source checkout in either agent and use the ai-security-scanner skill to build, select targets, scan, and save the final HTML report. This source workflow has been exercised on Linux.</span>
+            <span class="lang-zh" lang="zh-Hant">Agent Skill 是正式使用入口。在任一 Agent 開啟原始碼，使用 ai-security-scanner skill 完成建置、選定目標、掃描與保存最終 HTML 報告。這條原始碼操作路徑已在 Linux 實測。</span>
+          </p>
+        </div>
+        <p>
+          <span class="lang-en">Both skills use the same product interfaces and operating instructions. You choose the scope and confirm network authorization; upstream scanners perform the checks and the shared report layer explains the results.</span>
+          <span class="lang-zh" lang="zh-Hant">兩份 Skill 共用產品介面與操作指引。你選定範圍並確認網路授權，上游掃描器執行檢查，共用報告層解釋結果。</span>
+        </p>
+        <div class="button-row">
+          <a class="button button-primary lang-en" href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/getting-started.md#use-with-an-agent-skill">Build and scan with a Skill</a>
+          <a class="button button-primary lang-zh" lang="zh-Hant" href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/getting-started.zh-TW.md#透過-agent-skill-使用">透過 Skill 建置與掃描</a>
+          <a class="button button-secondary" href="https://github.com/teddashh/ai-security-scanner/blob/main/.claude/skills/ai-security-scanner/SKILL.md">Claude Code Skill</a>
+          <a class="button button-secondary" href="https://github.com/teddashh/ai-security-scanner/blob/main/.codex/skills/ai-security-scanner/SKILL.md">Codex Skill</a>
+        </div>
+      </section>
 
       <section class="section" id="tools">
         <div class="section-heading">
@@ -343,8 +370,9 @@
             <article class="tool-card" data-tool="grype">
               <div class="tool-card-top"><h4 class="tool-name">Grype</h4><span class="stars"><data value="12903">12.9k</data></span></div>
               <span class="tool-kind"><span class="lang-en">Package vulnerabilities</span><span class="lang-zh" lang="zh-Hant">套件弱點</span></span>
-              <p><span class="lang-en">Package vulnerability matching for repository snapshots and single-image OCI layouts.</span><span class="lang-zh" lang="zh-Hant">比對專案副本與單一映像 OCI layout 中的套件弱點。</span></p>
+              <p><span class="lang-en">Package vulnerability matching for repository snapshots and single-image OCI layouts. Current source pin: <code>0.117.0-4</code> (<code>56b0d675…</code>); a controlled local repository scan recorded 81 Grype findings.</span><span class="lang-zh" lang="zh-Hant">比對專案副本與單一映像 OCI layout 中的套件弱點。目前原始碼釘選 <code>0.117.0-4</code>（<code>56b0d675…</code>）；受控本機專案掃描記錄 81 筆 Grype 問題。</span></p>
               <a class="tool-link" href="https://github.com/anchore/grype"><span class="lang-en">GitHub repository</span><span class="lang-zh" lang="zh-Hant">GitHub 專案</span></a>
+              <a class="tool-link" href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/engine-catalog.md#grype-repository-support"><span class="lang-en">Pin and recorded result</span><span class="lang-zh" lang="zh-Hant">釘選與實測紀錄</span></a>
             </article>
             <article class="tool-card" data-tool="checkov">
               <div class="tool-card-top"><h4 class="tool-name">Checkov</h4><span class="stars"><data value="9015">9.0k</data></span></div>
@@ -543,8 +571,8 @@
               <span class="lang-zh" lang="zh-Hant">掃描器維持上游原意，答案整理成你的工作視圖。</span>
             </h2>
             <p>
-              <span class="lang-en">The shared report layer handles organization, prioritization, plain-language guidance, and cross-engine context without erasing original evidence.</span>
-              <span class="lang-zh" lang="zh-Hant">共用報告層負責整理、排序、白話說明與跨引擎脈絡，同時不抹去原始證據。</span>
+              <span class="lang-en">Thin adapters and output converters connect upstream scanners to one standardized report. The shared report layer handles organization, deduplication, prioritization, and plain-language guidance while preserving original evidence.</span>
+              <span class="lang-zh" lang="zh-Hant">薄層轉接器與輸出轉換器，把上游掃描器串接到一份標準化報告。共用報告層負責整理、去重、排序與白話說明，同時保留原始證據。</span>
             </p>
             <ul class="feature-list">
               <li><span class="lang-en">Every requested asset gets one clear status.</span><span class="lang-zh" lang="zh-Hant">每個選定資產都有一個清楚狀態。</span></li>
@@ -618,13 +646,13 @@
             <span class="lang-zh" lang="zh-Hant">從資產開始，讓產品選擇適用檢查。</span>
           </h2>
           <p>
-            <span class="lang-en">Download the desktop app, review the exact scope, start once, and follow every completed result in one report.</span>
-            <span class="lang-zh" lang="zh-Hant">下載桌面應用程式、確認精確範圍、啟動一次，再從同一份報告追蹤所有已完成結果。</span>
+            <span class="lang-en">Download the Linux desktop app or build current source with Claude Code or Codex. Review the exact scope, start once, and read the final report.</span>
+            <span class="lang-zh" lang="zh-Hant">下載 Linux 桌面程式，或透過 Claude Code／Codex 建置目前原始碼。確認精確範圍、啟動一次，再閱讀最終報告。</span>
           </p>
           <div class="button-row">
             <a class="button button-primary" href="https://github.com/teddashh/ai-security-scanner/releases">
-              <span class="lang-en">Get ai-security-scanner</span>
-              <span class="lang-zh" lang="zh-Hant">取得 ai-security-scanner</span>
+              <span class="lang-en">Download for Linux</span>
+              <span class="lang-zh" lang="zh-Hant">下載 Linux 版</span>
               <span aria-hidden="true">→</span>
             </a>
             <a class="button button-secondary" href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/getting-started.md">

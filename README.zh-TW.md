@@ -2,17 +2,19 @@
 
 [專案網站](https://teddashh.github.io/ai-security-scanner/?lang=zh-TW) · [English](README.md) · [文件](docs/README.zh-TW.md) · [下載](https://github.com/teddashh/ai-security-scanner/releases)
 
-一個桌面應用程式，同時檢查程式碼專案、網站與內部系統。選好資產後只需啟動一次掃描，即可取得一份依優先順序整理的報告，直接列出問題、受影響資產、證據與下一步。
+透過桌面應用程式，或 Claude Code／Codex 的 Agent Skill，檢查程式碼專案、網站與內部系統。選定目標、確認網路檢查授權後，啟動一次掃描。偵測由既有上游掃描器負責，薄層轉接器與輸出轉換器將結果整理成一份標準化、依優先順序排列的報告。
 
 ## 開始使用
 
-從 [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases) 下載適用的安裝程式：
+目前公開安裝檔**僅提供 Linux**（2026 年 9 月 20 日確認），請從 [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases) 下載：
 
 | 平台 | 安裝程式 |
 | --- | --- |
-| Windows x86-64 | NSIS `.exe` 或 `.msi` |
-| macOS | Universal `.dmg` |
 | Linux x86-64 | Debian `.deb` |
+| Windows | 目前未提供 |
+| macOS | 目前未提供 |
+
+若要使用目前 `main` 的功能，包含 Grype 專案掃描修正，請循 [Agent Skill 流程](docs/getting-started.zh-TW.md#透過-agent-skill-使用)從原始碼建置。公開安裝檔仍是較早的版本。
 
 開啟應用程式並選擇一條路徑：
 
@@ -21,6 +23,21 @@
 - **檢查專案資料夾**：掃描本機唯讀副本中的秘密、弱點相依套件、危險程式碼與設定問題。
 
 確認精確資產與網路範圍後，選擇**開始掃描**。掃描結束後會直接開啟結果。
+
+## 透過 Claude Code 或 Codex 使用
+
+Agent Skill 是從原始碼建置與操作產品的正式入口。兩者共用相同操作指引，透過產品桌面介面與具型別的 CLI 執行：
+
+| Agent | 儲存庫內的 Skill |
+| --- | --- |
+| Claude Code | [ai-security-scanner](.claude/skills/ai-security-scanner/SKILL.md) |
+| Codex | [ai-security-scanner](.codex/skills/ai-security-scanner/SKILL.md) |
+
+在任一 Agent 開啟本儲存庫後，可以這樣要求：
+
+> 使用 ai-security-scanner skill 建置這份原始碼，協助我選擇本機專案資料夾、執行適用的安全檢查，並保存最終 HTML 報告。
+
+Skill 引導**建置 → 選定目標與授權 → 掃描 → 最終報告**。你決定範圍，產品選擇適用的上游檢查。詳見[設定與建置指令](docs/getting-started.zh-TW.md#透過-agent-skill-使用)。
 
 ## 所有資產集中在一份報告
 
@@ -38,7 +55,9 @@
 
 目前可執行的引擎集合整合了 22 個上游專案。目錄另外保留實驗性、不可派送的 AI 契約；它們不是目前的掃描能力。詳見[開發狀態](docs/development-status.md)。產品只會針對每個選定資產執行適用工具，保留原始識別碼、嚴重度、證據與修正建議，再把所有已完成結果整理到同一份報告。
 
-**選定資產 → 適用的上游工具 → 薄層轉接器 → 一份依資產整理、排好優先順序的報告**
+**選定資產與授權 → 薄層轉接器 → 上游掃描器 → 輸出轉換器 → 一份依資產整理的標準化報告**
+
+偵測規則沿用上游；產品的排序、去重與白話說明集中在共用報告層。
 
 ### 程式碼專案、相依套件與基礎設施即程式碼
 
@@ -52,6 +71,8 @@
 | [Checkov](https://github.com/bridgecrewio/checkov) | 針對選定的唯讀副本執行適用的基礎設施與設定檢查。 |
 | [KICS](https://github.com/Checkmarx/kics) | 使用上游 query pack 檢查基礎設施即程式碼的錯誤設定。 |
 | [Syft](https://github.com/anchore/syft) | 建立軟體元件盤點與可保存的 SBOM；盤點本身不是弱點結果。 |
+
+目前原始碼目錄將 Grype 映像固定為 **`0.117.0-4`**，digest 為 `sha256:56b0d675…`，可檢查本機專案相依套件的已知弱點；受控專案掃描曾記錄 **81 筆 Grype 問題**。這是測試專案的實測結果，各專案筆數會不同。詳見[完整釘選與實測紀錄](docs/engine-catalog.md#grype-repository-support)。
 
 ### 網站與內部系統
 

@@ -6,7 +6,8 @@ Use the shortest path that matches the task.
 
 ## Use the product
 
-- [Getting started](getting-started.md) — install the desktop app and complete the first scan.
+- [Getting started](getting-started.md) — install the currently offered Linux desktop app and complete the first scan.
+- [Agent Skills](getting-started.md#use-with-an-agent-skill) — use Claude Code or Codex to build from source, scan selected targets, and save the final report.
 - [Scanning scope](scanning-scope.md) — exact target boundaries, profiles, and scanner behavior.
 - [Results and exports](results-and-exports.md) — interpret priorities, coverage, evidence, and saved reports.
 
@@ -21,7 +22,7 @@ Use the shortest path that matches the task.
 
 ## Build and maintain
 
-- [Development status](development-status.md) — current implementation, verification, and open gates.
+- [Development status](development-status.md) — current implementation, recorded verification, and remaining work.
 - [Contributing](../CONTRIBUTING.md) — product priorities, implementation rules, and verification.
 - [Engine maintenance](engine-maintenance.md) — upstream updates, adapter boundaries, and patch exceptions.
 - [Engine and report-layer contracts](engine-alignment-handover.zh-TW.md) — current engine semantics, asset paths, report behavior, and completion criteria.

@@ -4,15 +4,38 @@
 
 ## Install
 
-Download the current installer from [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases).
+Public installers are currently **Linux-only** (checked September 20, 2026). Download from [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases).
 
 | Platform | Recommended package |
 | --- | --- |
-| Windows x86-64 | NSIS `.exe`; use `.msi` for managed deployment |
-| macOS | Universal `.dmg` |
 | Linux x86-64 | Debian `.deb` |
+| Windows | Not currently offered |
+| macOS | Not currently offered |
 
 Launch **ai-security-scanner** after installation. The app prepares its local scanning runtime when the selected checks need it.
+
+## Use with an Agent Skill
+
+For the current `main` implementation, including Grype repository scanning, use a source checkout. The public installer is an earlier build. The source build-to-scan path has been exercised on Linux.
+
+Open the checkout in **Claude Code** or **Codex** and use the repository's `ai-security-scanner` skill: [Claude Code instructions](../.claude/skills/ai-security-scanner/SKILL.md) · [Codex instructions](../.codex/skills/ai-security-scanner/SKILL.md). Both copies provide the same build-and-operate entry point through the product interfaces.
+
+Ask the agent:
+
+> Use the ai-security-scanner skill to build this checkout, help me select a local project folder, run its applicable security checks, and save the final HTML report.
+
+With Node.js 24 or newer, Rust 1.98, and Tauri's Linux development dependencies installed, the source build commands are:
+
+```sh
+npm ci
+cargo build --locked --no-default-features --features cli --bin ai-security-scanner-cli
+./target/debug/ai-security-scanner-cli doctor
+npm run tauri dev
+```
+
+The agent can inspect runtime readiness, guide target selection, run the applicable checks through the product, and explain/export the final report. You select the local folder and confirm any network targets; the skill does not supply authorization for you. Active work stays in Progress, and Results/Export use a terminal run.
+
+The current Grype image pin is `0.117.0-4` (`sha256:56b0d675…`), with local repository vulnerability results recorded. See [the exact pin and result](engine-catalog.md#grype-repository-support).
 
 ## Choose the first scan
 
@@ -58,4 +81,4 @@ The complete report model is described in [Results and exports](results-and-expo
 
 ## Continue an assessment
 
-Open **Cases** to reopen a project, review an earlier terminal run, add or remove assets, retry unfinished checks, or compare a later scan with a completed baseline.
+Open **My scans** to reopen a project, review an earlier terminal run, add or remove assets, retry unfinished checks, or compare a later scan with a completed baseline.
