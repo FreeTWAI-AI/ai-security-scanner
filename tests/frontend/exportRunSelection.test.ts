@@ -63,10 +63,11 @@ test("Findings, Export, service, and native command preserve one explicit run co
   assert.match(app, /onOpenExport=\{\(runId\) => \{[\s\S]*setSelectedReportRunId\(runId\);[\s\S]*navigate\("export"\);/u);
   assert.match(
     app,
-    /const currentRun = selectedReportRunId === undefined[\s\S]*\? workspace\?\.runs\[0\][\s\S]*: workspace\?\.runs\.find\(\(run\) => run\.id === selectedReportRunId\);/u,
+    /const selectedRun = selectedReportRunId === undefined[\s\S]*\? workspace\?\.runs\[0\][\s\S]*: workspace\?\.runs\.find\(\(run\) => run\.id === selectedReportRunId\);/u,
   );
   assert.doesNotMatch(app, /workspace\?\.runs\.find\(\(run\) => run\.id === selectedReportRunId\)\s*\?\? workspace\?\.runs\[0\]/u);
-  assert.equal((app.match(/selectedRunId=\{selectedReportRunId\}/gu) ?? []).length, 2);
+  assert.match(app, /const selectedRunLifecycle = pageForSelectedRunLifecycle\([\s\S]*workspace\?\.runs \?\? \[\]/u);
+  assert.equal((app.match(/selectedRunId=\{currentRun\?\.id \?\? selectedReportRunId\}/gu) ?? []).length, 2);
   assert.match(findings, /runs\.find\(\(run\) => run\.id === selectedRunId\)/u);
   assert.match(findings, /selectedRunId === undefined[\s\S]*\? \(report \? runs\.find/u);
   assert.match(findings, /onOpenExport\(latestRun\.id\)/u);

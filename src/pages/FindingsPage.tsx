@@ -81,6 +81,7 @@ import "./page-technical-details.css";
 interface FindingsPageProps {
   report?: BeginnerMasterReport;
   selectedRunId?: string;
+  runningScanResultsPending?: boolean;
   reportUnavailable?: boolean;
   findings: Finding[];
   findingGroups: FindingGroup[];
@@ -577,6 +578,10 @@ const copy = {
   reportPartial: { en: "Completed with gaps", zhTW: "已完成，但有涵蓋缺口" },
   reportNoChecks: { en: "No checks completed", zhTW: "沒有完成任何檢查" },
   reportRun: { en: "Report run", zhTW: "報告輪次" },
+  finishedRunWhileScanning: {
+    en: "This is the finished scan; the running scan’s results open when it finishes.",
+    zhTW: "目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。",
+  },
   reportRunUnavailable: { en: "Previously selected scan unavailable", zhTW: "先前選擇的掃描已無法使用" },
   lastSaved: { en: "Last saved {time}", zhTW: "最後保存：{time}" },
   requestedTargets: { en: "Targets requested", zhTW: "要求檢查的目標" },
@@ -1861,6 +1866,7 @@ const workflowTone = (state: FindingWorkflowState): string => {
 export function FindingsPage({
   report,
   selectedRunId,
+  runningScanResultsPending,
   reportUnavailable,
   findings: canonicalFindings,
   findingGroups,
@@ -2411,6 +2417,9 @@ export function FindingsPage({
                 : copy.emptyHeaderDescription)}
           actions={reportActions}
         />
+        {runningScanResultsPending && (
+          <InlineNotice tone="info" title={text(copy.finishedRunWhileScanning)} />
+        )}
         {cleanCompletedOutcome && (
           <div className="report-terminal-outcome" data-report-outcome="no_problems_completed">
             {terminalActions}
@@ -2504,6 +2513,10 @@ export function FindingsPage({
         title={text(copy.title)}
         actions={reportActions}
       />
+
+      {runningScanResultsPending && (
+        <InlineNotice tone="info" title={text(copy.finishedRunWhileScanning)} />
+      )}
 
       {reportUnavailable && <InlineNotice tone="warning" title={text(unavailableReportNotice.title)}><p>{text(unavailableReportNotice.body)}</p></InlineNotice>}
 

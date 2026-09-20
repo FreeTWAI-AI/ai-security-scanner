@@ -142,7 +142,12 @@ test("user-facing guidance does not name a destination absent from the sidebar",
   const routedAbsentIds = new Set<PageId>();
   for (const item of navigation) {
     for (const status of activeRunStatuses) {
-      const destination = pageForSelectedRunLifecycle(item.id, { status });
+      const activeRun = {
+        id: `active-${status}`,
+        status,
+        startedAt: "2026-09-19T12:00:00Z",
+      };
+      const destination = pageForSelectedRunLifecycle(item.id, activeRun, [activeRun]).page;
       if (!sidebarIds.has(destination)) routedAbsentIds.add(destination);
     }
   }

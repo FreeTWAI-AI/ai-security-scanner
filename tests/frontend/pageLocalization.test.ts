@@ -484,7 +484,7 @@ test("export preview, export, and both verification paths remain wired", async (
   assert.match(verification, /mappingVersionDriftOnlyForFinding \? mappingDiffSummary/u);
 });
 
-test("active report routes resolve to Progress without transitional report copy", async () => {
+test("active report routes use a finished run when available and preserve the deferred terminal page", async () => {
   const [app, navigation, findings, exportPage] = await Promise.all([
     readFile(new URL("../../src/App.tsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/pageNavigation.ts", import.meta.url), "utf8"),
@@ -499,6 +499,8 @@ test("active report routes resolve to Progress without transitional report copy"
   ]) assert.ok(!findings.includes(phrase), phrase);
   assert.match(findings, /activeRunStatuses\.has\(latestRun\.status\)/u);
   assert.match(findings, /if \(activeRun\) \{[\s\S]*return null;/u);
+  assert.match(findings, /This is the finished scan; the running scan’s results open when it finishes\./u);
+  assert.match(findings, /目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。/u);
 
   for (const phrase of [
     "Scan in progress",
@@ -508,10 +510,16 @@ test("active report routes resolve to Progress without transitional report copy"
   ]) assert.ok(!exportPage.includes(phrase), phrase);
   assert.match(exportPage, /workspaceExportRevision/u);
   assert.match(exportPage, /if \(activeRun\) \{[\s\S]*return null;/u);
+  assert.match(exportPage, /This is the finished scan; the running scan’s results open when it finishes\./u);
+  assert.match(exportPage, /目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。/u);
   assert.match(navigation, /requestedPage === "findings" \|\| requestedPage === "export"/u);
-  assert.match(app, /const displayedPage = pageForSelectedRunLifecycle\(page, currentRun, deferredPageForCurrentRun\);/u);
+  assert.match(navigation, /const finishedRun = newestTerminalRun\(runs\);/u);
+  assert.match(navigation, /page: requestedPage,[\s\S]*run: finishedRun,[\s\S]*awaitedRun: selectedRun/u);
+  assert.match(app, /const selectedRunLifecycle = pageForSelectedRunLifecycle\([\s\S]*workspace\?\.runs \?\? \[\]/u);
+  assert.match(app, /const displayedPage = selectedRunLifecycle\.page;/u);
   assert.match(app, /if \(displayedPage !== page\) navigate\(displayedPage\);/u);
   assert.match(app, /requestedTerminalPage=\{deferredPageForCurrentRun\}/u);
+  assert.equal((app.match(/runningScanResultsPending=\{selectedRunLifecycle\.showingFinishedRunWhileActive\}/gu) ?? []).length, 2);
   assert.match(app, /switch \(displayedPage\)/u);
   assert.match(app, /<AppShell[\s\S]*page=\{displayedPage\}/u);
 });

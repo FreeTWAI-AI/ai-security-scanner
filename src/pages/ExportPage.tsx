@@ -21,6 +21,7 @@ import { displayTechnicalDetail } from "./pageTechnicalDetails";
 interface ExportPageProps {
   workspace: CaseWorkspace;
   selectedRunId?: string;
+  runningScanResultsPending?: boolean;
   exports: CaseExport[];
   demoMode: boolean;
   busy?: boolean;
@@ -48,6 +49,10 @@ const copy = {
   description: {
     en: "Choose a format and save locally.",
     zhTW: "選擇格式並儲存到本機。",
+  },
+  finishedRunWhileScanning: {
+    en: "This is the finished scan; the running scan’s results open when it finishes.",
+    zhTW: "目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。",
   },
   preparing: { en: "Preparing…", zhTW: "準備中…" },
   exportDemo: { en: "Download {format} demo file", zhTW: "下載「{format}」展示檔" },
@@ -330,7 +335,7 @@ const findingOnlyCoverageCopy = {
   },
 } as const;
 
-export function ExportPage({ workspace, selectedRunId, exports, demoMode, busy, onPreview, onExport, onVerify, onVerifyReceived }: ExportPageProps) {
+export function ExportPage({ workspace, selectedRunId, runningScanResultsPending, exports, demoMode, busy, onPreview, onExport, onVerify, onVerifyReceived }: ExportPageProps) {
   const { locale, text, formatDateTime, formatNumber } = useI18n();
   const reportLocale = reportLocaleForUiLocale(locale);
   const selectedRun = workspace.runs.find((run) => run.id === selectedRunId);
@@ -525,6 +530,10 @@ export function ExportPage({ workspace, selectedRunId, exports, demoMode, busy, 
         title={text(copy.title)}
         description={text(copy.description)}
       />
+
+      {runningScanResultsPending && (
+        <InlineNotice tone="info" title={text(copy.finishedRunWhileScanning)} />
+      )}
 
       {connectionOnlyRun && !demoMode && (
         <InlineNotice tone="warning" title={text(copy.connectionOnlyTitle)}>

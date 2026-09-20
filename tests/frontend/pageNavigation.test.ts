@@ -12,41 +12,119 @@ import {
 const source = async (path: string): Promise<string> =>
   readFile(new URL(path, import.meta.url), "utf8");
 
-test("active report and export routes resolve directly to Progress", () => {
-  for (const status of ["queued", "running", "paused"] as const) {
-    assert.equal(pageForSelectedRunLifecycle("findings", { status }), "progress");
-    assert.equal(pageForSelectedRunLifecycle("export", { status }), "progress");
-  }
-
-  for (const status of ["completed", "no_checks_completed", "partial", "failed", "cancelled"] as const) {
-    assert.equal(pageForSelectedRunLifecycle("findings", { status }), "findings");
-    assert.equal(pageForSelectedRunLifecycle("export", { status }), "export");
-  }
-
-  assert.equal(pageForSelectedRunLifecycle("findings", undefined), "findings");
-  assert.equal(pageForSelectedRunLifecycle("export", undefined), "export");
-  assert.equal(pageForSelectedRunLifecycle("coverage", { status: "running" }), "coverage");
+const run = (
+  id: string,
+  status: "queued" | "running" | "paused" | "completed" | "no_checks_completed" | "partial" | "failed" | "cancelled",
+  sequence: number,
+) => ({
+  id,
+  status,
+  sequence,
+  startedAt: `2026-09-${String(sequence).padStart(2, "0")}T12:00:00Z`,
+  finishedAt: ["queued", "running", "paused"].includes(status)
+    ? undefined
+    : `2026-09-${String(sequence).padStart(2, "0")}T12:01:00Z`,
 });
 
-test("a deferred terminal page opens the page the reader requested when the selected run reaches an outcome", () => {
-  for (const deferredPage of ["findings", "export"] as const) {
-    for (const status of ["completed", "no_checks_completed", "partial", "failed", "cancelled"] as const) {
-      assert.equal(
-        pageForSelectedRunLifecycle("progress", { status }, deferredPage),
-        deferredPage,
-      );
-    }
+test("an active Results request selects the newest terminal run for every active status", () => {
+  for (const status of ["queued", "running", "paused"] as const) {
+    const active = run("active", status, 4);
+    const older = run("older-terminal", "completed", 1);
+    const newest = run("newest-terminal", "partial", 3);
+    const resolution = pageForSelectedRunLifecycle(
+      "findings",
+      active,
+      [older, active, newest],
+    );
+    assert.equal(resolution.page, "findings");
+    assert.equal(resolution.run?.id, newest.id);
+    assert.equal(resolution.awaitedRun?.id, active.id);
+    assert.equal(resolution.showingFinishedRunWhileActive, true);
+  }
+});
 
-    for (const status of ["queued", "running", "paused"] as const) {
-      assert.equal(
-        pageForSelectedRunLifecycle("progress", { status }, deferredPage),
-        "progress",
-      );
+test("an active Export request selects the same newest terminal run and never the active run", () => {
+  for (const status of ["queued", "running", "paused"] as const) {
+    const active = run("active", status, 4);
+    const newest = run("newest-terminal", "completed", 3);
+    const resolution = pageForSelectedRunLifecycle("export", active, [active, newest]);
+    assert.equal(resolution.page, "export");
+    assert.equal(resolution.run?.id, newest.id);
+    assert.notEqual(resolution.run?.id, active.id);
+    assert.equal(resolution.awaitedRun?.id, active.id);
+  }
+});
+
+test("the deferred promise survives the visible finished-run selection and opens the requested page on completion", () => {
+  for (const requestedPage of ["findings", "export"] as const) {
+    const active = run("active", "running", 2);
+    const saved = run("saved", "completed", 1);
+    const deferredRequest = { runId: active.id, requestedPage };
+
+    const whileRunning = pageForSelectedRunLifecycle(
+      requestedPage,
+      saved,
+      [active, saved],
+      deferredRequest,
+    );
+    assert.equal(whileRunning.page, requestedPage);
+    assert.equal(whileRunning.run?.id, saved.id);
+    assert.equal(whileRunning.awaitedRun?.id, active.id);
+    assert.equal(whileRunning.showingFinishedRunWhileActive, true);
+
+    const finished = run("active", "completed", 2);
+    const afterCompletion = pageForSelectedRunLifecycle(
+      requestedPage,
+      saved,
+      [finished, saved],
+      deferredRequest,
+    );
+    assert.equal(afterCompletion.page, requestedPage);
+    assert.equal(afterCompletion.run?.id, finished.id);
+    assert.equal(afterCompletion.awaitedRun, undefined);
+    assert.equal(afterCompletion.showingFinishedRunWhileActive, false);
+  }
+});
+
+test("terminal selections and unrelated routes keep their requested destination", () => {
+  for (const status of ["completed", "no_checks_completed", "partial", "failed", "cancelled"] as const) {
+    const terminal = run("terminal", status, 1);
+    assert.equal(pageForSelectedRunLifecycle("findings", terminal, [terminal]).page, "findings");
+    assert.equal(pageForSelectedRunLifecycle("export", terminal, [terminal]).page, "export");
+  }
+
+  assert.equal(pageForSelectedRunLifecycle("findings", undefined, []).page, "findings");
+  assert.equal(pageForSelectedRunLifecycle("export", undefined, []).page, "export");
+  const active = run("active", "running", 1);
+  assert.equal(pageForSelectedRunLifecycle("coverage", active, [active]).page, "coverage");
+});
+
+test("an active request with no terminal run still deflects, records its promise, and opens when the run ends", () => {
+  for (const deferredPage of ["findings", "export"] as const) {
+    const active = run("active", "running", 1);
+    const deflected = pageForSelectedRunLifecycle(deferredPage, active, [active]);
+    assert.equal(deflected.page, "progress");
+    assert.equal(deflected.run?.id, active.id);
+    assert.equal(deflected.awaitedRun?.id, active.id);
+
+    const deferredRequest = { runId: active.id, requestedPage: deferredPage };
+    assert.equal(
+      pageForSelectedRunLifecycle("progress", active, [active], deferredRequest).page,
+      "progress",
+    );
+
+    for (const status of ["completed", "no_checks_completed", "partial", "failed", "cancelled"] as const) {
+      const finished = run("active", status, 1);
+      const opened = pageForSelectedRunLifecycle("progress", finished, [finished], deferredRequest);
+      assert.equal(opened.page, deferredPage);
+      assert.equal(opened.run?.id, finished.id);
+      assert.equal(opened.awaitedRun, undefined);
     }
   }
 
-  assert.equal(pageForSelectedRunLifecycle("progress", undefined, "findings"), "progress");
-  assert.equal(pageForSelectedRunLifecycle("progress", { status: "completed" }), "progress");
+  assert.equal(pageForSelectedRunLifecycle("progress", undefined, []).page, "progress");
+  const completed = run("completed", "completed", 1);
+  assert.equal(pageForSelectedRunLifecycle("progress", completed, [completed]).page, "progress");
 });
 
 test("a real page transition focuses the new heading and scrolls to the viewport origin once", () => {

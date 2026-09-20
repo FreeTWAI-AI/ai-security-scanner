@@ -365,6 +365,7 @@ export default function App() {
   const [correlationReport, setCorrelationReport] = useState<CorrelationReport>();
   const correlationRequestGeneration = useRef(0);
   const [selectedReportRunId, setSelectedReportRunId] = useState<string>();
+  const [terminalPageRequestCount, setTerminalPageRequestCount] = useState(0);
   const [deferredTerminalPage, setDeferredTerminalPage] = useState<{
     caseId: string;
     runId: string;
@@ -1175,6 +1176,9 @@ export default function App() {
   }, [applyScanWorkspaceEvent, applyServiceMeta, loadSnapshot, pushToast, readScanReadinessWithin, text]);
 
   const navigate = (target: PageId) => {
+    if (target === "findings" || target === "export") {
+      setTerminalPageRequestCount((count) => count + 1);
+    }
     if (
       pendingRuntimeScanStart.current
       && pendingRuntimeScanStart.current.page !== target
@@ -2214,9 +2218,23 @@ export default function App() {
   };
 
   const currentCaseId = workspace?.case.id ?? selectedCase?.id;
-  const currentRun = selectedReportRunId === undefined
+  const selectedRun = selectedReportRunId === undefined
     ? workspace?.runs[0]
     : workspace?.runs.find((run) => run.id === selectedReportRunId);
+  const deferredRequestForCurrentCase = deferredTerminalPage
+    && deferredTerminalPage.caseId === currentCaseId
+      ? {
+          runId: deferredTerminalPage.runId,
+          requestedPage: deferredTerminalPage.requestedPage,
+        }
+      : undefined;
+  const selectedRunLifecycle = pageForSelectedRunLifecycle(
+    page,
+    selectedRun,
+    workspace?.runs ?? [],
+    deferredRequestForCurrentCase,
+  );
+  const currentRun = selectedRunLifecycle.run;
   const currentBeginnerReport = currentRun
     ? workspace?.beginnerReports?.find((report) => report.runId === currentRun.id)
     : undefined;
@@ -2225,23 +2243,30 @@ export default function App() {
     && deferredTerminalPage.runId === currentRun?.id
       ? deferredTerminalPage.requestedPage
       : undefined;
-  const displayedPage = pageForSelectedRunLifecycle(page, currentRun, deferredPageForCurrentRun);
+  const displayedPage = selectedRunLifecycle.page;
 
   useEffect(() => {
-    if (
-      displayedPage === "progress"
-      && displayedPage !== page
-      && (page === "findings" || page === "export")
-      && currentCaseId
-      && currentRun
-    ) {
-      setDeferredTerminalPage({
+    const awaitedRun = selectedRunLifecycle.awaitedRun;
+    if (!currentCaseId || !awaitedRun) return;
+    setDeferredTerminalPage((existing) => {
+      const next = {
         caseId: currentCaseId,
-        runId: currentRun.id,
-        requestedPage: page,
-      });
-    }
-  }, [currentCaseId, currentRun, displayedPage, page]);
+        runId: awaitedRun.id,
+        requestedPage: (page === "findings" || page === "export")
+          ? page
+          : existing?.requestedPage ?? "findings",
+      } satisfies NonNullable<typeof deferredTerminalPage>;
+      return existing?.caseId === next.caseId
+        && existing.runId === next.runId
+        && existing.requestedPage === next.requestedPage
+        ? existing
+        : next;
+    });
+  }, [currentCaseId, page, selectedRunLifecycle.awaitedRun]);
+
+  useEffect(() => {
+    if (currentRun && currentRun.id !== selectedRun?.id) setSelectedReportRunId(currentRun.id);
+  }, [currentRun, selectedRun?.id]);
 
   useEffect(() => {
     if (displayedPage !== page) navigate(displayedPage);
@@ -2249,16 +2274,27 @@ export default function App() {
 
   useEffect(() => {
     if (!deferredTerminalPage) return;
-
-    const stillFollowingRequestedRun = deferredTerminalPage.caseId === currentCaseId
-      && deferredTerminalPage.runId === currentRun?.id;
-    const leftWaitingPage = page !== "progress" && displayedPage === page;
-    const openedDeferredPage = displayedPage === deferredTerminalPage.requestedPage
-      && page === "progress";
-    if (!stillFollowingRequestedRun || leftWaitingPage || openedDeferredPage) {
+    const promisedRun = deferredTerminalPage.caseId === currentCaseId
+      ? workspace?.runs.find((run) => run.id === deferredTerminalPage.runId)
+      : undefined;
+    const stillOnPromisedFlow = page === "progress" || page === "findings" || page === "export";
+    const openedPromisedRun = Boolean(
+      promisedRun
+      && isTerminalResultRun(promisedRun)
+      && displayedPage === deferredTerminalPage.requestedPage
+      && currentRun?.id === promisedRun.id,
+    );
+    if (!promisedRun || !stillOnPromisedFlow || openedPromisedRun) {
       setDeferredTerminalPage(undefined);
     }
-  }, [currentCaseId, currentRun?.id, deferredTerminalPage, displayedPage, page]);
+  }, [currentCaseId, currentRun?.id, deferredTerminalPage, displayedPage, page, workspace?.runs]);
+
+  const selectReportRun = (runId: string) => {
+    if (workspace?.runs.some((run) => run.id === runId && isTerminalResultRun(run))) {
+      setDeferredTerminalPage(undefined);
+    }
+    setSelectedReportRunId(runId);
+  };
 
   // Correlation is a pure function of the case's findings and its active
   // groups, so recomputing on any other workspace change would be wasted work.
@@ -2546,6 +2582,7 @@ export default function App() {
             findings={workspace.findings}
             selectedRunId={currentRun?.id}
             requestedTerminalPage={deferredPageForCurrentRun}
+            terminalPageRequestCount={terminalPageRequestCount}
             readiness={scanReadiness?.caseId === currentCaseId ? scanReadiness : undefined}
             readinessCheckFailed={scanReadinessErrorCaseId === currentCaseId}
             diagnosticContext={{
@@ -2588,14 +2625,15 @@ export default function App() {
             onPause={(runId) => runAction("pause-scan", () => scannerService.pauseScan(currentCaseId, runId), runId)}
             onResume={(runId) => runAction("resume-scan", () => scannerService.resumeScan(currentCaseId, runId), runId)}
             onCancel={(runId) => runAction("cancel-scan", () => scannerService.cancelScan(currentCaseId, runId))}
-            onSelectRun={setSelectedReportRunId}
+            onSelectRun={selectReportRun}
           />
         );
       case "findings":
         return (
           <FindingsPage
             report={currentBeginnerReport}
-            selectedRunId={selectedReportRunId}
+            selectedRunId={currentRun?.id ?? selectedReportRunId}
+            runningScanResultsPending={selectedRunLifecycle.showingFinishedRunWhileActive}
             reportUnavailable={!(mode === "demo" || Boolean(workspace.case.isDemo))
               && Boolean((currentRun || selectedReportRunId) && !currentBeginnerReport)}
             findings={workspace.findings}
@@ -2628,14 +2666,15 @@ export default function App() {
               setSelectedReportRunId(runId);
               navigate("export");
             }}
-            onSelectRun={setSelectedReportRunId}
+            onSelectRun={selectReportRun}
           />
         );
       case "export":
         return (
           <ExportPage
             workspace={workspace}
-            selectedRunId={selectedReportRunId}
+            selectedRunId={currentRun?.id ?? selectedReportRunId}
+            runningScanResultsPending={selectedRunLifecycle.showingFinishedRunWhileActive}
             exports={workspace.exports}
             demoMode={mode === "demo" || Boolean(workspace.case.isDemo)}
             busy={busyAction === "export" || busyAction === "verify-export"}

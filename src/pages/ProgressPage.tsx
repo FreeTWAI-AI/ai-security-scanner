@@ -70,6 +70,7 @@ interface ProgressPageProps {
   findings: Finding[];
   selectedRunId?: string;
   requestedTerminalPage?: TerminalRunPage;
+  terminalPageRequestCount?: number;
   readiness?: ScanReadiness;
   readinessCheckFailed?: boolean;
   diagnosticContext?: ScanDiagnosticContext;
@@ -756,6 +757,7 @@ export function ProgressPage({
   runs,
   selectedRunId: controlledSelectedRunId,
   requestedTerminalPage,
+  terminalPageRequestCount,
   readiness,
   readinessCheckFailed,
   diagnosticContext,
@@ -805,6 +807,12 @@ export function ProgressPage({
     && selectedRun
     && activeRunStatuses.has(selectedRun.status),
   );
+  const waitingNoticeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!waitingForTerminalPage) return;
+    waitingNoticeRef.current?.focus({ preventScroll: true });
+    waitingNoticeRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [waitingForTerminalPage, requestedTerminalPage, terminalPageRequestCount]);
   const scanWorkActive = hasActiveScanWork(runs);
   const undispatchedPlan = runs.find((run) => isUndispatchedScanPlan(run));
   const canStart = !terminalExactLocalhostQuickScan
@@ -1216,17 +1224,20 @@ export function ProgressPage({
       />
 
       {waitingForTerminalPage && requestedTerminalPage && (
-        <InlineNotice
-          tone="info"
-          title={text(requestedTerminalPage === "findings"
-            ? copy.resultsWaitingTitle
-            : copy.exportWaitingTitle)}
-          announce
-        >
-          <p>{text(requestedTerminalPage === "findings"
-            ? copy.resultsWaitingDescription
-            : copy.exportWaitingDescription)}</p>
-        </InlineNotice>
+        <div ref={waitingNoticeRef} tabIndex={-1}>
+          <InlineNotice
+            key={terminalPageRequestCount}
+            tone="info"
+            title={text(requestedTerminalPage === "findings"
+              ? copy.resultsWaitingTitle
+              : copy.exportWaitingTitle)}
+            announce
+          >
+            <p>{text(requestedTerminalPage === "findings"
+              ? copy.resultsWaitingDescription
+              : copy.exportWaitingDescription)}</p>
+          </InlineNotice>
+        </div>
       )}
 
       {canRetryLocalhostQuickScan && terminalLocalhostSummary && (
