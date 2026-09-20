@@ -1,4 +1,23 @@
 import type { AppSnapshot, AssessmentCase, CaseWorkspace } from "./types";
+import { isTerminalResultRun } from "./runLifecycle.ts";
+
+const retainFinishedReports = (
+  current: CaseWorkspace | undefined,
+  incoming: CaseWorkspace,
+): CaseWorkspace => {
+  // Progress events omit report projections. Keep already loaded reports for
+  // unchanged terminal runs until an authoritative snapshot refreshes them.
+  // An explicit report list (including []) remains authoritative.
+  if (incoming.beginnerReports !== undefined || !current?.beginnerReports?.length) return incoming;
+  const reports = current.beginnerReports.filter((report) => {
+    const previous = current.runs.find((run) => run.id === report.runId);
+    const next = incoming.runs.find((run) => run.id === report.runId);
+    return previous && next
+      && isTerminalResultRun(previous) && isTerminalResultRun(next)
+      && previous.status === next.status && previous.finishedAt === next.finishedAt;
+  });
+  return reports.length ? { ...incoming, beginnerReports: reports } : incoming;
+};
 
 interface ComparableTimestamp {
   epochMilliseconds: number;
@@ -136,7 +155,7 @@ export const mergeWorkspaceIntoSnapshot = (
     if (existingIndex >= 0) cases[existingIndex] = workspace.case;
     else cases.unshift(workspace.case);
     casesChanged = true;
-    if (isSelectedCase) nextWorkspace = workspace;
+    if (isSelectedCase) nextWorkspace = retainFinishedReports(existingWorkspace, workspace);
   } else if (newestCurrentTimestamp) {
     // Equal revisions are ambiguous and must not replace an equally current
     // payload. They may, however, safely bring an older/missing representation
@@ -160,7 +179,7 @@ export const mergeWorkspaceIntoSnapshot = (
       isSelectedCase &&
       (!existingWorkspaceTimestamp ||
         compareTimestamps(existingWorkspaceTimestamp, newestCurrentTimestamp) < 0);
-    if (workspaceIsOlder) nextWorkspace = workspace;
+    if (workspaceIsOlder) nextWorkspace = retainFinishedReports(existingWorkspace, workspace);
   }
 
   if (!casesChanged && nextWorkspace === snapshot.workspace) return snapshot;

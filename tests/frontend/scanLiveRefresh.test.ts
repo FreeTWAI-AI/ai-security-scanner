@@ -189,6 +189,36 @@ test("an equal-revision native refresh adds its derived report to the live event
   assert.equal(reconciled.workspace?.beginnerReports?.[0]?.runId, "event-run");
 });
 
+test("progress events preserve a finished report while authoritative refreshes can replace or remove it", () => {
+  const current = snapshot();
+  const saved = { id: "saved", status: "completed", finishedAt: initialUpdatedAt } as CaseWorkspace["runs"][number];
+  const running = { id: "running", status: "running" } as CaseWorkspace["runs"][number];
+  const report = { runId: saved.id } as NonNullable<CaseWorkspace["beginnerReports"]>[number];
+  current.workspace!.runs = [saved];
+  current.workspace!.beginnerReports = [report];
+  const event = { ...workspace("case-a", "Scanning", "2026-08-27T12:00:01Z"), runs: [running, saved] };
+
+  const updated = mergeWorkspaceIntoSnapshot(current, event)!;
+  assert.deepEqual(updated.workspace?.beginnerReports, [report]);
+  assert.deepEqual(updated.workspace?.runs, [running, saved]);
+  const refreshed = reconcileAuthoritativeSnapshot(updated, {
+    ...updated, workspace: { ...event, beginnerReports: [] },
+  });
+  assert.deepEqual(refreshed.workspace?.beginnerReports, []);
+  assert.deepEqual(mergeWorkspaceIntoSnapshot(current, { ...event, beginnerReports: [] })?.workspace?.beginnerReports, []);
+});
+
+test("progress events cannot retain a report for a removed, resumed, or changed run", () => {
+  const current = snapshot();
+  const saved = { id: "saved", status: "completed", finishedAt: initialUpdatedAt } as CaseWorkspace["runs"][number];
+  current.workspace!.runs = [saved];
+  current.workspace!.beginnerReports = [{ runId: saved.id }] as NonNullable<CaseWorkspace["beginnerReports"]>;
+  for (const runs of [[], [{ ...saved, status: "running" as const }], [{ ...saved, finishedAt: "2026-08-27T12:00:01Z" }]]) {
+    const event = { ...workspace("case-a", "Updated", "2026-08-27T12:00:02Z"), runs };
+    assert.equal(mergeWorkspaceIntoSnapshot(current, event)?.workspace?.beginnerReports, undefined);
+  }
+});
+
 test("a fast scan event cannot be overwritten by an older same-case command result", () => {
   const eventWorkspace = workspace(
     "case-a",
