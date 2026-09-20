@@ -28,19 +28,21 @@ See [Results and exports](results-and-exports.md) for more about the report.
 
 ## Install
 
-Public installers are currently **Linux-only** (checked September 20, 2026). Download from [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases).
+The current candidate covers **Linux, macOS, and Windows**. Public release is **HOLD**: the candidate installers are available in the [commit-bound QC run for `56d3b3f`](https://github.com/teddashh/ai-security-scanner/actions/runs/35513091476), not a published GitHub Release.
 
-| Platform | Recommended package |
+| Platform | Candidate package and disclosure |
 | --- | --- |
-| Linux x86-64 | Debian `.deb` |
-| Windows | Not currently offered |
-| macOS | Not currently offered |
+| Windows x86-64 | MSI or NSIS; **unsigned**, so SmartScreen may warn |
+| macOS Universal | `.dmg`; **not notarized** |
+| Linux x86-64 | Debian `.deb`; AppImage and `.rpm` **not offered** |
+
+Review the [candidate's recorded testing limits](releasing.md#current-candidate-and-publication-hold) before choosing it. The latest published release, [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0), remains an earlier **Linux `.deb`-only** build. There are no public release download links for the new Windows or macOS candidate installers while HOLD remains in effect.
 
 Launch **ai-security-scanner** after installation. The app prepares its local scanning runtime when the selected checks need it.
 
 ## Use with an Agent Skill
 
-For the current `main` implementation, including Grype repository scanning, use a source checkout. The public installer is an earlier build. The source build-to-scan path has been exercised on Linux.
+To build current `main` yourself, including Grype repository scanning, use a source checkout. The source build-to-scan commands below have been exercised on Linux.
 
 Open the checkout in **Claude Code** or **Codex** and use the repository's `ai-security-scanner` skill: [Claude Code instructions](../.claude/skills/ai-security-scanner/SKILL.md) · [Codex instructions](../.codex/skills/ai-security-scanner/SKILL.md). Both copies provide the same build-and-operate entry point through the product interfaces.
 

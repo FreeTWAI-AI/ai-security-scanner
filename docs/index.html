@@ -4,10 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#102c37">
-    <meta name="description" content="Use the desktop app or Claude Code and Codex Agent Skills to run upstream security checks and read one standardized report. Public installers are currently Linux-only.">
+    <meta name="description" content="Use the desktop app or Claude Code and Codex Agent Skills for upstream security checks and one standardized report. Linux, macOS and Windows candidate installers; public release on HOLD.">
     <meta property="og:type" content="website">
     <meta property="og:title" content="ai-security-scanner — Many security tools, one clear report">
-    <meta property="og:description" content="Choose targets and confirm scope. Run upstream scanners through the desktop app or Claude Code and Codex Agent Skills. Read one standardized report. Public installers: Linux only.">
+    <meta property="og:description" content="Choose targets and confirm scope. Run upstream scanners through the desktop app or Agent Skills. One standardized report. Linux, macOS and Windows candidate installers; public release on HOLD.">
     <meta property="og:url" content="https://teddashh.github.io/ai-security-scanner/">
     <meta property="og:image" content="https://teddashh.github.io/ai-security-scanner/project-mark.svg">
     <meta name="twitter:card" content="summary">
@@ -82,9 +82,9 @@
             <span class="lang-zh" lang="zh-Hant">選擇程式碼專案、網站與內部系統，確認網路範圍與授權。透過桌面程式或 Claude Code／Codex Agent Skills 執行適用的上游掃描器，再從一份標準化報告查看受影響資產、證據、優先順序與下一步。</span>
           </p>
           <div class="button-row">
-            <a class="button button-primary" href="https://github.com/teddashh/ai-security-scanner/releases">
-              <span class="lang-en">Download for Linux</span>
-              <span class="lang-zh" lang="zh-Hant">下載 Linux 版</span>
+            <a class="button button-primary" href="https://github.com/teddashh/ai-security-scanner/actions/runs/35513091476">
+              <span class="lang-en">Review multi-OS candidate</span>
+              <span class="lang-zh" lang="zh-Hant">查看三平台候選版本</span>
               <span aria-hidden="true">→</span>
             </a>
             <a class="button button-secondary" href="#agent-skills">
@@ -93,8 +93,12 @@
             </a>
           </div>
           <p class="snapshot-note">
-            <span class="lang-en">Public downloads: Linux x86-64 <code>.deb</code> only; Windows and macOS installers are not currently offered (checked September 20, 2026). Build from source for current features, including the Grype repository fix.</span>
-            <span class="lang-zh" lang="zh-Hant">公開安裝檔僅提供 Linux x86-64 <code>.deb</code>；Windows／macOS 目前未提供（2026 年 9 月 20 日確認）。目前原始碼功能包含 Grype 專案掃描修正，需從原始碼建置使用。</span>
+            <span class="lang-en"><strong>Multi-OS candidate; public release on HOLD.</strong> The <code>56d3b3f</code> QC set offers Windows MSI + NSIS (unsigned; SmartScreen may warn), macOS Universal <code>.dmg</code> (not notarized), and Linux <code>.deb</code>. AppImage and <code>.rpm</code> are not offered. These candidate installers are not a published GitHub Release.</span>
+            <span class="lang-zh" lang="zh-Hant"><strong>三平台候選版本；公開發布維持 HOLD。</strong><code>56d3b3f</code> QC 提供 Windows MSI＋NSIS（未簽章，SmartScreen 可能警告）、macOS Universal <code>.dmg</code>（未經 Apple 公證）與 Linux <code>.deb</code>；未提供 AppImage／<code>.rpm</code>。這批候選安裝檔尚未發布成 GitHub Release。</span>
+          </p>
+          <p class="snapshot-note">
+            <span class="lang-en">See <a href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/releasing.md#current-candidate-and-publication-hold">candidate disclosures</a>. The latest published <a href="https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0">v0.2.0</a> is an earlier Linux <code>.deb</code>-only build.</span>
+            <span class="lang-zh" lang="zh-Hant">詳見<a href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/releasing.zh-TW.md#目前候選版本與公開發布暫停狀態">候選版本揭露</a>。最新已發布版本 <a href="https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0">v0.2.0</a> 是較早的版本，僅提供 Linux <code>.deb</code>。</span>
           </p>
           <ul class="hero-metrics" aria-label="Project summary">
             <li>
@@ -646,13 +650,13 @@
             <span class="lang-zh" lang="zh-Hant">從資產開始，讓產品選擇適用檢查。</span>
           </h2>
           <p>
-            <span class="lang-en">Download the Linux desktop app or build current source with Claude Code or Codex. Review the exact scope, start once, and read the final report.</span>
-            <span class="lang-zh" lang="zh-Hant">下載 Linux 桌面程式，或透過 Claude Code／Codex 建置目前原始碼。確認精確範圍、啟動一次，再閱讀最終報告。</span>
+            <span class="lang-en">Review the Linux, macOS and Windows candidate, or build current source with Claude Code or Codex. Public release remains on HOLD. Review the exact scan scope, start once, and read the final report.</span>
+            <span class="lang-zh" lang="zh-Hant">查看 Linux、macOS、Windows 候選版本，或透過 Claude Code／Codex 建置目前原始碼；公開發布仍維持 HOLD。確認精確掃描範圍、啟動一次，再閱讀最終報告。</span>
           </p>
           <div class="button-row">
-            <a class="button button-primary" href="https://github.com/teddashh/ai-security-scanner/releases">
-              <span class="lang-en">Download for Linux</span>
-              <span class="lang-zh" lang="zh-Hant">下載 Linux 版</span>
+            <a class="button button-primary" href="https://github.com/teddashh/ai-security-scanner/actions/runs/35513091476">
+              <span class="lang-en">Review multi-OS candidate</span>
+              <span class="lang-zh" lang="zh-Hant">查看三平台候選版本</span>
               <span aria-hidden="true">→</span>
             </a>
             <a class="button button-secondary" href="https://github.com/teddashh/ai-security-scanner/blob/main/docs/getting-started.md">

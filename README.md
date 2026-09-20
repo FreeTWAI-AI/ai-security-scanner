@@ -6,15 +6,15 @@ Security checks across repositories, websites, and internal systems, through a d
 
 ## Start here
 
-Public installers are currently **Linux-only** (checked September 20, 2026). Download from [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases):
+The current candidate is **multi-OS: Linux, macOS, and Windows**. Public release is **HOLD**; these candidate installers have not been published as a GitHub Release. The [commit-bound QC run for `56d3b3f`](https://github.com/teddashh/ai-security-scanner/actions/runs/35513091476) records:
 
-| Platform | Installer |
+| Platform | Candidate installers |
 | --- | --- |
-| Linux x86-64 | Debian `.deb` |
-| Windows | Not currently offered |
-| macOS | Not currently offered |
+| Windows x86-64 | MSI and NSIS offered; **unsigned**, so SmartScreen may warn |
+| macOS Universal | `.dmg` offered; **not notarized** |
+| Linux x86-64 | Debian `.deb` offered; AppImage and `.rpm` **not offered** |
 
-For current `main` features, including the Grype repository fix, build from source with the [Agent Skill workflow](docs/getting-started.md#use-with-an-agent-skill). The public installer is an earlier build.
+See the [candidate disclosures](docs/releasing.md#current-candidate-and-publication-hold) for recorded testing limits. The latest published release, [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0), is an earlier **Linux `.deb`-only** build. To build current `main` yourself, including the Grype repository fix, use the [Agent Skill workflow](docs/getting-started.md#use-with-an-agent-skill).
 
 Open the app and choose one path:
 

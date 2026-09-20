@@ -6,15 +6,15 @@
 
 ## 開始使用
 
-目前公開安裝檔**僅提供 Linux**（2026 年 9 月 20 日確認），請從 [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases) 下載：
+目前候選版本涵蓋 **Linux、macOS、Windows 三平台**。公開發布仍為 **HOLD（暫停）**，這批候選安裝檔尚未發布成 GitHub Release。[`56d3b3f` 的 commit-bound QC 執行紀錄](https://github.com/teddashh/ai-security-scanner/actions/runs/35513091476)列出：
 
-| 平台 | 安裝程式 |
+| 平台 | 候選安裝檔 |
 | --- | --- |
-| Linux x86-64 | Debian `.deb` |
-| Windows | 目前未提供 |
-| macOS | 目前未提供 |
+| Windows x86-64 | 提供 MSI 與 NSIS；**未簽章**，SmartScreen 可能顯示警告 |
+| macOS Universal | 提供 `.dmg`；**未經 Apple 公證** |
+| Linux x86-64 | 提供 Debian `.deb`；**未提供** AppImage 與 `.rpm` |
 
-若要使用目前 `main` 的功能，包含 Grype 專案掃描修正，請循 [Agent Skill 流程](docs/getting-started.zh-TW.md#透過-agent-skill-使用)從原始碼建置。公開安裝檔仍是較早的版本。
+已記錄的測試限制請見[候選版本揭露](docs/releasing.zh-TW.md#目前候選版本與公開發布暫停狀態)。最新已發布版本 [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0) 是較早的版本，**僅提供 Linux `.deb`**。若要自行建置目前 `main`，包含 Grype 專案掃描修正，請循 [Agent Skill 流程](docs/getting-started.zh-TW.md#透過-agent-skill-使用)。
 
 開啟應用程式並選擇一條路徑：
 

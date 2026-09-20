@@ -8,8 +8,13 @@ product behavior, and the [current product review](product-audit.md) tracks the 
 
 ## At a glance
 
-- Public installers are Linux-only: Linux x86-64 Debian `.deb`. Windows and macOS installers are
-  not currently offered. Current source features are newer than the public installer.
+- The current candidate is multi-OS: Linux, macOS, and Windows. Its commit-bound QC set offers
+  Windows MSI and NSIS (unsigned; SmartScreen may warn), macOS Universal `.dmg` (not notarized),
+  and Linux x86-64 `.deb`. Linux AppImage and `.rpm` are not offered. Public release is **HOLD**;
+  these candidate bytes are not a published GitHub Release. See the [candidate record and
+  testing disclosures](releasing.md#current-candidate-and-publication-hold).
+- The latest published release, [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0),
+  remains an earlier Linux `.deb`-only build; it does not describe the current multi-OS candidate.
 - The Linux source build-to-scan path is available through the paired repository
   [Agent Skills](getting-started.md#use-with-an-agent-skill), using the same product interfaces.
 - The engine catalog contains 24 records: 22 integrated, runnable engines and 2 experimental AI

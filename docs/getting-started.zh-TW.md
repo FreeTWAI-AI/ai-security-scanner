@@ -28,19 +28,21 @@
 
 ## 安裝
 
-目前公開安裝檔**僅提供 Linux**（2026 年 9 月 20 日確認），請從 [GitHub Releases](https://github.com/teddashh/ai-security-scanner/releases) 下載。
+目前候選版本涵蓋 **Linux、macOS、Windows 三平台**。公開發布仍為 **HOLD（暫停）**：候選安裝檔位於 [`56d3b3f` 的 commit-bound QC 執行紀錄](https://github.com/teddashh/ai-security-scanner/actions/runs/35513091476)，尚未發布成 GitHub Release。
 
-| 平台 | 建議套件 |
+| 平台 | 候選套件與揭露 |
 | --- | --- |
-| Linux x86-64 | Debian `.deb` |
-| Windows | 目前未提供 |
-| macOS | 目前未提供 |
+| Windows x86-64 | MSI 或 NSIS；**未簽章**，SmartScreen 可能顯示警告 |
+| macOS Universal | `.dmg`；**未經 Apple 公證** |
+| Linux x86-64 | Debian `.deb`；**未提供** AppImage 與 `.rpm` |
+
+選用前請閱讀[候選版本已記錄的測試限制](releasing.zh-TW.md#目前候選版本與公開發布暫停狀態)。最新已發布版本 [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0) 仍是較早的版本，**僅提供 Linux `.deb`**。HOLD 期間，新 Windows／macOS 候選安裝檔沒有公開 Release 下載連結。
 
 安裝完成後啟動 **ai-security-scanner**。選定的檢查需要本機掃描環境時，應用程式會直接準備。
 
 ## 透過 Agent Skill 使用
 
-若要使用目前 `main` 的實作，包含 Grype 專案掃描，請從原始碼建置。公開安裝檔仍是較早的版本；從原始碼建置到掃描的路徑已在 Linux 實測。
+若要自行建置目前 `main` 的實作，包含 Grype 專案掃描，請使用原始碼 checkout。下列從原始碼建置到掃描的指令已在 Linux 實測。
 
 在 **Claude Code** 或 **Codex** 開啟本儲存庫，使用其中的 `ai-security-scanner` skill：[Claude Code 指引](../.claude/skills/ai-security-scanner/SKILL.md) · [Codex 指引](../.codex/skills/ai-security-scanner/SKILL.md)。兩份內容相同，都透過產品介面提供建置與操作入口。
 
