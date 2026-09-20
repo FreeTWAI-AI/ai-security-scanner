@@ -161,6 +161,7 @@ const discriminatedUnionMembers = (name: string): string[] => {
 // day it is added, which is cheaper than the day a reader sees a blank label.
 const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescriptName: string]> = [
   ["beginner_report.rs", "CoverageGapKind", "BeginnerCoverageGapKind"],
+  ["beginner_report.rs", "CoverageGapClass", "BeginnerCoverageGapClass"],
   ["beginner_report.rs", "NextActionCode", "BeginnerNextActionCode"],
   ["beginner_report.rs", "CoverageDimensionStatus", "BeginnerCoverageStatus"],
   ["beginner_report.rs", "BeginnerReportSummary", "BeginnerReportSummary"],

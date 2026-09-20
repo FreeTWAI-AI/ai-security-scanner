@@ -1537,7 +1537,7 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
             gaps: formatNumber(coverageLossGaps.length),
           })}
         </summary>
-      <div className="metrics-grid metrics-grid--four" aria-label={text(copy.masterTitle)}>
+      <div className="metrics-grid metrics-grid--five" aria-label={text(copy.masterTitle)}>
         <MetricCard
           label={text(copy.requestedTargets)}
           value={formatNumber(report.requested.targets.length)}

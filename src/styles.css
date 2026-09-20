@@ -885,6 +885,10 @@ button.update-control:hover:not(:disabled) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.metrics-grid--five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .coverage-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3389,6 +3393,7 @@ button.history-row:hover, .history-row--active { background: #f2f8f5; }
 
 @media (max-width: 1250px) {
   .metrics-grid--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics-grid--five { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .coverage-grid { grid-template-columns: 1fr; }
   .source-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .coverage-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -3441,6 +3446,7 @@ button.history-row:hover, .history-row--active { background: #f2f8f5; }
   .page-header__actions > .button, .page-header__actions > .button-group { flex: 1; }
   .metrics-grid { grid-template-columns: 1fr; }
   .metrics-grid--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics-grid--five { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .report-outcome-strip { grid-template-columns: 1fr; }
   .asset-result-row { grid-template-columns: minmax(160px, 0.8fr) auto minmax(220px, 1.2fr); }
   .current-case-hero { min-height: 0; align-items: flex-start; flex-direction: column; }
@@ -3482,6 +3488,7 @@ button.history-row:hover, .history-row--active { background: #f2f8f5; }
   .button-group .button { flex: 1; }
   .section-block, .create-case-panel, .source-connect-panel, .provider-auth-panel, .finding-browser__list, .finding-detail { padding: 14px; border-radius: 12px; }
   .metrics-grid, .metrics-grid--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metrics-grid--five { grid-template-columns: 1fr; }
   .metric-card { min-height: 88px; }
   .form-grid--two, .choice-grid, .choice-grid--compact { grid-template-columns: 1fr; }
   .field--wide { grid-column: auto; }
