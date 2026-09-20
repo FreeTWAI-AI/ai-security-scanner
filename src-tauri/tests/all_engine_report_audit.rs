@@ -2,8 +2,8 @@ use ai_security_scanner_lib::adapter::AdapterRegistry;
 use ai_security_scanner_lib::adapters::{BUILTIN_ENGINE_IDS, builtin_adapter_registry};
 use ai_security_scanner_lib::artifact_store::ArtifactStore;
 use ai_security_scanner_lib::beginner_report::{
-    BeginnerInventoryItemKind, BeginnerMasterReport, CoverageDimensionStatus, CoverageGapKind,
-    NextActionCode, build_beginner_master_report,
+    BeginnerInventoryItemKind, BeginnerMasterReport, CoverageDimensionStatus, CoverageGapClass,
+    CoverageGapKind, NextActionCode, build_beginner_master_report,
 };
 use ai_security_scanner_lib::case_service::{
     CaseExportFormat, CaseService, DurableExecutionReport, EngineAssetRoute,
@@ -2891,18 +2891,24 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 );
             }
 
-            // The cover's last tile and the sentence under it count the same
-            // list. The tile said when part of that list is a check that
-            // returned no verdict; the sentence called all of it coverage
-            // gaps, and then said those areas were not tested.
+            // The coverage tile and its sentence count the same list. The
+            // separate final record-notes tile is deliberately not part of
+            // either count.
             for html in [&ordered_html, &zh_html] {
                 let row = &html[html.find("kpi-row").expect("the cover tiles")..];
                 let row = &row[..row.find("</section>").expect("the tiles close")];
-                let tile = row
-                    .rfind("class=\"kpi__label\">")
-                    .map(|at| &row[at + "class=\"kpi__label\">".len()..])
+                let label_marker = "class=\"kpi__label\">";
+                let (label_at, tile) = row
+                    .match_indices(label_marker)
+                    .map(|(at, _)| {
+                        let label = &row[at + label_marker.len()..];
+                        (
+                            at,
+                            &label[..label.find("</span>").expect("a tile label closes")],
+                        )
+                    })
+                    .find(|(_, label)| label.contains("verdict") || label.contains("判定"))
                     .expect("a coverage tile");
-                let tile = &tile[..tile.find("</span>").expect("a tile label closes")];
                 assert!(
                     tile.contains("verdict") || tile.contains("判定"),
                     "the audit lost the no-verdict tile: {tile}"
@@ -2911,7 +2917,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     .find("executive-summary\">")
                     .expect("the executive summary")..];
                 let summary = &summary[..summary.find("</section>").expect("the summary closes")];
-                let counted = row[..row.rfind("class=\"kpi__label\">").expect("a tile")]
+                let counted = row[..label_at]
                     .rsplit_once("class=\"kpi__value\">")
                     .expect("a tile is counted")
                     .1;
@@ -2922,11 +2928,17 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 // The sentence stated both totals side by side while the
                 // second contained the first, so five and ten read as
                 // fifteen out of ten. Its parts account for the tile exactly.
-                let last = summary
-                    .rsplit_once("<p>")
-                    .expect("the summary closes with a sentence")
-                    .1;
-                let parts = last
+                let coverage_sentence = summary
+                    .split("<p>")
+                    .skip(1)
+                    .map(|paragraph| {
+                        &paragraph[..paragraph.find("</p>").expect("a summary paragraph closes")]
+                    })
+                    .find(|paragraph| {
+                        paragraph.contains("did not complete") || paragraph.contains("沒有完成")
+                    })
+                    .expect("the summary names unfinished coverage");
+                let parts = coverage_sentence
                     .split(|character: char| !character.is_ascii_digit())
                     .filter(|part| !part.is_empty())
                     .map(|part| part.parse::<usize>().expect("a counted part"))
@@ -2940,11 +2952,18 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                     parts.len() >= 2,
                     "the summary stopped saying what the uncovered list holds"
                 );
-                // Cancelled and unavailable were tracked and left off the
-                // cover: two checks a reader stopped and two dimensions the
-                // run could not reach, counted in neither number.
+                // Cancelled and genuinely unavailable coverage remain in the
+                // unfinished count. Record-only unavailable rows are counted
+                // separately and never enter this sentence.
                 let counts = &report.coverage_counts;
-                assert!(counts.cancelled > 0 && counts.unavailable > 0);
+                assert!(counts.cancelled > 0);
+                assert!(
+                    report
+                        .coverage_gaps
+                        .iter()
+                        .any(|gap| gap.class == CoverageGapClass::RecordNote),
+                    "the audit lost its separately counted record notes"
+                );
                 assert_eq!(
                     parts[0],
                     counts.failed

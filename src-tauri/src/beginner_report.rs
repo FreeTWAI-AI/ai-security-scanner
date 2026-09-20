@@ -407,6 +407,12 @@ pub enum CoverageDimensionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CoverageGap {
     pub kind: CoverageGapKind,
+    /// Older saved reports called every row a coverage gap and did not retain
+    /// enough information to separate record metadata from missing coverage.
+    /// Defaulting legacy absence to `CoverageLoss` preserves that conservative
+    /// historical claim instead of silently reinterpreting an old record.
+    #[serde(default)]
+    pub class: CoverageGapClass,
     pub task_id: Option<Id>,
     pub target_asset_ids: Vec<Id>,
     pub dimension: String,
@@ -418,6 +424,14 @@ pub struct CoverageGap {
     /// and it is the identifier the reader has to copy onto the asset.
     #[serde(default)]
     pub unattributed: Option<crate::domain::UnattributedResults>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapClass {
+    #[default]
+    CoverageLoss,
+    RecordNote,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -435,6 +449,25 @@ pub enum CoverageGapKind {
     /// The check ran, but upstream requires a person to supply the verdict.
     /// This is visible coverage data, not incomplete execution or a finding.
     ManualReview,
+}
+
+impl CoverageGapKind {
+    /// Classify a newly produced coverage item conservatively. Record-only
+    /// producers override this at their construction site. Keeping this match
+    /// exhaustive makes every new kind require an explicit classification.
+    const fn default_class(self) -> CoverageGapClass {
+        match self {
+            Self::NotTested
+            | Self::Failed
+            | Self::TimedOut
+            | Self::Cancelled
+            | Self::Excluded
+            | Self::Truncated
+            | Self::Unavailable
+            | Self::Unattributed
+            | Self::ManualReview => CoverageGapClass::CoverageLoss,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -761,6 +794,7 @@ pub fn build_beginner_master_report(
         coverage_gaps.push(CoverageGap {
             unattributed: None,
             kind: CoverageGapKind::Unavailable,
+            class: CoverageGapClass::RecordNote,
             task_id: None,
             // These rows describe missing run/report metadata, not a failed
             // security outcome for every asset. Keep them visible globally;
@@ -777,6 +811,7 @@ pub fn build_beginner_master_report(
         coverage_gaps.push(CoverageGap {
             unattributed: None,
             kind: CoverageGapKind::Unavailable,
+            class: CoverageGapClass::RecordNote,
             task_id: None,
             target_asset_ids: requested
                 .targets
@@ -806,6 +841,7 @@ pub fn build_beginner_master_report(
         coverage_gaps.push(CoverageGap {
             unattributed: None,
             kind: CoverageGapKind::Unavailable,
+            class: CoverageGapClass::RecordNote,
             task_id: None,
             target_asset_ids: Vec::new(),
             dimension: "selected-run finding presentation snapshot".into(),
@@ -843,9 +879,9 @@ pub fn build_beginner_master_report(
             .engine_runs
             .iter()
             .all(|task| actual_projection.exact_complete_task_ids.contains(&task.id))
-        && coverage_gaps
-            .iter()
-            .all(|gap| gap.kind == CoverageGapKind::ManualReview)
+        && coverage_gaps.iter().all(|gap| {
+            gap.class == CoverageGapClass::RecordNote || gap.kind == CoverageGapKind::ManualReview
+        })
     {
         BeginnerReportSummary::Complete
     } else {
@@ -1633,6 +1669,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         gaps.push(CoverageGap {
                             unattributed: None,
                             kind: CoverageGapKind::Unavailable,
+                            class: CoverageGapKind::Unavailable.default_class(),
                             task_id: Some(task.id.clone()),
                             target_asset_ids: task.asset_ids.clone(),
                             dimension: format!("{} saved work-unit coverage", check_id(task)),
@@ -1699,6 +1736,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                     gaps.push(CoverageGap {
                         unattributed: None,
                         kind: CoverageGapKind::NotTested,
+                        class: CoverageGapKind::NotTested.default_class(),
                         task_id: Some(task.id.clone()),
                         target_asset_ids: task.asset_ids.clone(),
                         dimension: format!(
@@ -1732,6 +1770,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                     gaps.push(CoverageGap {
                         unattributed: None,
                         kind: CoverageGapKind::Unavailable,
+                        class: CoverageGapKind::Unavailable.default_class(),
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: format!("{}: website execution evidence", check_id(task)),
@@ -1779,6 +1818,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                     gaps.push(CoverageGap {
                         unattributed: None,
                         kind: CoverageGapKind::Failed,
+                        class: CoverageGapKind::Failed.default_class(),
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: format!("{}: target response", check_id(task)),
@@ -1793,6 +1833,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                     gaps.push(CoverageGap {
                         unattributed: None,
                         kind: CoverageGapKind::Failed,
+                        class: CoverageGapKind::Failed.default_class(),
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: format!("{}: scanner errors", check_id(task)),
@@ -1834,6 +1875,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
             gaps.push(CoverageGap {
                 unattributed: None,
                 kind: CoverageGapKind::NotTested,
+                class: CoverageGapKind::NotTested.default_class(),
                 task_id: Some(task.id.clone()),
                 target_asset_ids: task.asset_ids.clone(),
                 dimension: format!("{}: unsupported target input", check_id(task)),
@@ -2117,6 +2159,7 @@ fn append_naabu_coverage_gaps(
         gaps.push(CoverageGap {
             unattributed: None,
             kind,
+            class: kind.default_class(),
             task_id: task_id.clone(),
             target_asset_ids: targets.clone(),
             dimension,
@@ -2348,6 +2391,7 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
     gaps.push(CoverageGap {
         unattributed: None,
         kind,
+        class: kind.default_class(),
         task_id: Some(task.id.clone()),
         target_asset_ids: task.asset_ids.clone(),
         dimension: format!("{}: {dimension}", check_id(task)),
@@ -2405,6 +2449,7 @@ fn append_stale_knowledge_gap(
     gaps.push(CoverageGap {
         unattributed: None,
         kind: CoverageGapKind::NotTested,
+        class: CoverageGapKind::NotTested.default_class(),
         task_id: Some(task.id.clone()),
         target_asset_ids: task.asset_ids.clone(),
         dimension: format!("{}: expired detection knowledge", check_id(task)),
@@ -2451,6 +2496,7 @@ fn append_request_outcome_gaps(
         gaps.push(CoverageGap {
             unattributed: None,
             kind: CoverageGapKind::NotTested,
+            class: CoverageGapKind::NotTested.default_class(),
             task_id: None,
             target_asset_ids: requested_asset_ids.clone(),
             dimension: "requested checks".into(),
@@ -2463,6 +2509,7 @@ fn append_request_outcome_gaps(
             gaps.push(CoverageGap {
                 unattributed: None,
                 kind: CoverageGapKind::NotTested,
+                class: CoverageGapKind::NotTested.default_class(),
                 task_id: None,
                 target_asset_ids: requested_asset_ids.clone(),
                 dimension: format!("requested check {engine_id}"),
@@ -2485,6 +2532,7 @@ fn append_engine_admission_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>) {
     gaps.push(CoverageGap {
         unattributed: None,
         kind: CoverageGapKind::NotTested,
+        class: CoverageGapKind::NotTested.default_class(),
         task_id: None,
         // Catalog admission failed before applicability could be trusted, so
         // this gap must not fabricate either a scanner or target binding.
@@ -2515,6 +2563,7 @@ fn append_unattributed_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>) {
             let provider = &unattributed.provider;
             gaps.push(CoverageGap {
                 kind: CoverageGapKind::Unattributed,
+                class: CoverageGapKind::Unattributed.default_class(),
                 task_id: Some(task.id.clone()),
                 // The results belong to an identifier none of these assets
                 // claims, so naming them as the target would assert the
@@ -2552,6 +2601,7 @@ fn append_manual_review_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>) {
             );
             gaps.push(CoverageGap {
                 kind: CoverageGapKind::ManualReview,
+                class: CoverageGapKind::ManualReview.default_class(),
                 task_id: Some(task.id.clone()),
                 target_asset_ids: vec![control.asset_id.clone()],
                 dimension: format!(
@@ -3277,6 +3327,7 @@ fn append_internal_endpoint_profile_gaps(
                     gaps.push(CoverageGap {
                         unattributed: None,
                         kind: CoverageGapKind::Unavailable,
+                        class: CoverageGapKind::Unavailable.default_class(),
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: dimension.into(),
@@ -3296,6 +3347,7 @@ fn append_internal_endpoint_profile_gaps(
                 gaps.push(CoverageGap {
                     unattributed: None,
                     kind: CoverageGapKind::NotTested,
+                    class: CoverageGapKind::NotTested.default_class(),
                     task_id: Some(task.id.clone()),
                     target_asset_ids: vec![asset_id.clone()],
                     dimension: "SMTP TLS negotiation-dependent coverage".into(),
@@ -3337,6 +3389,7 @@ fn append_internal_endpoint_profile_gaps(
             gaps.push(CoverageGap {
                 unattributed: None,
                 kind: CoverageGapKind::NotTested,
+                class: CoverageGapKind::NotTested.default_class(),
                 task_id: Some(task.id.clone()),
                 target_asset_ids: vec![asset_id.clone()],
                 dimension: dimension.into(),
@@ -3357,6 +3410,7 @@ fn append_report_asset_snapshot_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>)
         gaps.push(CoverageGap {
             unattributed: None,
             kind: CoverageGapKind::NotTested,
+            class: CoverageGapKind::NotTested.default_class(),
             task_id: None,
             target_asset_ids: vec![snapshot.asset.id.clone()],
             dimension: "supported vulnerability profile".into(),
@@ -3387,6 +3441,7 @@ fn append_internal_device_profile_gaps(
                     gaps.push(CoverageGap {
                         unattributed: None,
                         kind: CoverageGapKind::Unavailable,
+                        class: CoverageGapKind::Unavailable.default_class(),
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: "internal-device scan-profile coverage".into(),
@@ -3408,6 +3463,7 @@ fn append_internal_device_profile_gaps(
             gaps.push(CoverageGap {
                 unattributed: None,
                 kind: CoverageGapKind::NotTested,
+                class: CoverageGapKind::NotTested.default_class(),
                 task_id: Some(task.id.clone()),
                 target_asset_ids: vec![asset_id.clone()],
                 dimension: dimension.into(),
@@ -3428,6 +3484,7 @@ fn append_case_exclusions(case: &AssessmentCase, run: &ScanRun, gaps: &mut Vec<C
         gaps.push(CoverageGap {
             unattributed: None,
             kind: CoverageGapKind::Excluded,
+            class: CoverageGapKind::Excluded.default_class(),
             task_id: None,
             target_asset_ids: entry.asset_id.iter().cloned().collect(),
             dimension: entry.label.clone(),
@@ -4090,6 +4147,10 @@ fn coverage_counts(actual: &ActualCoverage, gaps: &[CoverageGap]) -> CoverageCou
         }
     }
     for gap in gaps {
+        match gap.class {
+            CoverageGapClass::CoverageLoss => {}
+            CoverageGapClass::RecordNote => continue,
+        }
         let task_state_already_counted = gap.task_id.as_ref().is_some_and(|task_id| {
             actual.checks.iter().any(|check| {
                 check.task_id.as_str() == task_id.as_str()
@@ -4417,6 +4478,40 @@ fn confidence_rank(confidence: &Confidence) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_coverage_gap_without_class_defaults_to_conservative_coverage_loss() {
+        let legacy = serde_json::json!({
+            "kind": "unavailable",
+            "task_id": null,
+            "target_asset_ids": [],
+            "dimension": "legacy saved limitation",
+            "reason": "The old record did not classify this row.",
+            "next_action_code": "preserve_visible_limitation",
+            "next_action": "Keep the limitation visible."
+        });
+
+        let gap: super::CoverageGap = serde_json::from_value(legacy).unwrap();
+
+        assert_eq!(gap.class, super::CoverageGapClass::CoverageLoss);
+    }
+
+    #[test]
+    fn every_coverage_gap_kind_has_an_exhaustive_default_classification() {
+        for kind in [
+            super::CoverageGapKind::NotTested,
+            super::CoverageGapKind::Failed,
+            super::CoverageGapKind::TimedOut,
+            super::CoverageGapKind::Cancelled,
+            super::CoverageGapKind::Excluded,
+            super::CoverageGapKind::Truncated,
+            super::CoverageGapKind::Unavailable,
+            super::CoverageGapKind::Unattributed,
+            super::CoverageGapKind::ManualReview,
+        ] {
+            assert_eq!(kind.default_class(), super::CoverageGapClass::CoverageLoss);
+        }
+    }
+
     #[test]
     fn a_finding_step_names_its_ratings_in_words() {
         assert_eq!(
@@ -5602,8 +5697,36 @@ mod tests {
         );
         let report = build_beginner_master_report(&case, "run-1").unwrap();
 
-        assert_eq!(report.state.summary, BeginnerReportSummary::Partial);
+        assert_eq!(report.state.summary, BeginnerReportSummary::Complete);
         assert_eq!(report.state.lifecycle, ReportLifecycle::Final);
+    }
+
+    #[test]
+    fn completed_checks_with_only_record_notes_report_zero_coverage_gaps_and_keep_explanations() {
+        let tasks = (1..=8)
+            .map(|number| catalog_task(&format!("completed-{number}"), EngineRunStatus::Completed))
+            .collect();
+        let case = case_with_catalog_tasks(tasks, true);
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let coverage_loss = report
+            .coverage_gaps
+            .iter()
+            .filter(|gap| gap.class == CoverageGapClass::CoverageLoss)
+            .count();
+        let record_notes = report
+            .coverage_gaps
+            .iter()
+            .filter(|gap| gap.class == CoverageGapClass::RecordNote)
+            .collect::<Vec<_>>();
+
+        assert_eq!(report.coverage_counts.tested_complete, 8);
+        assert_eq!(report.coverage_counts.not_tested, 0);
+        assert_eq!(report.coverage_counts.unavailable, 0);
+        assert_eq!(coverage_loss, 0);
+        assert!(!record_notes.is_empty());
+        assert!(record_notes.iter().all(|note| !note.reason.is_empty()));
+        assert_eq!(report.state.summary, BeginnerReportSummary::Complete);
     }
 
     #[test]
@@ -5665,7 +5788,7 @@ mod tests {
     }
 
     #[test]
-    fn contradictory_request_outcome_is_ignored_and_forces_honest_partial_report() {
+    fn contradictory_request_outcome_is_a_record_note_not_missing_coverage() {
         let mut case = localhost_case(
             LocalhostTcpOutcome::Reachable,
             EngineRunStatus::Completed,
@@ -5682,7 +5805,7 @@ mod tests {
         );
 
         let report = build_beginner_master_report(&case, "run-1").unwrap();
-        assert_eq!(report.state.summary, BeginnerReportSummary::Partial);
+        assert_eq!(report.state.summary, BeginnerReportSummary::Complete);
         assert_ne!(
             report.state.summary,
             BeginnerReportSummary::NoChecksCompleted
@@ -5694,12 +5817,14 @@ mod tests {
                 .requested_check_ids
                 .contains(&"different-check".into())
         );
-        assert!(
-            report
-                .coverage_gaps
-                .iter()
-                .any(|gap| gap.dimension == "request outcome integrity")
-        );
+        let note = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "request outcome integrity")
+            .expect("request outcome integrity note");
+        assert_eq!(note.class, CoverageGapClass::RecordNote);
+        assert_eq!(note.next_action_code, NextActionCode::RetryCheck);
+        assert!(!note.target_asset_ids.is_empty());
     }
 
     #[test]
@@ -6245,7 +6370,7 @@ mod tests {
 
         let report = build_beginner_master_report(&case, "run-1").unwrap();
 
-        assert_eq!(report.state.summary, BeginnerReportSummary::Partial);
+        assert_eq!(report.state.summary, BeginnerReportSummary::Complete);
         assert!(run_is_non_security_only(&case.scan_runs[0]));
         assert!(
             report.state.explanation.contains(

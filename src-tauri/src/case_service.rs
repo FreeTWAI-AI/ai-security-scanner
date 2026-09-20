@@ -18,8 +18,8 @@ use crate::beginner_report::ReportLifecycle;
 use crate::beginner_report::{
     BEGINNER_MASTER_REPORT_SCHEMA_VERSION, BeginnerInventoryItem, BeginnerInventoryItemKind,
     BeginnerMasterReport, BeginnerReportSummary, CheckResultKind, CoverageDimensionStatus,
-    CoverageGap, CoverageGapKind, FindingSnapshotSource, NextActionCode, ReportScanStage,
-    RequestedLimitSource, finding_unconfirmed_by_coverage,
+    CoverageGap, CoverageGapClass, CoverageGapKind, FindingSnapshotSource, NextActionCode,
+    ReportScanStage, RequestedLimitSource, finding_unconfirmed_by_coverage,
 };
 use crate::bootstrap::executor::list_bootstrap_cleanup_obligations;
 use crate::connectors::{
@@ -14680,6 +14680,41 @@ fn named_coverage_items(gaps: usize, no_verdict: usize, catalog: HtmlReportCatal
     }
 }
 
+fn classified_coverage_item_counts(report: &BeginnerMasterReport) -> (usize, usize) {
+    report
+        .coverage_gaps
+        .iter()
+        .fold((0, 0), |(coverage_loss, record_notes), gap| {
+            match gap.class {
+                CoverageGapClass::CoverageLoss => (coverage_loss + 1, record_notes),
+                CoverageGapClass::RecordNote => (coverage_loss, record_notes + 1),
+            }
+        })
+}
+
+fn coverage_kpi_entries(
+    report: &BeginnerMasterReport,
+    catalog: HtmlReportCatalog,
+) -> [(&'static str, usize, &'static str); 2] {
+    let (coverage_item_count, record_note_count) = classified_coverage_item_counts(report);
+    let coverage_items_label = if report.coverage_counts.manual_review > 0 {
+        catalog.text(
+            "Coverage gaps and checks without verdicts",
+            "涵蓋缺口與未回傳判定的檢查",
+        )
+    } else {
+        catalog.text("Coverage gaps", "涵蓋缺口")
+    };
+    [
+        (coverage_items_label, coverage_item_count, "partial"),
+        (
+            catalog.text("Record notes", "記錄備註"),
+            record_note_count,
+            "quiet",
+        ),
+    ]
+}
+
 /// The four sentences a reader who reads nothing else should get.
 ///
 /// Deliberately composed from counts this report already establishes rather
@@ -14765,8 +14800,8 @@ fn html_executive_summary(
     // It also stated both totals side by side while the second contained the
     // first, so a reader could add five and ten and get fifteen out of ten.
     // The second clause names what the first did not already cover.
-    let gaps = report.coverage_gaps.len();
-    let remainder = gaps.saturating_sub(untested);
+    let (coverage_items, record_notes) = classified_coverage_item_counts(report);
+    let remainder = coverage_items.saturating_sub(untested);
     let named_gaps = named_coverage_items(remainder, counts.manual_review, catalog);
     let named_checks = match catalog.locale {
         crate::export::ReportLocale::ZhHant => {
@@ -14807,9 +14842,26 @@ fn html_executive_summary(
         )),
     };
 
+    let record_notes = match (catalog.locale, record_notes) {
+        (_, 0) => None,
+        (crate::export::ReportLocale::ZhHant, count) => Some(format!(
+            "另有 {} 項記錄備註，說明已保存記錄的限制，而非缺少安全檢查。",
+            catalog.format_number(count)
+        )),
+        (_, 1) => Some(
+            "1 record note describes a limitation in the saved record, not a missing security check."
+                .to_owned(),
+        ),
+        (_, count) => Some(format!(
+            "{} record notes describe limitations in the saved record, not missing security checks.",
+            catalog.format_number(count)
+        )),
+    };
+
     let mut sentences = vec![scanned, found];
     sentences.extend(first_action);
     sentences.extend(not_covered);
+    sentences.extend(record_notes);
     format!(
         "<section class=\"executive-summary\"><h2>{}</h2>{}</section>",
         catalog.text("In short", "重點摘要"),
@@ -17576,65 +17628,64 @@ fn html_report_bytes(
             network_scope_items,
         )
     };
+    let render_coverage_item = |gap: &CoverageGap| {
+        // An unattributed gap is composed from its payload rather than
+        // printed as stored English, so the reader is told which
+        // identifier to add in the language they are reading. The name of
+        // the coverage is composed too, even where the prose beside it is
+        // not: it is built around a check or engine id, and leaving it in
+        // English opened every row of a Chinese report with a phrase the
+        // reader has no way to place.
+        let (dimension, reason, next_action) = match (catalog.locale, gap.unattributed.as_ref()) {
+            (crate::export::ReportLocale::ZhHant, Some(unattributed)) => {
+                let engine_id = gap
+                    .dimension
+                    .split_once(':')
+                    .map(|(engine, _)| engine)
+                    .unwrap_or(gap.dimension.as_str());
+                crate::finding_narrative::unattributed_gap_zh_hant(
+                    &engine_named(engine_id),
+                    unattributed,
+                )
+            }
+            (crate::export::ReportLocale::ZhHant, None) => (
+                crate::finding_narrative::coverage_dimension_zh_hant(&engine_named(&gap.dimension)),
+                // An unrecognized sentence keeps its stored English. An
+                // excluded area carries the words a person typed about
+                // their own case, and a run written by another build may
+                // carry an explanation this one has never seen.
+                crate::finding_narrative::coverage_gap_prose_zh_hant(&gap.reason)
+                    .unwrap_or_else(|| gap.reason.clone()),
+                crate::finding_narrative::coverage_gap_prose_zh_hant(&gap.next_action)
+                    .unwrap_or_else(|| gap.next_action.clone()),
+            ),
+            (crate::export::ReportLocale::En, None) => (
+                gap.dimension
+                    .replace(": manual review for ", ": no verdict for "),
+                crate::finding_narrative::coverage_gap_prose_english(&gap.reason),
+                crate::finding_narrative::coverage_gap_prose_english(&gap.next_action),
+            ),
+            (crate::export::ReportLocale::En, Some(_)) => (
+                gap.dimension.clone(),
+                gap.reason.clone(),
+                gap.next_action.clone(),
+            ),
+        };
+        let dimension = displayed_dimension(&dimension, catalog, &target_labels);
+        format!(
+            "<li><strong>{} — {}</strong><br>{}<br><em>{}:</em> {}</li>",
+            html_escape(catalog.gap_kind(&gap.kind)),
+            html_escape(&dimension),
+            html_escape(&replace_target_ids(&reason, &target_labels)),
+            catalog.text("Next", "下一步"),
+            html_escape(&replace_target_ids(&next_action, &target_labels)),
+        )
+    };
     let mut gap_items = report
         .coverage_gaps
         .iter()
-        .map(|gap| {
-            // An unattributed gap is composed from its payload rather than
-            // printed as stored English, so the reader is told which
-            // identifier to add in the language they are reading. The name of
-            // the coverage is composed too, even where the prose beside it is
-            // not: it is built around a check or engine id, and leaving it in
-            // English opened every row of a Chinese report with a phrase the
-            // reader has no way to place.
-            let (dimension, reason, next_action) = match (catalog.locale, gap.unattributed.as_ref())
-            {
-                (crate::export::ReportLocale::ZhHant, Some(unattributed)) => {
-                    let engine_id = gap
-                        .dimension
-                        .split_once(':')
-                        .map(|(engine, _)| engine)
-                        .unwrap_or(gap.dimension.as_str());
-                    crate::finding_narrative::unattributed_gap_zh_hant(
-                        &engine_named(engine_id),
-                        unattributed,
-                    )
-                }
-                (crate::export::ReportLocale::ZhHant, None) => (
-                    crate::finding_narrative::coverage_dimension_zh_hant(&engine_named(
-                        &gap.dimension,
-                    )),
-                    // An unrecognized sentence keeps its stored English. An
-                    // excluded area carries the words a person typed about
-                    // their own case, and a run written by another build may
-                    // carry an explanation this one has never seen.
-                    crate::finding_narrative::coverage_gap_prose_zh_hant(&gap.reason)
-                        .unwrap_or_else(|| gap.reason.clone()),
-                    crate::finding_narrative::coverage_gap_prose_zh_hant(&gap.next_action)
-                        .unwrap_or_else(|| gap.next_action.clone()),
-                ),
-                (crate::export::ReportLocale::En, None) => (
-                    gap.dimension
-                        .replace(": manual review for ", ": no verdict for "),
-                    crate::finding_narrative::coverage_gap_prose_english(&gap.reason),
-                    crate::finding_narrative::coverage_gap_prose_english(&gap.next_action),
-                ),
-                (crate::export::ReportLocale::En, Some(_)) => (
-                    gap.dimension.clone(),
-                    gap.reason.clone(),
-                    gap.next_action.clone(),
-                ),
-            };
-            let dimension = displayed_dimension(&dimension, catalog, &target_labels);
-            format!(
-                "<li><strong>{} — {}</strong><br>{}<br><em>{}:</em> {}</li>",
-                html_escape(catalog.gap_kind(&gap.kind)),
-                html_escape(&dimension),
-                html_escape(&replace_target_ids(&reason, &target_labels)),
-                catalog.text("Next", "下一步"),
-                html_escape(&replace_target_ids(&next_action, &target_labels)),
-            )
-        })
+        .filter(|gap| gap.class == CoverageGapClass::CoverageLoss)
+        .map(&render_coverage_item)
         .collect::<String>();
     if gap_items.is_empty() {
         gap_items.push_str(catalog.text(
@@ -17642,6 +17693,23 @@ fn html_report_bytes(
             "<li>沒有記錄到已知的涵蓋缺口。</li>",
         ));
     }
+    let record_note_items = report
+        .coverage_gaps
+        .iter()
+        .filter(|gap| gap.class == CoverageGapClass::RecordNote)
+        .map(render_coverage_item)
+        .collect::<String>();
+    let record_notes_section = if record_note_items.is_empty() {
+        String::new()
+    } else {
+        let (_, record_note_count) = classified_coverage_item_counts(&report);
+        format!(
+            "<h3>{} ({})</h3><ul>{}</ul>",
+            catalog.text("Record notes", "記錄備註"),
+            catalog.format_number(record_note_count),
+            record_note_items,
+        )
+    };
     let next_step_items = report
         .next_steps
         .iter()
@@ -17810,14 +17878,7 @@ fn html_report_bytes(
         String::new()
     };
     let report_counts = &report.coverage_counts;
-    let coverage_items_label = if report_counts.manual_review > 0 {
-        catalog.text(
-            "Coverage gaps and checks without verdicts",
-            "涵蓋缺口與未回傳判定的檢查",
-        )
-    } else {
-        catalog.text("Coverage gaps", "涵蓋缺口")
-    };
+    let coverage_kpis = coverage_kpi_entries(&report, catalog);
     let coverage_items_title = if report_counts.manual_review > 0 {
         catalog.text("What needs attention", "需要留意的內容")
     } else {
@@ -19024,8 +19085,7 @@ fn html_report_bytes(
         ".cover h1{font-size:1.9rem}",
         ".executive-summary{break-inside:avoid}",
         "p{orphans:3;widows:3}",
-        // Seven tiles reflow to five and two on a page this wide, which leaves
-        // a stranded pair. Four and three is the balanced split.
+        // Eight tiles split into two balanced rows on a page this wide.
         ".kpi-row{grid-template-columns:repeat(4,1fr)}",
         ".kpi__value{font-size:1.5rem}",
         "article,.asset-result,.kpi,tr,.severity-row,.matrix-legend{break-inside:avoid}",
@@ -19124,7 +19184,8 @@ fn html_report_bytes(
                     report_counts.not_tested,
                     "quiet",
                 ),
-                (coverage_items_label, report.coverage_gaps.len(), "quiet"),
+                coverage_kpis[0],
+                coverage_kpis[1],
             ],
             catalog,
         ),
@@ -19155,7 +19216,7 @@ fn html_report_bytes(
             "<thead><tr><th scope=\"col\">{}</th>",
             "<th scope=\"col\">{}</th><th scope=\"col\">{}</th><th scope=\"col\">{}</th>",
             "<th scope=\"col\">{}</th></tr></thead><tbody>{}</tbody></table>{}</div>",
-            "<div class=\"report-card\"><h2>{}</h2><ul>{}</ul></div></section>",
+            "<div class=\"report-card\"><h2>{}</h2><ul>{}</ul>{}</div></section>",
             "<section><h2>{}</h2>{}<ol>{}</ol></section>",
             "<h2>{}</h2>",
             "<p>{}</p>{}{}{}"
@@ -19185,6 +19246,7 @@ fn html_report_bytes(
         network_scope_section,
         coverage_items_title,
         gap_items,
+        record_notes_section,
         catalog.text("What to do next", "下一步怎麼做"),
         shared_safety_note,
         next_step_items,
@@ -19396,6 +19458,7 @@ mod tests {
     fn wait_or_cancel_html_action_names_scanner_status_control_not_progress_page() {
         let gap = CoverageGap {
             kind: CoverageGapKind::NotTested,
+            class: CoverageGapClass::CoverageLoss,
             task_id: Some("task-running".into()),
             target_asset_ids: vec!["asset-1".into()],
             dimension: "unfinished check dimension".into(),
@@ -35781,6 +35844,149 @@ mod tests {
         }
     }
 
+    #[test]
+    fn record_notes_are_quiet_and_real_coverage_loss_keeps_the_attention_tone() {
+        let fixture = Fixture::new();
+        let prepared = crate::localhost_quick_scan::prepare_localhost_quick_scan(
+            &fixture.storage,
+            fixture.engines.manifests(),
+            9001,
+        )
+        .unwrap();
+        let mut case = fixture
+            .storage
+            .get_case(&prepared.prepared.case_id)
+            .unwrap();
+        close_run_without_execution_for_report_fixture(&mut case, &prepared.prepared.scan_run_id);
+        let mut report =
+            build_beginner_master_report(&case, &prepared.prepared.scan_run_id).unwrap();
+        report.coverage_gaps = vec![CoverageGap {
+            kind: CoverageGapKind::Unavailable,
+            class: CoverageGapClass::RecordNote,
+            task_id: None,
+            target_asset_ids: Vec::new(),
+            dimension: "requested scan stage".into(),
+            reason: "The saved record did not retain the requested scan stage.".into(),
+            next_action_code: NextActionCode::PreserveVisibleLimitation,
+            next_action: "Open the saved scope details.".into(),
+            unattributed: None,
+        }];
+        report.coverage_counts = Default::default();
+        report.coverage_counts.tested_complete = 1;
+
+        let en = HtmlReportCatalog::new(crate::export::ReportLocale::En);
+        let en_entries = coverage_kpi_entries(&report, en);
+        assert_eq!(en_entries[0], ("Coverage gaps", 0, "partial"));
+        assert_eq!(en_entries[1], ("Record notes", 1, "quiet"));
+        let notes_only_tiles = html_kpi_tiles(&en_entries, en);
+        assert!(notes_only_tiles.contains("kpi kpi--quiet"));
+        assert!(!notes_only_tiles.contains("kpi kpi--partial"));
+        let summary = html_executive_summary(&report, &report.coverage_counts, 0, en);
+        assert!(summary.contains("1 record note describes a limitation in the saved record"));
+        assert!(!summary.contains("coverage gap remains"));
+        assert_eq!(
+            report.coverage_gaps[0].reason,
+            "The saved record did not retain the requested scan stage."
+        );
+
+        let zh = HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant);
+        let zh_entries = coverage_kpi_entries(&report, zh);
+        assert_eq!(zh_entries[0], ("涵蓋缺口", 0, "partial"));
+        assert_eq!(zh_entries[1], ("記錄備註", 1, "quiet"));
+
+        report.coverage_gaps.push(CoverageGap {
+            kind: CoverageGapKind::NotTested,
+            class: CoverageGapClass::CoverageLoss,
+            task_id: Some("task-not-run".into()),
+            target_asset_ids: vec!["asset-1".into()],
+            dimension: "requested security check".into(),
+            reason: "The requested security check did not run.".into(),
+            next_action_code: NextActionCode::RetryCheck,
+            next_action: "Retry this check.".into(),
+            unattributed: None,
+        });
+        let loss_entries = coverage_kpi_entries(&report, en);
+        assert_eq!(loss_entries[0], ("Coverage gaps", 1, "partial"));
+        assert_eq!(loss_entries[1], ("Record notes", 1, "quiet"));
+        let loss_tiles = html_kpi_tiles(&loss_entries, en);
+        assert!(loss_tiles.contains("kpi kpi--partial"));
+    }
+
+    #[test]
+    fn html_keeps_record_notes_visible_without_counting_them_as_coverage_gaps() {
+        let fixture = Fixture::new();
+        let prepared = crate::localhost_quick_scan::prepare_localhost_quick_scan(
+            &fixture.storage,
+            fixture.engines.manifests(),
+            9001,
+        )
+        .unwrap();
+        let mut case = fixture
+            .storage
+            .get_case(&prepared.prepared.case_id)
+            .unwrap();
+        let observed = Utc::now();
+        let run = case
+            .scan_runs
+            .iter_mut()
+            .find(|run| run.id == prepared.prepared.scan_run_id)
+            .unwrap();
+        run.completed_at = Some(observed);
+        run.request_outcome = Some(
+            ScanRequestOutcome::no_checks_completed(
+                ScanRequestOutcomeCode::NoApplicableChecks,
+                vec!["contradictory-asset".into()],
+                vec!["contradictory-check".into()],
+                "Contradictory legacy request outcome.",
+            )
+            .unwrap(),
+        );
+        let task = run
+            .engine_runs
+            .iter_mut()
+            .find(|task| task.id == prepared.prepared.engine_run_id)
+            .unwrap();
+        task.status = EngineRunStatus::Completed;
+        task.phase = "completed".into();
+        task.progress_percent = 100;
+        task.started_at = Some(observed - Duration::seconds(1));
+        task.finished_at = Some(observed);
+        task.exit_code = Some(0);
+        task.localhost_tcp_observation = Some(crate::domain::LocalhostTcpObservation {
+            outcome: crate::domain::LocalhostTcpOutcome::Reachable,
+            observed_at: observed,
+        });
+
+        let report = build_beginner_master_report(&case, &prepared.prepared.scan_run_id).unwrap();
+        assert_eq!(report.coverage_counts.tested_complete, 1);
+        assert_eq!(report.coverage_counts.not_tested, 0);
+        assert_eq!(classified_coverage_item_counts(&report), (0, 1));
+        let note = report.coverage_gaps.first().expect("record note");
+        assert_eq!(note.class, CoverageGapClass::RecordNote);
+        assert_eq!(note.dimension, "request outcome integrity");
+        assert!(!note.reason.is_empty());
+
+        let html = String::from_utf8(
+            html_report_bytes(
+                &case,
+                &prepared.prepared.scan_run_id,
+                &ExportOptions::default(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(html.contains(
+            "<span class=\"kpi__value\">0</span><span class=\"kpi__label\">Coverage gaps</span>"
+        ));
+        assert!(html.contains(
+            "<span class=\"kpi__value\">1</span><span class=\"kpi__label\">Record notes</span>"
+        ));
+        assert!(html.contains("<h3>Record notes (1)</h3>"));
+        assert!(html.contains("Request outcome integrity"));
+        let displayed_reason = crate::finding_narrative::coverage_gap_prose_english(&note.reason);
+        assert!(html.contains(&html_escape(&displayed_reason)));
+    }
+
     /// Cloudsplaining keys a policy finding on the action it found, so the
     /// upstream identity and the reported-action list are usually the same
     /// string. Printed under two labels they read as two facts.
@@ -36059,6 +36265,7 @@ mod tests {
         report.findings.clear();
         report.coverage_gaps = vec![CoverageGap {
             kind: CoverageGapKind::NotTested,
+            class: CoverageGapClass::CoverageLoss,
             task_id: Some("task-completed".into()),
             target_asset_ids: vec![asset_id.clone()],
             dimension: "host operating-system checks".into(),
@@ -36077,6 +36284,7 @@ mod tests {
 
         report.coverage_gaps.push(CoverageGap {
             kind: CoverageGapKind::NotTested,
+            class: CoverageGapClass::CoverageLoss,
             task_id: Some("task-never-ran".into()),
             target_asset_ids: vec![asset_id.clone()],
             dimension: "second requested security check".into(),
@@ -36092,6 +36300,7 @@ mod tests {
 
         report.coverage_gaps.push(CoverageGap {
             kind: CoverageGapKind::Unavailable,
+            class: CoverageGapClass::CoverageLoss,
             task_id: Some("task-unavailable".into()),
             target_asset_ids: vec![asset_id],
             dimension: "saved result processing".into(),
