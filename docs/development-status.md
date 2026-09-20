@@ -62,6 +62,9 @@ are not a new test run for this documentation update:
 - Engine catalog validation: 8 tests.
 - TypeScript type checking, Rust formatting, and Clippy: passed.
 
+CI document and contract tests: 83 tests passed on September 20, 2026, including the adapter refresh
+CLI missing-value regression (`node --test tests/ci/*.test.mjs`).
+
 After removing credential-shaped text from an upstream test fixture, the MCP Armor image was rebuilt,
 published, and pinned. Its offline synthetic smoke test produced one finding, two completed checks, no
 warning, and `complete: true` under `network=none`.

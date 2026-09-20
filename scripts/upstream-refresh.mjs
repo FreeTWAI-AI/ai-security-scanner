@@ -17,18 +17,26 @@ Options:
 
 The cli provider is an optional AI path. It runs only when explicitly selected with
 --provider cli and invokes the executable named by --ai-cli.
+Each --ai-cli-arg passes the next token literally, including a leading dash.
 `;
+
+function requiredValue(option, value) {
+  if (value === undefined || (option !== "--ai-cli-arg" && (!value || value.startsWith("-")))) {
+    throw new Error(`Missing value for ${option}.`);
+  }
+  return value;
+}
 
 export function parseRefreshArguments(argv) {
   const options = { engineIds: [], providerId: "mechanical", refreshKind: "revision", cliArgs: [], help: false };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") options.help = true;
-    else if (argument === "--engine") options.engineIds.push(argv[++index]);
-    else if (argument === "--kind") options.refreshKind = argv[++index];
-    else if (argument === "--provider") options.providerId = argv[++index];
-    else if (argument === "--ai-cli") options.cliCommand = argv[++index];
-    else if (argument === "--ai-cli-arg") options.cliArgs.push(argv[++index]);
+    else if (argument === "--engine") options.engineIds.push(requiredValue(argument, argv[++index]));
+    else if (argument === "--kind") options.refreshKind = requiredValue(argument, argv[++index]);
+    else if (argument === "--provider") options.providerId = requiredValue(argument, argv[++index]);
+    else if (argument === "--ai-cli") options.cliCommand = requiredValue(argument, argv[++index]);
+    else if (argument === "--ai-cli-arg") options.cliArgs.push(requiredValue(argument, argv[++index]));
     else throw new Error(`Unknown argument: ${argument}`);
   }
   if (!options.help && (options.engineIds.length === 0 || options.engineIds.some((id) => !id))) {

@@ -25,7 +25,7 @@ import {
 } from "../../scripts/upstream-refresh-lib.mjs";
 import { validateEngineInputHashes } from "../../scripts/validate-engine-input-hashes.mjs";
 import { main as proposeMain } from "../../scripts/upstream-propose.mjs";
-import { main as refreshMain } from "../../scripts/upstream-refresh.mjs";
+import { main as refreshMain, parseRefreshArguments } from "../../scripts/upstream-refresh.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const fixedNow = new Date("2026-09-17T12:34:56.000Z");
@@ -1013,6 +1013,37 @@ test("a revision patch applies without advancing artifact knowledge or support d
     setup.cleanup();
     rmSync(target, { recursive: true, force: true });
   }
+});
+
+test("refresh rejects missing option values instead of silently using defaults", () => {
+  for (const option of ["--provider", "--kind", "--engine", "--ai-cli", "--ai-cli-arg"]) {
+    assert.throws(
+      () => parseRefreshArguments(["--engine", "gitleaks", option]),
+      { message: `Missing value for ${option}.` },
+    );
+    if (option === "--ai-cli-arg") continue;
+    for (const next of ["", "--help", "--provider", "--unknown"]) {
+      assert.throws(
+        () => parseRefreshArguments(["--engine", "gitleaks", option, next]),
+        { message: `Missing value for ${option}.` },
+      );
+    }
+  }
+});
+
+test("refresh retains intentional defaults and forwards AI CLI argument values literally", () => {
+  assert.deepEqual(parseRefreshArguments(["--engine", "gitleaks"]), {
+    engineIds: ["gitleaks"], providerId: "mechanical", refreshKind: "revision", cliArgs: [], help: false,
+  });
+  assert.deepEqual(parseRefreshArguments([
+    "--engine", "gitleaks", "--engine", "grype", "--kind", "revision",
+    "--provider", "cli", "--ai-cli", "/a path/agent",
+    "--ai-cli-arg", "--model", "--ai-cli-arg", "chosen-model",
+    "--ai-cli-arg", "--help", "--ai-cli-arg", "",
+  ]), {
+    engineIds: ["gitleaks", "grype"], providerId: "cli", refreshKind: "revision",
+    cliCommand: "/a path/agent", cliArgs: ["--model", "chosen-model", "--help", ""], help: false,
+  });
 });
 
 test("both upstream refresh CLIs print help and do no work", async () => {
