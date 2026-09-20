@@ -18,11 +18,11 @@ For current `main` features, including the Grype repository fix, build from sour
 
 Open the app and choose one path:
 
-- **Scan my IT environment** combines multiple project folders, websites, and approved internal systems in one run.
+- **Scan my environment** combines multiple project folders, websites, and approved internal systems in one run.
 - **Check a website** scans one exact web origin with a reviewed Nuclei profile.
-- **Check a project folder** scans a read-only local snapshot for secrets, vulnerable dependencies, risky code, and unsafe configuration.
+- **Check code or an AI project** scans a read-only local snapshot for secrets, vulnerable dependencies, risky code, and unsafe configuration.
 
-Review the exact assets and network boundaries, then select **Start scan**. Results open when the run finishes.
+Follow **New scan → Scan setup → Start scan → Scan progress → Results**. From Results, select **Save or share report** to open **Share results**, then **Save HTML report (recommended)**. See the [step-by-step path to an HTML report](docs/getting-started.md#from-new-scan-to-an-html-report), including how to reopen a scan from **My scans**.
 
 ## Use with Claude Code or Codex
 
