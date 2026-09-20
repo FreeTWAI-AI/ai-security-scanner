@@ -20,13 +20,15 @@ For normal use, open the desktop app and choose the closest starting point:
 
 In an IT-environment project, run only the applicable upstream checks for each approved asset and combine their results in one report organized by asset. Discovery, an open port, or a responding service is preparation; do not describe an internal device as vulnerability-scanned until a service-aware or vulnerability check actually ran. Mark unsupported or unfinished checks as not tested.
 
-Keep active work in Progress. Open Results and Export only for a terminal run. Use concise, action-led status and result text; do not create live/interim reports, defensive caveat walls, implementation-defect or test-harness explanations, or text that transfers product responsibility to the user. Put formal terms at the end or footer of the final report and technical evidence in collapsed detail.
+Keep active work in Progress (the **Scan progress** screen). Open **Results** and **Share results** only for a terminal run. Use concise, action-led status and result text; do not create live/interim reports, defensive caveat walls, implementation-defect or test-harness explanations, or text that transfers product responsibility to the user. Put formal terms at the end or footer of the final report and technical evidence in collapsed detail.
 
 Use the localhost TCP utility only when the user actually wants to test whether one local service accepts a connection. Describe it as connectivity only.
 
 Ask only for the selected target and information the product needs. Never approve ownership, a target, CIDR, redirect, template, or scan intensity for the user.
 
 ## Inspect or diagnose
+
+For source-build commands and the desktop walkthrough, follow [Getting started](../../../docs/getting-started.md) ([繁體中文](../../../docs/getting-started.zh-TW.md)). The source-built CLI is `./target/debug/ai-security-scanner-cli`; examples below use its command name. Use the same product data directory throughout; when the desktop uses a custom directory, pass `--data-dir "DATA_DIR"` to each CLI command.
 
 Prefer the product's typed interface. In a development checkout, the supported read-only CLI commands include:
 
@@ -47,6 +49,22 @@ Use the exact returned case ID. Explain:
 5. the safest supported next action.
 
 Never turn zero findings into a security guarantee. Do not substitute a raw upstream command when a product adapter is unavailable, edit product data directly, or invent a shell-based scan path.
+
+`scan plan` and `scan rescan-plan` save plans without executing checks. Start, pause, and resume through the desktop controls; these actions are unavailable in the CLI. For a saved plan that never started, use **Continue the original scope** in **Scan progress**.
+
+## Deliver the HTML report
+
+1. Select the project in **My scans**, open **Results**, and choose the intended finished or stopped scan in **Report run**. Use **Save or share report** to reach **Share results**, choose **HTML report (recommended)**, keep **Hide sensitive identifiers (recommended)**, and select **Save HTML report (recommended)**.
+2. For an agent-driven local export, obtain the exact case and run IDs from `case show CASE_ID`. Select the requested run explicitly: a newer queued or cancelled run must not silently replace it. Inspect that run's engine outcomes with the command below; the surrounding case status and coverage may describe a newer run.
+
+```sh
+ai-security-scanner-cli --data-dir "DATA_DIR" --json scan status --case-id CASE_ID --run-id RUN_ID
+ai-security-scanner-cli --data-dir "DATA_DIR" --json export create --case-id CASE_ID --run-id RUN_ID --format html --redaction standard --destination "/absolute/path/report.html"
+```
+
+Replace the placeholders with the selected IDs, existing data directory, and a new local filename. Export only after the selected run finishes or stops; if it is still active, return to **Scan progress**. The exporter refuses to overwrite an existing file.
+
+3. Open the saved HTML in a browser. Check the report title, severity counts, findings, and engine coverage against the selected run. Preserve incomplete and `not_executed` rows. Hand back the absolute HTML path, file size, finding summary, and what was not tested; state any opening or verification failure plainly.
 
 ## Preserve upstream meaning
 
