@@ -51,8 +51,8 @@ const copy = {
     zhTW: "選擇格式並儲存到本機。",
   },
   finishedRunWhileScanning: {
-    en: "This is the finished scan; the running scan’s results open when it finishes.",
-    zhTW: "目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。",
+    en: "Showing a finished scan; the latest results open automatically.",
+    zhTW: "目前顯示已完成的掃描；最新結果將自動開啟。",
   },
   preparing: { en: "Preparing…", zhTW: "準備中…" },
   exportDemo: { en: "Download {format} demo file", zhTW: "下載「{format}」展示檔" },

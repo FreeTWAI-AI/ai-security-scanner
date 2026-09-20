@@ -94,7 +94,7 @@ test("mid-scan Results renders the finished run and explains when the running sc
   expect(picker?.value).toBe(finishedRun.id);
   expect(container.textContent).toContain("Saved finished-scan finding");
   expect(container.textContent).toContain(
-    "This is the finished scan; the running scan’s results open when it finishes.",
+    "Showing a finished scan; the latest results open automatically.",
   );
 });
 
@@ -125,6 +125,6 @@ test("the mid-scan finished-report sentence is localized in Traditional Chinese"
   );
 
   expect(container.textContent).toContain(
-    "目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。",
+    "目前顯示已完成的掃描；最新結果將自動開啟。",
   );
 });

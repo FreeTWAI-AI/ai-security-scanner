@@ -99,6 +99,28 @@ test("terminal selections and unrelated routes keep their requested destination"
   assert.equal(pageForSelectedRunLifecycle("coverage", active, [active]).page, "coverage");
 });
 
+test("automatic report navigation waits for the terminal report projection, keeping saved Results readable", () => {
+  const finished = run("new", "completed", 2);
+  const saved = run("saved", "completed", 1);
+  for (const requestedPage of ["findings", "export"] as const) {
+    const deferred = { runId: finished.id, requestedPage };
+    const waiting = pageForSelectedRunLifecycle(requestedPage, saved, [finished, saved], deferred, [saved.id]);
+    assert.equal(waiting.page, requestedPage);
+    assert.equal(waiting.run?.id, saved.id);
+    assert.equal(waiting.awaitedRun?.id, finished.id);
+    assert.equal(waiting.showingFinishedRunWhileActive, true);
+    const ready = pageForSelectedRunLifecycle(requestedPage, saved, [finished, saved], deferred, [saved.id, finished.id]);
+    assert.equal(ready.run?.id, finished.id);
+    assert.equal(ready.awaitedRun, undefined);
+
+    const firstReportWaiting = pageForSelectedRunLifecycle("progress", finished, [finished], deferred, []);
+    assert.equal(firstReportWaiting.page, "progress");
+    assert.equal(firstReportWaiting.awaitedRun?.id, finished.id);
+    const firstReportReady = pageForSelectedRunLifecycle("progress", finished, [finished], deferred, [finished.id]);
+    assert.equal(firstReportReady.page, requestedPage);
+  }
+});
+
 test("an active request with no terminal run still deflects, records its promise, and opens when the run ends", () => {
   for (const deferredPage of ["findings", "export"] as const) {
     const active = run("active", "running", 1);

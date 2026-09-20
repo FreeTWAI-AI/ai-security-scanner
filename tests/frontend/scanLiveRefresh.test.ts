@@ -369,7 +369,8 @@ test("scan lifecycle actions and events carry the authoritative workspace into A
   assert.match(finishedRefresh, /readScanReadinessWithin\(workspace\.case\.id, acceptReadiness\)/u);
   assert.match(finishedRefresh, /selectedCaseIdRef\.current !== workspace\.case\.id/u);
   assert.match(finishedRefresh, /isCurrentScanReadinessResponse/u);
-  assert.doesNotMatch(finishedRefresh, /loadSnapshot/u);
+  assert.match(finishedRefresh, /void loadSnapshot\(workspace\.case\.id, true\)/u);
+  assert.doesNotMatch(finishedRefresh, /await loadSnapshot/u);
   assert.equal(
     [...finishedRefresh.matchAll(/readScanReadinessWithin\(workspace\.case\.id, acceptReadiness\)/gu)].length,
     1,

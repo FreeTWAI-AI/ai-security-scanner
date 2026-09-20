@@ -579,8 +579,8 @@ const copy = {
   reportNoChecks: { en: "No checks completed", zhTW: "沒有完成任何檢查" },
   reportRun: { en: "Report run", zhTW: "報告輪次" },
   finishedRunWhileScanning: {
-    en: "This is the finished scan; the running scan’s results open when it finishes.",
-    zhTW: "目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。",
+    en: "Showing a finished scan; the latest results open automatically.",
+    zhTW: "目前顯示已完成的掃描；最新結果將自動開啟。",
   },
   reportRunUnavailable: { en: "Previously selected scan unavailable", zhTW: "先前選擇的掃描已無法使用" },
   lastSaved: { en: "Last saved {time}", zhTW: "最後保存：{time}" },

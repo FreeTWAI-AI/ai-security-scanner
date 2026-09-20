@@ -54,7 +54,7 @@ test("three sidebar Results clicks stay in findings, and Export follows the fini
     fireEvent.click(resultsButton);
     await waitFor(() => expect(window.location.hash).toBe("#findings"));
     expect((view.getByLabelText("Report run") as HTMLSelectElement).value).toBe(saved.id);
-    expect(view.getByText(/This is the finished scan/)).toBeTruthy();
+    expect(view.getByText(/Showing a finished scan/)).toBeTruthy();
   }
   fireEvent.change(view.getByLabelText("Report run"), { target: { value: active.id } });
   await waitFor(() => expect((view.getByLabelText("Report run") as HTMLSelectElement).value).toBe(saved.id));
@@ -62,12 +62,12 @@ test("three sidebar Results clicks stay in findings, and Export follows the fini
 
   fireEvent.click(view.getByRole("button", { name: "Save or share report" }));
   await waitFor(() => expect(window.location.hash).toBe("#export"));
-  expect(view.getByText(/This is the finished scan/)).toBeTruthy();
+  expect(view.getByText(/Showing a finished scan/)).toBeTruthy();
   await waitFor(() => expect(scannerService.previewExport).toHaveBeenLastCalledWith(
     expect.objectContaining({ runId: saved.id }), expect.anything(),
   ));
   await finishActiveRun();
-  await waitFor(() => expect(view.queryByText(/This is the finished scan/)).toBeNull());
+  await waitFor(() => expect(view.queryByText(/Showing a finished scan/)).toBeNull());
   await waitFor(() => expect(scannerService.previewExport).toHaveBeenLastCalledWith(
     expect.objectContaining({ runId: active.id }), expect.anything(),
   ));
@@ -81,7 +81,7 @@ test("choosing a saved run explicitly cancels the automatic switch to the runnin
   fireEvent.change(view.getByLabelText("Report run"), { target: { value: saved.id } });
   await finishActiveRun();
   await waitFor(() => expect((view.getByLabelText("Report run") as HTMLSelectElement).value).toBe(saved.id));
-  expect(view.queryByText(/This is the finished scan/)).toBeNull();
+  expect(view.queryByText(/Showing a finished scan/)).toBeNull();
 });
 
 test("without a saved report each Results click focuses the waiting notice, then completion opens Results", async () => {

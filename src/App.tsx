@@ -1140,6 +1140,9 @@ export default function App() {
               setScanReadinessErrorCaseId(workspace.case.id);
               recordTechnicalError("refresh scan readiness after completion", error);
             });
+            // Finished events carry run state, but only a snapshot supplies
+            // its report. Fetch it now rather than waiting for the watchdog.
+            void loadSnapshot(workspace.case.id, true);
           }
         }),
         ...refreshEventNames.map((eventName) => () => scannerService.subscribe(eventName, () => {
@@ -2233,6 +2236,9 @@ export default function App() {
     selectedRun,
     workspace?.runs ?? [],
     deferredRequestForCurrentCase,
+    mode === "demo" || workspace?.case.isDemo
+      ? undefined
+      : workspace?.beginnerReports?.map((report) => report.runId) ?? [],
   );
   const currentRun = selectedRunLifecycle.run;
   const currentBeginnerReport = currentRun

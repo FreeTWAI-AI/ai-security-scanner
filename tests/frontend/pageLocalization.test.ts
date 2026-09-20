@@ -499,8 +499,8 @@ test("active report routes use a finished run when available and preserve the de
   ]) assert.ok(!findings.includes(phrase), phrase);
   assert.match(findings, /activeRunStatuses\.has\(latestRun\.status\)/u);
   assert.match(findings, /if \(activeRun\) \{[\s\S]*return null;/u);
-  assert.match(findings, /This is the finished scan; the running scan’s results open when it finishes\./u);
-  assert.match(findings, /目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。/u);
+  assert.match(findings, /Showing a finished scan; the latest results open automatically\./u);
+  assert.match(findings, /目前顯示已完成的掃描；最新結果將自動開啟。/u);
 
   for (const phrase of [
     "Scan in progress",
@@ -510,8 +510,8 @@ test("active report routes use a finished run when available and preserve the de
   ]) assert.ok(!exportPage.includes(phrase), phrase);
   assert.match(exportPage, /workspaceExportRevision/u);
   assert.match(exportPage, /if \(activeRun\) \{[\s\S]*return null;/u);
-  assert.match(exportPage, /This is the finished scan; the running scan’s results open when it finishes\./u);
-  assert.match(exportPage, /目前顯示已完成的掃描；進行中的掃描完成後會自動開啟其結果。/u);
+  assert.match(exportPage, /Showing a finished scan; the latest results open automatically\./u);
+  assert.match(exportPage, /目前顯示已完成的掃描；最新結果將自動開啟。/u);
   assert.match(navigation, /requestedPage === "findings" \|\| requestedPage === "export"/u);
   assert.match(navigation, /const finishedRun = newestTerminalRun\(runs\);/u);
   assert.match(navigation, /page: requestedPage,[\s\S]*run: finishedRun,[\s\S]*awaitedRun: selectedRun/u);

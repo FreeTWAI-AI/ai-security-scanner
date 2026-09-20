@@ -62,6 +62,7 @@ export const pageForSelectedRunLifecycle = <TRun extends LifecycleRun>(
   selectedRun: TRun | undefined,
   runs: readonly TRun[],
   deferredRequest?: DeferredTerminalPageRequest,
+  availableReportRunIds?: readonly string[],
 ): SelectedRunLifecycleResolution<TRun> => {
   const deferredRun = deferredRequest
     ? runs.find((run) => run.id === deferredRequest.runId)
@@ -71,6 +72,16 @@ export const pageForSelectedRunLifecycle = <TRun extends LifecycleRun>(
   if (deferredRequest && deferredRun && terminalRunStatuses.has(deferredRun.status) && (
     requestedPage === "progress" || terminalPage
   )) {
+    if (availableReportRunIds && !availableReportRunIds.includes(deferredRun.id)) {
+      const showingSavedReport = terminalPage && selectedRun
+        && selectedRun.id !== deferredRun.id && terminalRunStatuses.has(selectedRun.status);
+      return {
+        page: showingSavedReport ? requestedPage : "progress",
+        run: showingSavedReport ? selectedRun : deferredRun,
+        awaitedRun: deferredRun,
+        showingFinishedRunWhileActive: Boolean(showingSavedReport),
+      };
+    }
     return {
       page: terminalPage ? requestedPage : deferredRequest.requestedPage,
       run: deferredRun,
