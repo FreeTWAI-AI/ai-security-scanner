@@ -29,7 +29,9 @@ Run **Release desktop installers** from `main` with:
 - `public_release_candidate: true`;
 - `windows_data_preservation: true` for a release that exercises the supported N-1 Windows upgrade and ambiguous-runtime recovery fixtures.
 
-The workflow performs four independent installed-artifact qualifications:
+As of September 20, 2026, the latest public release, [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0), offers **Linux x86-64 Debian `.deb` only**. Windows MSI/NSIS and macOS DMG installers are **not currently offered**.
+
+The workflow defines four candidate qualification lanes. These describe the build and verification paths; they are not a list of available downloads. A lane can finalize as `not-offered`, and the release metadata records which installers are actually offered.
 
 | Qualification | Fresh runner | Installed artifact |
 | --- | --- | --- |
@@ -38,7 +40,7 @@ The workflow performs four independent installed-artifact qualifications:
 | Windows x86-64 | Windows Server 2025 | MSI |
 | Windows x86-64 | Windows Server 2025 | NSIS installer |
 
-Each lane installs the independently built artifact, verifies the installed application and companion layout, starts the desktop application, exercises supported managed-runtime operations, validates bound runtime and container evidence, removes the installed test state, and emits a JSON qualification record tied to the version, tag, commit, and artifact digest.
+When an artifact is qualified, its lane installs the independently built artifact, verifies the installed application and companion layout, starts the desktop application, exercises supported managed-runtime operations, validates bound runtime and container evidence, removes the installed test state, and emits a JSON qualification record tied to the version, tag, commit, and artifact digest.
 
 The finalized candidate contains only supported artifacts with matching qualification evidence, checksums, runtime manifests, notices, and SBOMs. The workflow summary records the candidate run ID, run attempt, artifact ID, artifact digest, and source commit.
 

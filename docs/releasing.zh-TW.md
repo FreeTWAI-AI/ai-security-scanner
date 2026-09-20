@@ -27,7 +27,9 @@
 - `public_release_candidate: true`；
 - 需要驗證 Windows N-1 upgrade 與 ambiguous-runtime recovery 時，設定 `windows_data_preservation: true`。
 
-Workflow 會在全新的 runner 安裝並驗證四個 artifact：
+截至 2026 年 9 月 20 日，最新公開版本 [v0.2.0](https://github.com/teddashh/ai-security-scanner/releases/tag/v0.2.0) **僅提供 Linux x86-64 Debian `.deb`**。Windows MSI／NSIS 與 macOS DMG 安裝檔**目前未提供**。
+
+Workflow 定義以下四條候選版本驗證路徑。這是建置與驗證流程，並非可下載安裝檔清單；各路徑最終可記為 `not-offered`，實際提供的安裝檔以 release metadata 為準。
 
 | Qualification | Runner | 安裝檔 |
 | --- | --- | --- |
@@ -36,7 +38,7 @@ Workflow 會在全新的 runner 安裝並驗證四個 artifact：
 | Windows x86-64 | Windows Server 2025 | MSI |
 | Windows x86-64 | Windows Server 2025 | NSIS installer |
 
-每條 lane 會驗證安裝後的 application 與 companion layout、啟動桌面程式、執行該平台支援的 managed-runtime operations、檢查 runtime 與 container evidence、移除測試安裝狀態，並產生綁定 version、tag、commit 與 artifact digest 的 JSON qualification record。
+對實際進入 qualification 的 artifact，對應 lane 會驗證安裝後的 application 與 companion layout、啟動桌面程式、執行該平台支援的 managed-runtime operations、檢查 runtime 與 container evidence、移除測試安裝狀態，並產生綁定 version、tag、commit 與 artifact digest 的 JSON qualification record。
 
 Finalized candidate 只收錄 qualification evidence、checksums、runtime manifests、notices 與 SBOM 完整相符的支援 artifact。Workflow summary 會列出 candidate run ID、run attempt、artifact ID、artifact digest 與 source commit。
 
