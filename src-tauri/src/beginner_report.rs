@@ -2343,6 +2343,7 @@ fn append_naabu_coverage_gaps(
 }
 
 fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut Vec<CoverageGap>) {
+    let (not_tested_code, not_tested_action) = not_tested_next_action(task);
     let (kind, dimension, reason, next_action_code, next_action) = match status {
         CoverageDimensionStatus::TestedComplete => return,
         CoverageDimensionStatus::TestedPartial => (
@@ -2373,16 +2374,13 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
             NextActionCode::RetryCheck,
             "Retry this check to complete the missing coverage.",
         ),
-        CoverageDimensionStatus::NotTested => {
-            let (next_action_code, next_action) = not_tested_next_action(task);
-            (
-                CoverageGapKind::NotTested,
-                "not-tested check dimension",
-                "This check did not start, so it is not a pass.",
-                next_action_code,
-                next_action,
-            )
-        }
+        CoverageDimensionStatus::NotTested => (
+            CoverageGapKind::NotTested,
+            "not-tested check dimension",
+            "This check did not start, so it is not a pass.",
+            not_tested_code,
+            not_tested_action,
+        ),
         CoverageDimensionStatus::InProgress => (
             CoverageGapKind::NotTested,
             "unfinished check dimension",
@@ -4966,8 +4964,8 @@ mod tests {
     #[test]
     fn every_planner_skip_reason_has_a_specific_not_tested_next_action() {
         for code in crate::case_service::PLANNER_NOT_EXECUTED_REASON_CODES {
-            let mut task = catalog_task(*code, EngineRunStatus::NotExecuted);
-            task.error_code = Some((*code).into());
+            let mut task = catalog_task(code, EngineRunStatus::NotExecuted);
+            task.error_code = Some(code.to_string());
             let (next_code, next_action) = not_tested_next_action(&task);
             assert_ne!(
                 (next_code, next_action),
