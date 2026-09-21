@@ -6092,28 +6092,26 @@ impl<'a> CaseService<'a> {
                 engine_run.error_code = None;
                 engine_run.error_message = None;
             }
-            // A pre-dispatch retry needs its new resource-free
-            // planned checkpoint persisted before desktop preflight or Cancel.
-            // Runtime selection can precede a failure to create execution
-            // resources. Keep that identity so retry uses the recorded runtime.
-            // Keep captured evidence and cleanup obligations on their existing
-            // recovery path; neither may be replaced with an empty plan.
+            // A cleaned terminal attempt needs a new resource-free checkpoint
+            // before desktop preflight or Cancel. The old container, scope,
+            // and artifact IDs belong to the ended attempt; evidence remains
+            // on the engine run and in the case. Keep the recorded runtime.
+            // Adapter-only work and pending cleanup retain their recovery path.
             if let Some(checkpoint) = candidate.execution.resume_checkpoint.as_mut()
                 && matches!(
                     checkpoint.stage,
                     ExecutionStage::Failed | ExecutionStage::Cancelled
                 )
                 && checkpoint.attempt < candidate.execution.attempt
-                && checkpoint.container_name.is_none()
-                && checkpoint.scope_sha256.is_none()
-                && checkpoint.launcher_plan_sha256.is_none()
-                && checkpoint.artifact_ids.is_empty()
                 && checkpoint.cleanup_completed
                 && checkpoint.managed_network.is_none()
-                && engine_run.raw_artifact_ids.is_empty()
             {
                 checkpoint.attempt = candidate.execution.attempt;
                 checkpoint.stage = ExecutionStage::Planned;
+                checkpoint.container_name = None;
+                checkpoint.scope_sha256 = None;
+                checkpoint.launcher_plan_sha256 = None;
+                checkpoint.artifact_ids.clear();
                 checkpoint.last_error = None;
                 checkpoint.failure_code = None;
                 engine_run.resume_token = Some(checkpoint.resume_token()?);
@@ -33724,6 +33722,109 @@ mod tests {
                 .unwrap();
             assert_ne!(fresh.scan_run.id, *run_id);
             assert_eq!(fresh.executable[0].attempt, 1);
+        }
+    }
+
+    #[test]
+    fn cleaned_terminal_retry_keeps_evidence_and_prepares_a_new_attempt() {
+        for stage in [ExecutionStage::Cancelled, ExecutionStage::Failed] {
+            for already_queued in [false, true] {
+                let fixture = Fixture::new();
+                let (case_id, run_id, engine_run_id, token) =
+                    ordinary_cleanup_pending_case(&fixture);
+                let service = fixture.service();
+                let mut stored = service.show_case(&case_id).unwrap();
+                let mut checkpoint = ExecutionCheckpoint::from_resume_token(&token).unwrap();
+                checkpoint.stage = stage.clone();
+                checkpoint.cleanup_completed = true;
+                let engine = &mut stored.scan_runs[0].engine_runs[0];
+                engine.resume_token = Some(checkpoint.resume_token().unwrap());
+                engine.status = if already_queued {
+                    EngineRunStatus::Queued
+                } else if stage == ExecutionStage::Cancelled {
+                    EngineRunStatus::Cancelled
+                } else {
+                    EngineRunStatus::Failed
+                };
+                engine.phase = if already_queued {
+                    "queued_for_resume".into()
+                } else {
+                    enum_key(&stage)
+                };
+                if already_queued {
+                    engine.finished_at = None;
+                }
+                let evidence = engine.raw_artifact_ids.clone();
+                let warnings = engine.warnings.clone();
+                assert!(!evidence.is_empty());
+                fixture
+                    .storage
+                    .save_case(&mut stored, "test.cleaned_terminal")
+                    .unwrap();
+
+                let resumed = service
+                    .persist_resume_before_execution_preflight(&case_id, &run_id)
+                    .unwrap();
+                assert_eq!(resumed.executable.len(), 1);
+                assert_eq!(resumed.executable[0].attempt, checkpoint.attempt + 1);
+                assert_eq!(
+                    resumed.scan_run.scope_grant_ids,
+                    stored.scan_runs[0].scope_grant_ids
+                );
+                assert_eq!(
+                    resumed.scan_run.engine_runs[0].asset_ids,
+                    stored.scan_runs[0].engine_runs[0].asset_ids
+                );
+                let next = resumed.executable[0].resume_checkpoint.as_ref().unwrap();
+                assert_eq!(next.stage, ExecutionStage::Planned);
+                assert_eq!(next.attempt, checkpoint.attempt + 1);
+                assert!(next.container_name.is_none());
+                assert!(next.scope_sha256.is_none());
+                assert!(next.artifact_ids.is_empty());
+                assert_eq!(next.runtime_provider, checkpoint.runtime_provider);
+                assert_eq!(
+                    next.runtime_command_provenance,
+                    checkpoint.runtime_command_provenance
+                );
+
+                let ids = vec![engine_run_id.clone()];
+                service
+                    .transition_persisted_scan_pre_dispatch(
+                        &case_id,
+                        &run_id,
+                        &PersistedPreDispatchTransition::Preparing {
+                            engine_run_ids: ids.clone(),
+                        },
+                    )
+                    .unwrap();
+                service
+                    .transition_persisted_scan_pre_dispatch(
+                        &case_id,
+                        &run_id,
+                        &PersistedPreDispatchTransition::ApplyOutcome {
+                            task_outcomes: vec![PersistedPreDispatchTaskOutcome::Runnable {
+                                engine_run_id,
+                            }],
+                        },
+                    )
+                    .unwrap();
+                let cancelled = service
+                    .cancel_no_worker_scan_work(&case_id, &run_id, &ids, None)
+                    .unwrap();
+                let engine = &cancelled.scan_runs[0].engine_runs[0];
+                assert_eq!(engine.status, EngineRunStatus::Cancelled);
+                assert_eq!(engine.raw_artifact_ids, evidence);
+                assert!(
+                    warnings
+                        .iter()
+                        .all(|warning| engine.warnings.contains(warning))
+                );
+                assert!(cancelled.scan_runs[0].completed_at.is_some());
+                let retried = service
+                    .persist_resume_before_execution_preflight(&case_id, &run_id)
+                    .unwrap();
+                assert_eq!(retried.executable[0].attempt, checkpoint.attempt + 2);
+            }
         }
     }
 
