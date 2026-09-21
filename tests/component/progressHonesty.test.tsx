@@ -522,6 +522,29 @@ test("a Traditional Chinese reader sees a translated technical warning", () => {
   expect(row.textContent).not.toContain(english);
 });
 
+test("a completed Greenbone check whose host did not respond states the recorded next step", () => {
+  const reachability = "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.";
+  const { container } = renderProgress(run([
+    engine("greenbone", "completed", {
+      unevaluatedTargets: [{ assetId: "asset-1", cause: "target_did_not_respond" }],
+    }),
+    engine("clear-check", "completed"),
+  ]));
+
+  const unreachable = engineRow(container, "greenbone");
+  expect(unreachable.textContent).toContain(reachability);
+  expect(unreachable.className).toContain("engine-row--warning");
+  expect(unreachable.className).not.toContain("engine-row--compact");
+  expect(unreachable.querySelector(".status-pill")?.textContent).toBe("Completed");
+  expect(unreachable.querySelector(".status-pill")?.className).toContain("status-pill--positive");
+
+  const clear = engineRow(container, "clear-check");
+  expect(clear.className).toContain("engine-row--compact");
+  expect(clear.querySelector(".engine-row__identity small")).toBeNull();
+  expect(clear.textContent).not.toContain(reachability);
+  expect(clear.textContent).not.toContain("Continue with the other checks.");
+});
+
 test("a check that ran without finishing does not read as completed", () => {
   const { container } = renderProgress(
     run([engine("finished-check", "completed", { progress: 100 }), engine("unfinished-check", "partial")]),

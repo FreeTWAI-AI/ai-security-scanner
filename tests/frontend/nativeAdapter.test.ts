@@ -3431,6 +3431,48 @@ test("present catalog engine tasks preserve scanner completion and coverage", ()
   assert.equal(known.runs[0]?.coveredAssetCount, 1);
 });
 
+test("unevaluated targets preserve known causes, legacy absence, and fail closed on unknown values", () => {
+  const adapted = (unevaluatedTargets: unknown, omit = false) => adaptNativeCase(platformCaseFixture({
+    scan_runs: [{
+      id: "run-unevaluated",
+      case_id: "case-platforms-1",
+      sequence: 1,
+      created_at: "2026-08-26T00:00:00Z",
+      completed_at: "2026-08-26T00:01:00Z",
+      knowledge_cutoff: "2026-08-24T00:00:00Z",
+      engine_runs: [{
+        ...engineRunFixture("greenbone-task", "completed"),
+        ...(omit ? {} : { unevaluated_targets: unevaluatedTargets }),
+      }],
+    }],
+  })).runs[0]?.engineRuns[0]?.unevaluatedTargets;
+
+  assert.equal(adapted(undefined, true), undefined);
+  assert.equal(adapted(null), undefined);
+  assert.equal(adapted([]), undefined);
+  assert.equal(adapted([{ cause: "target_did_not_respond", result_count: 1 }]), undefined);
+  assert.equal(adapted([{ asset_id: "", cause: "target_did_not_respond" }]), undefined);
+  assert.equal(adapted([{ asset_id: null, cause: "scanner_error" }]), undefined);
+
+  assert.deepEqual(adapted([
+    { asset_id: "host-dead", cause: "target_did_not_respond", result_count: 1 },
+    { asset_id: "host-error", cause: "scanner_error", result_count: 2 },
+    { asset_id: "host-template", cause: "no_security_template_execution_evidence", result_count: 0 },
+    { asset_id: "host-future", cause: "future_cause", result_count: 4 },
+    { asset_id: "host-absent-cause", result_count: 1 },
+    { asset_id: "host-non-string-cause", cause: true, result_count: 1 },
+    { cause: "target_did_not_respond", result_count: 3 },
+    { asset_id: "", cause: "scanner_error" },
+  ]), [
+    { assetId: "host-dead", cause: "target_did_not_respond" },
+    { assetId: "host-error", cause: "scanner_error" },
+    { assetId: "host-template", cause: "no_security_template_execution_evidence" },
+    { assetId: "host-future", cause: "unknown" },
+    { assetId: "host-absent-cause", cause: "unknown" },
+    { assetId: "host-non-string-cause", cause: "unknown" },
+  ]);
+});
+
 test("legacy engine tasks without provenance preserve catalog completion and coverage", () => {
   const legacy = adaptNativeCase(platformCaseFixture({
     scan_runs: [{

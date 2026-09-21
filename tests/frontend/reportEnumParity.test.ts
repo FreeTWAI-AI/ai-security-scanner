@@ -186,6 +186,7 @@ const PAIRS: ReadonlyArray<readonly [source: string, rustName: string, typescrip
   ["domain.rs", "EvidenceKind", "EvidenceKind"],
   ["domain.rs", "EngineCategory", "EngineCategory"],
   ["domain.rs", "EngineRunStatus", "EngineRunStatusWire"],
+  ["domain.rs", "UnevaluatedTargetCause", "UnevaluatedTargetCauseWire"],
   ["domain.rs", "ManifestStatus", "EngineManifestStatusWire"],
   ["domain.rs", "DistributionMode", "DistributionMode"],
   ["domain.rs", "FindingDiffReasonCode", "FindingDiffReasonCode"],

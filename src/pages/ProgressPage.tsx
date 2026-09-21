@@ -32,6 +32,7 @@ import {
   type ScanDiagnosticContext,
 } from "../scanDiagnostics";
 import {
+  engineHostDidNotRespond,
   engineNextStepFor,
   engineOutcomeFor,
   engineRecoveryLabelFor,
@@ -1681,9 +1682,10 @@ export function ProgressPage({
                     : localhostSummary.outcome === "in_progress" || localhostSummary.outcome === "cancelling"
                       ? meta.tone
                       : "warning";
-              const showEngineAttention = engine.status !== "completed" || Boolean(localhostSummary);
+              const hostDidNotRespond = engineHostDidNotRespond(engine);
+              const showEngineAttention = engine.status !== "completed" || Boolean(localhostSummary) || hostDidNotRespond;
               return (
-                <article key={engine.id} className={`engine-row engine-row--${localhostTone ?? meta.tone}${showEngineAttention ? "" : " engine-row--compact"}`}>
+                <article key={engine.id} className={`engine-row engine-row--${localhostTone ?? (hostDidNotRespond ? "warning" : meta.tone)}${showEngineAttention ? "" : " engine-row--compact"}`}>
                   <div className="engine-row__identity">
                     <span className={`engine-icon engine-icon--${meta.tone}`}><Icon name={engineIcon(engine)} size={19} /></span>
                     <span>

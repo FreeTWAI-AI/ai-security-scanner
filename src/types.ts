@@ -819,6 +819,20 @@ export interface ScanRequestOutcome {
   requestedEngineIds: string[];
 }
 
+/** Exact closed Rust wire vocabulary for an authorized target the engine did not evaluate. */
+export type UnevaluatedTargetCauseWire =
+  | "target_did_not_respond"
+  | "scanner_error"
+  | "no_security_template_execution_evidence";
+
+/** Adds the fail-closed member the wire never sends. */
+export type UnevaluatedTargetCause = UnevaluatedTargetCauseWire | "unknown";
+
+export interface UnevaluatedTarget {
+  assetId: string;
+  cause: UnevaluatedTargetCause;
+}
+
 export interface EngineRun {
   id: string;
   engineId: string;
@@ -854,6 +868,8 @@ export interface EngineRun {
   cleanupRemoved?: boolean;
   cleanupDetail?: string;
   warnings: string[];
+  /** Authorized targets the engine did not evaluate; absent when none were recorded. */
+  unevaluatedTargets?: UnevaluatedTarget[];
   status: EngineRunStatus;
   progress: number;
   phase: string;

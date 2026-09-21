@@ -87,6 +87,9 @@ import type {
   VerificationSummary,
   SeverityBasisCode,
   UnattributedResults,
+  UnevaluatedTarget,
+  UnevaluatedTargetCause,
+  UnevaluatedTargetCauseWire,
 } from "../types";
 import { getActiveLocale } from "../i18n/core";
 import { explicitTargetRequiresSensitiveNetworkAllowance } from "../caseForm";
@@ -254,6 +257,7 @@ interface NativeEngineRun {
   cleanup_removed?: boolean | null;
   cleanup_detail?: string | null;
   warnings?: string[];
+  unevaluated_targets?: Array<{ asset_id?: string | null; cause?: string | null; result_count?: number | null }> | null;
   raw_artifact_ids?: string[];
   error_code: string | null;
   error_message: string | null;
@@ -1829,6 +1833,29 @@ const mapLocalhostTcpObservation = (
   };
 };
 
+const mapUnevaluatedTargetCause = (cause: unknown): UnevaluatedTargetCause => {
+  const causes: Record<UnevaluatedTargetCauseWire, UnevaluatedTargetCause> = {
+    target_did_not_respond: "target_did_not_respond",
+    scanner_error: "scanner_error",
+    no_security_template_execution_evidence: "no_security_template_execution_evidence",
+  };
+  return causes[cause as UnevaluatedTargetCauseWire] ?? "unknown";
+};
+
+const mapUnevaluatedTargets = (
+  targets: NativeEngineRun["unevaluated_targets"],
+): UnevaluatedTarget[] | undefined => {
+  if (!Array.isArray(targets)) return undefined;
+  const recorded = targets.flatMap((target): UnevaluatedTarget[] => {
+    if (!isRecord(target) || !exactNonEmptyString(target.asset_id)) return [];
+    return [{
+      assetId: target.asset_id,
+      cause: mapUnevaluatedTargetCause(target.cause),
+    }];
+  });
+  return recorded.length > 0 ? recorded : undefined;
+};
+
 const exactCompletedLocalhostBinding = (
   engineRun: EngineRun,
   assetId: string,
@@ -2544,6 +2571,7 @@ export const adaptNativeCase = (
         cleanupRemoved: isBuiltInLocalhostTcp ? undefined : exactBoolean(engineRun.cleanup_removed),
         cleanupDetail: isBuiltInLocalhostTcp || staticFailure ? undefined : engineRun.cleanup_detail ?? undefined,
         warnings: staticFailure ? [] : engineRun.warnings ?? [],
+        unevaluatedTargets: mapUnevaluatedTargets(engineRun.unevaluated_targets),
         status,
         progress: engineRun.progress_percent,
         phase: engineRun.phase,

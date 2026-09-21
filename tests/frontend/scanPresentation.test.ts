@@ -272,6 +272,64 @@ test("bounded retry exhaustion and cancellation never promise an impossible resu
   assert.doesNotMatch(`${cancelled.en}${cancelled.zhTW}`, /continue this scan|繼續掃描/iu);
 });
 
+test("a recorded dead host states the reachability next step without changing other causes or a running check", () => {
+  const reachability = {
+    en: "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.",
+    zhTW: "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。",
+  };
+  const clear = {
+    en: "Continue with the other checks.",
+    zhTW: "請繼續查看其他檢查。",
+  };
+  const deadHost = [{ assetId: "asset-1", cause: "target_did_not_respond" as const }];
+
+  assert.deepEqual(
+    engineNextStepFor(engine({ findingCount: 0, unevaluatedTargets: deadHost })),
+    reachability,
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      status: "partial",
+      phase: "partial",
+      unevaluatedTargets: deadHost,
+    })),
+    reachability,
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      findingCount: 0,
+      unevaluatedTargets: [{ assetId: "asset-1", cause: "scanner_error" }],
+    })),
+    clear,
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      findingCount: 0,
+      unevaluatedTargets: [{ assetId: "asset-1", cause: "no_security_template_execution_evidence" }],
+    })),
+    clear,
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      findingCount: 0,
+      unevaluatedTargets: [{ assetId: "asset-1", cause: "unknown" }],
+    })),
+    clear,
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      status: "running",
+      phase: "running",
+      progress: 40,
+      unevaluatedTargets: deadHost,
+    })),
+    {
+      en: "This check is running now.",
+      zhTW: "這項檢查正在執行。",
+    },
+  );
+});
+
 test("a retryable cancelled check uses the report's recorded next step", () => {
   const retryable = engineNextStepFor(engine({
     status: "cancelled",
