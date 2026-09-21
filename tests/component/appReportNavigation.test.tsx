@@ -60,7 +60,7 @@ test("Cancel keeps its exact native acknowledgement when App merges the returned
     },
   }));
   const view = await openApp();
-  fireEvent.click(view.getByRole("button", { name: "Cancel", exact: true }));
+  fireEvent.click(view.getByRole("button", { name: `Cancel scan run ${active.id}`, exact: true }));
   expect(await view.findByText("Stop requested")).toBeTruthy();
   expect(view.queryByText("Scan action status unavailable")).toBeNull();
   expect(scannerService.cancelScan).toHaveBeenCalledWith(snapshot.workspace!.case.id, active.id);
