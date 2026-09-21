@@ -13,14 +13,14 @@ use crate::artifact_store::{
     ArtifactContext, LauncherV2OutputArtifact, classify_launcher_v2_output_artifact,
     inspect_raw_artifacts, read_verified_raw_artifact,
 };
-#[cfg(test)]
-use crate::beginner_report::ReportLifecycle;
 use crate::beginner_report::{
     BEGINNER_MASTER_REPORT_SCHEMA_VERSION, BeginnerInventoryItem, BeginnerInventoryItemKind,
     BeginnerMasterReport, BeginnerReportSummary, CheckResultKind, CoverageDimensionStatus,
-    CoverageGap, CoverageGapClass, CoverageGapKind, FindingSnapshotSource, NextActionCode,
-    ReportScanStage, RequestedLimitSource, finding_unconfirmed_by_coverage,
+    CoverageGap, CoverageGapClass, CoverageGapKind, FindingSnapshotSource, ReportScanStage,
+    RequestedLimitSource, finding_unconfirmed_by_coverage,
 };
+#[cfg(test)]
+use crate::beginner_report::{NextActionCode, ReportLifecycle};
 use crate::bootstrap::executor::list_bootstrap_cleanup_obligations;
 use crate::connectors::{
     LIVE_PROVIDER_ARTIFACT_SET_SCHEMA, LiveProviderArtifactSet, MAX_LIVE_PROVIDER_PAGES,
@@ -14531,89 +14531,29 @@ enum HtmlAssetResultStatus {
     NotTested,
 }
 
+/// The asset row's own next step: the sentence the report recorded for this
+/// gap, in the reader's language.
+///
+/// The action code still decides where a step goes. It does not replace the
+/// recorded sentence with one shared by every gap of that code. A skipped
+/// check and a failed check can share a code and still tell the reader
+/// different things. An empty sentence leaves the row without a step of its
+/// own, and the state line under the table says what that state implies.
 fn html_gap_next_action(gap: &CoverageGap, catalog: HtmlReportCatalog) -> String {
-    match gap.next_action_code {
-        NextActionCode::ReviewFinding => catalog
-            .text(
-                "Review the problem and its evidence.",
-                "檢視這個問題與相關證據。",
-            )
-            .to_owned(),
-        NextActionCode::ConfirmFindingAfterIncompleteCheck => catalog
-            .text(
-                crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION,
-                crate::finding_narrative::INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
-            )
-            .to_owned(),
-        NextActionCode::RetryCheck => catalog
-            .text(
-                "Retry this check.",
-                "重試這項檢查。",
-            )
-            .to_owned(),
-        NextActionCode::ReviewScopeAndRetry => catalog
-            .text(
-                "Review the requested scope, then retry.",
-                "確認要求的範圍後再重試。",
-            )
-            .to_owned(),
-        NextActionCode::ChooseCompatibleCheck => catalog
-            .text(
-                "Choose an available check for this target.",
-                "為這個目標選擇可用的檢查。",
-            )
-            .to_owned(),
-        NextActionCode::WaitOrCancel => catalog
-            .text(
-                "Open Review scanner status and finish or cancel this check.",
-                "請開啟「查看掃描器狀態」完成或取消這項檢查。",
-            )
-            .to_owned(),
-        NextActionCode::StartExpectedServiceAndRetry => catalog
-            .text(
-                "Start the expected local service, then retry.",
-                "先啟動預期的本機服務，再重試。",
-            )
-            .to_owned(),
-        NextActionCode::ReviewCoverage => catalog
-            .text(
-                "Open the coverage gap and complete the missing check.",
-                "查看涵蓋缺口並完成缺少的檢查。",
-            )
-            .to_owned(),
-        NextActionCode::ReviewManualControl => catalog
-            .text(
-                "Open the upstream detail and set this control's status.",
-                "開啟上游詳細資料，並設定這項控制措施的狀態。",
-            )
-            .to_owned(),
-        NextActionCode::PreserveVisibleLimitation => catalog
-            .text(
-                "Open the saved scope details.",
-                "查看已保存的範圍細節。",
-            )
-            .to_owned(),
-        NextActionCode::NoActionUnlessScopeChanges => catalog
-            .text(
-                "No action for the current scope.",
-                "目前範圍不需處理。",
-            )
-            .to_owned(),
-        NextActionCode::AddAssetIdentifier => match (catalog.locale, gap.unattributed.as_ref()) {
-            (crate::export::ReportLocale::En, Some(unattributed)) => format!(
-                "Add {} to the asset you authorized as its {} identifier, then scan again.",
-                unattributed.identifier, unattributed.provider
-            ),
-            (crate::export::ReportLocale::ZhHant, Some(unattributed)) => {
-                crate::finding_narrative::unattributed_gap_zh_hant("", unattributed).2
-            }
-            _ => catalog
-                .text(
-                    "Add the identifier the check reported on to the asset you authorized, then scan again.",
-                    "請將這項檢查所回報的識別碼，新增到你已授權的資產上，然後重新掃描。",
-                )
-                .to_owned(),
-        },
+    if gap.next_action.trim().is_empty() {
+        return String::new();
+    }
+    match (catalog.locale, gap.unattributed.as_ref()) {
+        (crate::export::ReportLocale::ZhHant, Some(unattributed)) => {
+            crate::finding_narrative::unattributed_gap_zh_hant("", unattributed).2
+        }
+        (crate::export::ReportLocale::ZhHant, None) => {
+            crate::finding_narrative::coverage_gap_prose_zh_hant(&gap.next_action)
+                .unwrap_or_else(|| gap.next_action.clone())
+        }
+        (crate::export::ReportLocale::En, _) => {
+            crate::finding_narrative::coverage_gap_prose_english(&gap.next_action)
+        }
     }
 }
 
@@ -19551,6 +19491,41 @@ mod tests {
         assert!(!chinese.contains("進度頁"));
         assert!(!chinese.contains("進度頁面"));
         assert!(!chinese.contains("掃描進度"));
+    }
+
+    #[test]
+    fn html_asset_row_keeps_the_recorded_skip_next_action() {
+        let gap = CoverageGap {
+            kind: CoverageGapKind::NotTested,
+            class: CoverageGapClass::CoverageLoss,
+            task_id: Some("task-mcp".into()),
+            target_asset_ids: vec!["asset-1".into()],
+            dimension: "mcp-armor: not-tested check dimension".into(),
+            reason: "This check did not start, so it is not a pass. Diagnostic code: mcp_configuration_absent.".into(),
+            next_action_code: NextActionCode::NoActionUnlessScopeChanges,
+            next_action: "This project has no MCP configuration to check. Continue with the other checks.".into(),
+            unattributed: None,
+        };
+
+        let english = html_gap_next_action(
+            &gap,
+            HtmlReportCatalog::new(crate::export::ReportLocale::En),
+        );
+        assert_eq!(
+            english,
+            "This project has no MCP configuration to check. Continue with the other checks."
+        );
+        assert_ne!(english, "No action for the current scope.");
+
+        let chinese = html_gap_next_action(
+            &gap,
+            HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant),
+        );
+        assert_eq!(
+            chinese,
+            "這個專案沒有可檢查的 MCP 設定；請繼續查看其他檢查。"
+        );
+        assert!(!chinese.contains("目前範圍不需處理"));
     }
 
     #[test]
@@ -31013,6 +30988,7 @@ mod tests {
         assert!(english.contains(
             "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again."
         ));
+        assert!(!english.contains("Review the requested scope, then retry."));
 
         let zh_hant = String::from_utf8(
             html_report_bytes(
@@ -31031,6 +31007,7 @@ mod tests {
         assert!(zh_hant.contains(
             "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。"
         ));
+        assert!(!zh_hant.contains("確認要求的範圍後再重試"));
         assert!(!zh_hant.contains("Host response unavailable"));
     }
 
@@ -36686,12 +36663,13 @@ mod tests {
             dimension: "second requested security check".into(),
             reason: "The second requested task did not run.".into(),
             next_action_code: NextActionCode::RetryCheck,
-            next_action: "Retry this check.".into(),
+            next_action: "Restart the cancelled work.".into(),
             unattributed: None,
         });
         let incomplete_html = html_asset_result_section(&report, &labels, catalog);
         assert!(incomplete_html.contains("asset-result--incomplete-failed"));
-        assert!(incomplete_html.contains("Retry this check."));
+        assert!(incomplete_html.contains("Restart the cancelled work."));
+        assert!(!incomplete_html.contains("Retry this check."));
         assert!(!incomplete_html.contains("Keep this limitation visible when sharing"));
 
         report.coverage_gaps.push(CoverageGap {
@@ -36702,18 +36680,27 @@ mod tests {
             dimension: "saved result processing".into(),
             reason: "Result processing incomplete.".into(),
             next_action_code: NextActionCode::ReviewCoverage,
-            next_action: "Review the coverage gap.".into(),
+            next_action:
+                "This project has no MCP configuration to check. Continue with the other checks."
+                    .into(),
             unattributed: None,
         });
         let prioritized_html = html_asset_result_section(&report, &labels, catalog);
-        assert!(prioritized_html.contains("Open the coverage gap and complete the missing check."));
-        assert!(!prioritized_html.contains("Retry this check."));
+        assert!(prioritized_html.contains(
+            "This project has no MCP configuration to check. Continue with the other checks."
+        ));
+        assert!(
+            !prioritized_html.contains("Open the coverage gap and complete the missing check.")
+        );
+        assert!(!prioritized_html.contains("Restart the cancelled work."));
 
         let zh_catalog = HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant);
         let zh_labels = readable_target_labels(&report, zh_catalog);
         let zh_html = html_asset_result_section(&report, &zh_labels, zh_catalog);
         assert!(zh_html.contains("伺服器或工作站"));
-        assert!(zh_html.contains("查看涵蓋缺口並完成缺少的檢查。"));
+        assert!(zh_html.contains("這個專案沒有可檢查的 MCP 設定；請繼續查看其他檢查。"));
+        assert!(!zh_html.contains("查看涵蓋缺口並完成缺少的檢查。"));
+        assert!(!zh_html.contains("目前範圍不需處理"));
     }
 
     #[test]
