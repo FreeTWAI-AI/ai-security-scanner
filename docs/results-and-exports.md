@@ -42,7 +42,7 @@ Cases retain targets, runs, findings, coverage, evidence references, and export 
 
 ## Export
 
-**Readable HTML** is the primary shareable report. It follows the on-screen order and places report terms and the technical record at the end.
+**Readable HTML** is the primary shareable report. It follows the on-screen order and places report terms and the technical record at the end. Desktop HTML uses the app language, English or Traditional Chinese. A CLI export uses `--locale en` by default, or `--locale zh-Hant` for Traditional Chinese. Scan facts stay the same.
 
 Structured exports serve specialist workflows:
 

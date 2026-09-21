@@ -86,6 +86,8 @@ test("MCP Armor published runtime remains digest-pinned, offline, and non-root",
   assert.match(decision, /`integrated` and `runnable: true`/u);
   assert.match(decision, new RegExp(engine.image.digest.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   assert.doesNotMatch(decision, /catalog stays\s+`experimental`, `runnable: false`/u);
+  assert.match(decision, /published configuration-only image is `ALLOW`/u);
+  assert.doesNotMatch(decision, /recorded here as `RESEARCH \/ NOT_DISTRIBUTED`/u);
   assert.match(dockerfile, /USER 65532:65532/u);
   assert.match(dockerfile, /--require-hashes/u);
   assert.match(dockerfile, /--only-binary=:all:/u);

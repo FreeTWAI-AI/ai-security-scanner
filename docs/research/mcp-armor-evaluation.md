@@ -23,7 +23,7 @@ The source review is pinned to tag `v1.0.2` at
 committed on 2026-03-27. The Python package and source repository declare Apache-2.0
 ([package metadata](https://github.com/aira-security/mcp-armor/blob/6af4cee4665ab6242f02a88952f9127b6a04922a/pyproject.toml#L5-L14),
 [license text](https://github.com/aira-security/mcp-armor/blob/6af4cee4665ab6242f02a88952f9127b6a04922a/LICENSE#L1-L3)).
-It is recorded here as `RESEARCH / NOT_DISTRIBUTED`.
+The source review recorded this revision as `RESEARCH / NOT_DISTRIBUTED`. The published configuration-only image is `ALLOW` in [`THIRD_PARTY.md`](../../THIRD_PARTY.md); model files remain excluded.
 
 MCP Armor names `Aira-security/FT-Llama-Prompt-Guard-2` without a revision. For this review only,
 the public model metadata observed on 2026-09-13 is pinned to

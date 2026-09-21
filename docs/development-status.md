@@ -1,6 +1,6 @@
 # Development status
 
-_Updated 2026-09-20._
+_Updated 2026-09-21._
 
 This page summarizes current engineering status for contributors. It is not a product specification
 or release declaration. [The product specification](product-spec.md) remains the source of truth for
@@ -64,6 +64,9 @@ are not a new test run for this documentation update:
 
 CI document and contract tests: 83 tests passed on September 20, 2026, including the adapter refresh
 CLI missing-value regression (`node --test tests/ci/*.test.mjs`).
+
+CI document and contract tests: 84 tests passed on September 21, 2026 (`node --test tests/ci/*.test.mjs`),
+including the beginner HTML locale contract and the published MCP Armor distribution decision.
 
 After removing credential-shaped text from an upstream test fixture, the MCP Armor image was rebuilt,
 published, and pinned. Its offline synthetic smoke test produced one finding, two completed checks, no

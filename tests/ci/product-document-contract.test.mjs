@@ -240,6 +240,19 @@ test("Codex, Claude, contributors, and the operator skill use the same prioritie
   );
 });
 
+test("beginner HTML export documents the closed report locales", async () => {
+  for (const relativePath of [
+    "docs/getting-started.md",
+    "docs/getting-started.zh-TW.md",
+    "docs/results-and-exports.md",
+    "docs/results-and-exports.zh-TW.md",
+  ]) {
+    const content = await load(relativePath);
+    assert.match(content, /--locale zh-Hant/u, relativePath);
+    assert.match(content, /--locale en/u, relativePath);
+  }
+});
+
 test("beginner documentation leads with the three scan paths and one report", async () => {
   const english = await load("README.md");
   const chinese = await load("README.zh-TW.md");
