@@ -3226,7 +3226,7 @@
     ],
     "status": "integrated",
     "notices": [
-      "This release remains non-dispatchable while its reviewed publication workflow builds and verifies the immutable multi-platform image. Its pinned recipe, restricted launcher, and typed single-file selection have already passed local container smoke tests.",
+      "The configuration-only image is published, digest-pinned, and dispatchable, but not default-enabled. One exact MCP configuration file must be selected from the approved repository snapshot.",
       "The selected slice runs only MCP Armor's existing hardcoded-secret and excessive-tool-permission checks against one exact configuration snapshot. It does not discover, start, or contact MCP servers and does not claim live tool, resource, prompt-injection, or rug-pull coverage.",
       "A structured warning, failed check, unevaluated input, ledger mismatch, or incomplete machine-output envelope preserves valid findings from completed checks but marks coverage incomplete. A clean result is accepted only after both selected checks complete for the one approved snapshot."
     ],

@@ -7,10 +7,11 @@ const load = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
 test("MCP Armor published runtime remains digest-pinned, offline, and non-root", async () => {
-  const [catalogText, planText, statusText, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
+  const [catalogText, planText, statusText, thirdParty, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
     load("engines/catalog.json"),
     load("engines/images/mcp-armor/plan.json"),
     load("docs/development-status.md"),
+    load("THIRD_PARTY.md"),
     load("engines/images/mcp-armor/Dockerfile"),
     load("engines/images/mcp-armor/requirements.lock"),
     load("docs/research/patches/mcp-armor-1.0.2-config-only.patch"),
@@ -68,6 +69,19 @@ test("MCP Armor published runtime remains digest-pinned, offline, and non-root",
   assert.match(statusRow, /local image produced a complete two-check report/u);
   assert.match(statusRow, /networking disabled/u);
   assert.match(statusRow, /published, digest-pinned, and dispatchable/u);
+  assert.equal(
+    engine.notices.some((notice) => /non-dispatchable/iu.test(notice)),
+    false,
+    "published MCP Armor must not remain labeled non-dispatchable",
+  );
+  assert.match(
+    engine.notices[0] ?? "",
+    /dispatchable, but not default-enabled/u,
+  );
+  const thirdPartyRow = thirdParty.split("\n").find((line) => line.includes("[aira-security/mcp-armor]"));
+  assert.ok(thirdPartyRow, "THIRD_PARTY.md must include MCP Armor");
+  assert.match(thirdPartyRow, /ALLOW/u);
+  assert.doesNotMatch(thirdPartyRow, /NOT_DISTRIBUTED|no image or model is built/iu);
   assert.match(dockerfile, /USER 65532:65532/u);
   assert.match(dockerfile, /--require-hashes/u);
   assert.match(dockerfile, /--only-binary=:all:/u);
