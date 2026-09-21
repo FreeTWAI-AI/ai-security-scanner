@@ -556,6 +556,21 @@ test("a failed check is not presented in the same tone as a stopped one", () => 
   expect(cancelled.querySelector(".status-pill")?.className).not.toContain("status-pill--danger");
 });
 
+test("a cancelled check that can be retried keeps the report's next step", () => {
+  const { container } = renderProgress(
+    run([engine("stopped-check", "cancelled", {
+      phase: "cancelled_before_dispatch",
+      errorCode: "cancelled_before_dispatch",
+      recoveryAction: "restart_check",
+      resumable: true,
+    })]),
+  );
+
+  const row = engineRow(container, "stopped-check");
+  expect(row.textContent).toContain("Retry this check to complete the missing coverage.");
+  expect(row.textContent).not.toContain("Start a new scan to run this check again.");
+});
+
 test("no engine state is rendered without a label", () => {
   // Every EngineRunStatus reaches this page. A state with no presentation would
   // render an empty pill rather than failing, which reads as nothing wrong.

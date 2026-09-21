@@ -248,6 +248,54 @@ test("bounded retry exhaustion and cancellation never promise an impossible resu
   assert.doesNotMatch(`${cancelled.en}${cancelled.zhTW}`, /continue this scan|繼續掃描/iu);
 });
 
+test("a retryable cancelled check uses the report's recorded next step", () => {
+  const retryable = engineNextStepFor(engine({
+    status: "cancelled",
+    phase: "cancelled_before_dispatch",
+    errorCode: "cancelled_before_dispatch",
+    recoveryAction: "restart_check",
+    resumable: true,
+  }));
+  assert.deepEqual(retryable, {
+    en: "Retry this check to complete the missing coverage.",
+    zhTW: "重新執行這項檢查以完成缺少的涵蓋範圍。",
+  });
+
+  const continued = engineNextStepFor(engine({
+    status: "cancelled",
+    phase: "cancelled",
+    recoveryAction: "continue_saved_results",
+    resumable: true,
+  }));
+  assert.deepEqual(continued, {
+    en: "Continue from saved results",
+    zhTW: "從已保存的結果繼續",
+  });
+
+  const cleanup = engineNextStepFor(engine({
+    status: "cancelled",
+    phase: "cancelled",
+    recoveryAction: "finish_cleanup",
+    resumable: true,
+  }));
+  assert.deepEqual(cleanup, {
+    en: "Finish cleanup, then retry",
+    zhTW: "完成清理後再重試",
+  });
+
+  const fresh = engineNextStepFor(engine({
+    status: "cancelled",
+    phase: "cancelled_before_dispatch",
+    errorCode: "cancelled_before_dispatch",
+    recoveryAction: "none",
+    resumable: false,
+  }));
+  assert.deepEqual(fresh, {
+    en: "Start a new scan to run this check again.",
+    zhTW: "開始新的掃描，再次執行這項檢查。",
+  });
+});
+
 test("a gateway preparation failure gives direct automatic setup and retry", () => {
   const failed = engine({
     status: "failed",

@@ -183,6 +183,10 @@ const nextStepCopy = {
     en: "Start a new scan to run this check again.",
     zhTW: "開始新的掃描，再次執行這項檢查。",
   },
+  cancelledRetry: {
+    en: "Retry this check to complete the missing coverage.",
+    zhTW: "重新執行這項檢查以完成缺少的涵蓋範圍。",
+  },
 } as const satisfies Record<string, BilingualText>;
 
 const targetSetupErrorCodes = new Set([
@@ -270,6 +274,21 @@ export const skippedChecksNextStepFor = (reasonCodes: readonly string[]): Biling
   return nextStepCopy.skippedUnknown;
 };
 
+const recoveryCopy = {
+  restart_check: {
+    en: "Retry this check from the beginning",
+    zhTW: "從頭重試這項檢查",
+  },
+  continue_saved_results: {
+    en: "Continue from saved results",
+    zhTW: "從已保存的結果繼續",
+  },
+  finish_cleanup: {
+    en: "Finish cleanup, then retry",
+    zhTW: "完成清理後再重試",
+  },
+} as const satisfies Record<Exclude<NonNullable<EngineRun["recoveryAction"]>, "none">, BilingualText>;
+
 export const engineNextStepFor = (engine: EngineRun): BilingualText => {
   const localhostSummary = localhostTcpBeginnerSummary(engine);
   if (localhostSummary) return localhostSummary.nextStep;
@@ -307,8 +326,13 @@ export const engineNextStepFor = (engine: EngineRun): BilingualText => {
       return nextStepCopy.paused;
     case "not_executed":
       return skippedChecksNextStepFor(engine.errorCode ? [engine.errorCode] : []);
-    case "cancelled":
+    case "cancelled": {
+      const recovery = engine.recoveryAction ?? (engine.resumable ? "continue_saved_results" : "none");
+      if (recovery === "restart_check") return nextStepCopy.cancelledRetry;
+      if (recovery === "continue_saved_results") return recoveryCopy.continue_saved_results;
+      if (recovery === "finish_cleanup") return recoveryCopy.finish_cleanup;
       return nextStepCopy.cancelled;
+    }
     case "failed": {
       if (engine.errorCode === "runtime_cleanup_pending") return nextStepCopy.cleanupPending;
       if (engine.errorCode === "execution_failed") {
@@ -327,21 +351,6 @@ export const engineNextStepFor = (engine: EngineRun): BilingualText => {
     }
   }
 };
-
-const recoveryCopy = {
-  restart_check: {
-    en: "Retry this check from the beginning",
-    zhTW: "從頭重試這項檢查",
-  },
-  continue_saved_results: {
-    en: "Continue from saved results",
-    zhTW: "從已保存的結果繼續",
-  },
-  finish_cleanup: {
-    en: "Finish cleanup, then retry",
-    zhTW: "完成清理後再重試",
-  },
-} as const satisfies Record<Exclude<NonNullable<EngineRun["recoveryAction"]>, "none">, BilingualText>;
 
 export const engineRecoveryLabelFor = (engine: EngineRun): BilingualText | undefined => {
   const action = engine.recoveryAction ?? (engine.resumable ? "continue_saved_results" : "none");
