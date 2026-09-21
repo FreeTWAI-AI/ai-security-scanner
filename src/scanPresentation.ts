@@ -191,6 +191,10 @@ const nextStepCopy = {
     en: "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.",
     zhTW: "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。",
   },
+  retryMissingWork: {
+    en: "Retry this check to complete the missing work.",
+    zhTW: "重新執行這項檢查以完成缺少的工作。",
+  },
 } as const satisfies Record<string, BilingualText>;
 
 const targetSetupErrorCodes = new Set([
@@ -294,14 +298,20 @@ const recoveryCopy = {
 } as const satisfies Record<Exclude<NonNullable<EngineRun["recoveryAction"]>, "none">, BilingualText>;
 
 /** A recorded dead host means the authorized target never answered, so no vulnerability test ran for it. */
-export const engineHostDidNotRespond = (engine: EngineRun): boolean =>
+const engineHostDidNotRespond = (engine: EngineRun): boolean =>
   (engine.status === "completed" || engine.status === "partial")
   && (engine.unevaluatedTargets?.some((target) => target.cause === "target_did_not_respond") ?? false);
+
+/** A recorded unevaluated target means some authorized work has no result, whatever the check's own status says. */
+export const engineRecordedUnevaluatedTarget = (engine: EngineRun): boolean =>
+  (engine.status === "completed" || engine.status === "partial")
+  && (engine.unevaluatedTargets?.some((target) => target.cause !== "unknown") ?? false);
 
 export const engineNextStepFor = (engine: EngineRun): BilingualText => {
   const localhostSummary = localhostTcpBeginnerSummary(engine);
   if (localhostSummary) return localhostSummary.nextStep;
   if (engineHostDidNotRespond(engine)) return nextStepCopy.hostDidNotRespond;
+  if (engineRecordedUnevaluatedTarget(engine)) return nextStepCopy.retryMissingWork;
   if (engine.status === "completed") {
     return engine.findingCount > 0
       ? nextStepCopy.completedWithFindings

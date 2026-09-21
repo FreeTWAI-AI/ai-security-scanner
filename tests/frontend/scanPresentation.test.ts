@@ -272,16 +272,30 @@ test("bounded retry exhaustion and cancellation never promise an impossible resu
   assert.doesNotMatch(`${cancelled.en}${cancelled.zhTW}`, /continue this scan|繼續掃描/iu);
 });
 
-test("a recorded dead host states the reachability next step without changing other causes or a running check", () => {
+test("a recorded unevaluated target states reachability or the shared retry sentence, and a running check stays running", () => {
   const reachability = {
     en: "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.",
     zhTW: "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。",
+  };
+  const retry = {
+    en: "Retry this check to complete the missing work.",
+    zhTW: "重新執行這項檢查以完成缺少的工作。",
   };
   const clear = {
     en: "Continue with the other checks.",
     zhTW: "請繼續查看其他檢查。",
   };
+  const running = {
+    en: "This check is running now.",
+    zhTW: "這項檢查正在執行。",
+  };
   const deadHost = [{ assetId: "asset-1", cause: "target_did_not_respond" as const }];
+  const causes = [
+    "target_did_not_respond",
+    "scanner_error",
+    "no_security_template_execution_evidence",
+    "unknown",
+  ] as const;
 
   assert.deepEqual(
     engineNextStepFor(engine({ findingCount: 0, unevaluatedTargets: deadHost })),
@@ -300,14 +314,24 @@ test("a recorded dead host states the reachability next step without changing ot
       findingCount: 0,
       unevaluatedTargets: [{ assetId: "asset-1", cause: "scanner_error" }],
     })),
-    clear,
+    retry,
   );
   assert.deepEqual(
     engineNextStepFor(engine({
       findingCount: 0,
       unevaluatedTargets: [{ assetId: "asset-1", cause: "no_security_template_execution_evidence" }],
     })),
-    clear,
+    retry,
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      findingCount: 0,
+      unevaluatedTargets: [
+        { assetId: "asset-1", cause: "target_did_not_respond" },
+        { assetId: "asset-2", cause: "scanner_error" },
+      ],
+    })),
+    reachability,
   );
   assert.deepEqual(
     engineNextStepFor(engine({
@@ -316,18 +340,17 @@ test("a recorded dead host states the reachability next step without changing ot
     })),
     clear,
   );
-  assert.deepEqual(
-    engineNextStepFor(engine({
-      status: "running",
-      phase: "running",
-      progress: 40,
-      unevaluatedTargets: deadHost,
-    })),
-    {
-      en: "This check is running now.",
-      zhTW: "這項檢查正在執行。",
-    },
-  );
+  for (const cause of causes) {
+    assert.deepEqual(
+      engineNextStepFor(engine({
+        status: "running",
+        phase: "running",
+        progress: 40,
+        unevaluatedTargets: [{ assetId: "asset-1", cause }],
+      })),
+      running,
+    );
+  }
 });
 
 test("a retryable cancelled check uses the report's recorded next step", () => {

@@ -545,6 +545,21 @@ test("a completed Greenbone check whose host did not respond states the recorded
   expect(clear.textContent).not.toContain("Continue with the other checks.");
 });
 
+test("a completed website check with no security-template evidence states the recorded retry", () => {
+  const retry = "Retry this check to complete the missing work.";
+  const { container } = renderProgress(run([
+    engine("nuclei", "completed", {
+      unevaluatedTargets: [{ assetId: "asset-1", cause: "no_security_template_execution_evidence" }],
+    }),
+  ]));
+
+  const website = engineRow(container, "nuclei");
+  expect(website.textContent).toContain(retry);
+  expect(website.className).toContain("engine-row--warning");
+  expect(website.className).not.toContain("engine-row--compact");
+  expect(website.textContent).not.toContain("Continue with the other checks.");
+});
+
 test("a check that ran without finishing does not read as completed", () => {
   const { container } = renderProgress(
     run([engine("finished-check", "completed", { progress: 100 }), engine("unfinished-check", "partial")]),
