@@ -2279,13 +2279,22 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
 
             // A row keeps what is its own: the step its coverage gap calls
             // for, and the note that some of its checks did not finish. The
-            // column exists because those rows exist.
+            // column exists because those rows exist. The cancelled host's
+            // recorded step names the missing coverage; the action code does
+            // not replace it with one sentence shared by every retry.
             assert!(
                 board.contains("<th scope=\"col\">What to do next</th>"),
                 "{board}"
             );
-            assert!(board.contains("Retry this check."));
+            assert!(board.contains("Retry this check to complete the missing coverage."));
+            assert!(!board.contains("Retry this check."));
             assert!(board.contains("Some checks are incomplete."));
+            let zh_board = &zh_html[zh_html
+                .find("<table class=\"asset-result-table\"")
+                .expect("the Chinese asset board")..];
+            let zh_board = &zh_board[..zh_board.find("</section>").expect("the board ends")];
+            assert!(zh_board.contains("重新執行這項檢查以完成缺少的涵蓋範圍。"));
+            assert!(!zh_board.contains("重試這項檢查。"));
 
             // Two frameworks put out of scope for the same reason share one
             // line. Given a bordered block each they printed the same sentence
