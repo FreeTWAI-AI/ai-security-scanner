@@ -4069,6 +4069,22 @@ impl<'a> CaseService<'a> {
                     routed_asset_ids,
                     now,
                 );
+                let asset_ids = if matches!(
+                    reason_code,
+                    "mcp_configuration_absent"
+                        | "mcp_configuration_unselected"
+                        | "mcp_configuration_discovery_incomplete"
+                ) {
+                    mcp_configuration_skip_asset_ids(
+                        case,
+                        manifest,
+                        &effective,
+                        routed_asset_ids,
+                        now,
+                    )
+                } else {
+                    asset_ids
+                };
                 engine_runs.push(not_executed_run(
                     &scan_run_id,
                     &engine_run_id,
@@ -8968,6 +8984,32 @@ fn mcp_configuration_not_executed_reason(
         "mcp_configuration_absent",
         MCP_CONFIGURATION_ABSENT_EXPLANATION,
     ))
+}
+
+/// Repositories whose MCP configuration state produced this skip.
+fn mcp_configuration_skip_asset_ids(
+    case: &AssessmentCase,
+    manifest: &EngineManifest,
+    effective: &[&ScopeGrant],
+    routed_asset_ids: Option<&BTreeSet<Id>>,
+    now: DateTime<Utc>,
+) -> Vec<Id> {
+    case.assets
+        .iter()
+        .filter(|asset| asset.owner_confirmed && !asset.candidate)
+        .filter(|asset| routed_asset_ids.is_none_or(|asset_ids| asset_ids.contains(&asset.id)))
+        .filter(|asset| asset_satisfies_engine_permissions(manifest, asset, effective, now))
+        .filter(|asset| provider_target_metadata_matches(case, manifest, asset))
+        .filter(|asset| {
+            matches!(
+                local_input_compatibility(case, manifest, asset),
+                LocalInputCompatibility::McpConfigurationAbsent
+                    | LocalInputCompatibility::McpConfigurationUnselected
+                    | LocalInputCompatibility::McpConfigurationDiscoveryIncomplete
+            )
+        })
+        .map(|asset| asset.id.clone())
+        .collect()
 }
 
 fn compatible_authorized_assets<'a>(
@@ -29729,6 +29771,7 @@ mod tests {
         let skipped = mcp_armor_skip(plan_mcp_armor(&service, &created.id));
         assert_eq!(skipped.reason_code, "mcp_configuration_absent");
         assert_eq!(skipped.explanation, MCP_CONFIGURATION_ABSENT_EXPLANATION);
+        assert_eq!(skipped.asset_ids, vec![asset.id.clone()]);
         assert_skip_avoids_ownership_and_permission_wording(&skipped.explanation);
     }
 
@@ -29784,6 +29827,8 @@ mod tests {
             .expect("mcp-armor engine run");
         assert_eq!(engine_run.status, EngineRunStatus::NotExecuted);
         assert_eq!(engine_run.id, skipped.engine_run_id);
+        assert_eq!(engine_run.asset_ids, vec![asset.id.clone()]);
+        assert_eq!(skipped.asset_ids, vec![asset.id.clone()]);
     }
 
     #[test]
@@ -30069,6 +30114,7 @@ mod tests {
 
         let skipped = mcp_armor_skip(plan_mcp_armor(&service, &created.id));
         assert_eq!(skipped.reason_code, "mcp_configuration_unselected");
+        assert_eq!(skipped.asset_ids, vec![asset.id.clone()]);
         assert_eq!(
             skipped.explanation,
             MCP_CONFIGURATION_UNSELECTED_EXPLANATION
@@ -30116,6 +30162,7 @@ mod tests {
             skipped.reason_code,
             "mcp_configuration_discovery_incomplete"
         );
+        assert_eq!(skipped.asset_ids, vec![asset.id.clone()]);
         assert_eq!(
             skipped.explanation,
             MCP_CONFIGURATION_DISCOVERY_INCOMPLETE_EXPLANATION
