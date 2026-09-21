@@ -100,8 +100,32 @@ test("queued and paused checks state their status or available action directly",
   assert.deepEqual(
     engineNextStepFor(engine({ status: "paused", phase: "paused" })),
     {
-      en: "Select Continue scan.",
-      zhTW: "請選擇「繼續掃描」。",
+      en: "Select Continue unfinished work.",
+      zhTW: "請選擇「繼續未完成的工作」。",
+    },
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      status: "paused",
+      phase: "running",
+      recoveryAction: "restart_check",
+      resumable: true,
+    })),
+    {
+      en: "Retry this check from the beginning",
+      zhTW: "從頭重試這項檢查",
+    },
+  );
+  assert.deepEqual(
+    engineNextStepFor(engine({
+      status: "paused",
+      phase: "captured_awaiting_adapter",
+      recoveryAction: "continue_saved_results",
+      resumable: true,
+    })),
+    {
+      en: "Continue from saved results",
+      zhTW: "從已保存的結果繼續",
     },
   );
 });

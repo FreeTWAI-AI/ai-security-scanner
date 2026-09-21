@@ -72,8 +72,8 @@ const nextStepCopy = {
     zhTW: "這項檢查正在執行。",
   },
   paused: {
-    en: "Select Continue scan.",
-    zhTW: "請選擇「繼續掃描」。",
+    en: "Select Continue unfinished work.",
+    zhTW: "請選擇「繼續未完成的工作」。",
   },
   completedWithFindings: {
     en: "Review the problems found and start with the highest priority.",
@@ -322,8 +322,13 @@ export const engineNextStepFor = (engine: EngineRun): BilingualText => {
       return nextStepCopy.waiting;
     case "running":
       return nextStepCopy.running;
-    case "paused":
+    case "paused": {
+      const recovery = engine.recoveryAction ?? (engine.resumable ? "continue_saved_results" : "none");
+      if (recovery === "restart_check") return recoveryCopy.restart_check;
+      if (recovery === "continue_saved_results") return recoveryCopy.continue_saved_results;
+      if (recovery === "finish_cleanup") return recoveryCopy.finish_cleanup;
       return nextStepCopy.paused;
+    }
     case "not_executed":
       return skippedChecksNextStepFor(engine.errorCode ? [engine.errorCode] : []);
     case "cancelled": {

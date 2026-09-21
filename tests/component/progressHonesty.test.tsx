@@ -591,6 +591,42 @@ test("no engine state is rendered without a label", () => {
   expect(labels).toEqual([]);
 });
 
+test("a paused check names the continue control on this page", () => {
+  const { container } = renderProgress(
+    run(
+      [engine("waiting-check", "paused", { phase: "paused", progress: 40, finishedAt: undefined })],
+      "paused",
+      { progress: 40, finishedAt: undefined },
+    ),
+  );
+
+  const row = engineRow(container, "waiting-check");
+  expect(row.textContent).toContain("Select Continue unfinished work.");
+  expect(row.textContent).not.toContain("Continue scan");
+  expect(container.textContent).toContain("Continue unfinished work");
+});
+
+test("a paused check that must restart names that retry", () => {
+  const { container } = renderProgress(
+    run(
+      [engine("waiting-check", "paused", {
+        phase: "running",
+        progress: 40,
+        recoveryAction: "restart_check",
+        resumable: true,
+        finishedAt: undefined,
+      })],
+      "paused",
+      { progress: 40, finishedAt: undefined },
+    ),
+  );
+
+  const row = engineRow(container, "waiting-check");
+  expect(row.textContent).toContain("Retry this check from the beginning");
+  expect(row.textContent).not.toContain("Continue scan");
+  expect(container.textContent).toContain("Retry stopped checks");
+});
+
 test("queued work is named directly in the progress overview and check row", () => {
   const { container } = renderProgress(
     run(
