@@ -2,19 +2,19 @@
 
 Normative status: this is a pinned research and integration decision, subordinate to the
 [canonical product specification](../product-spec.md). It evaluates one MCP Armor source revision,
-one retained configuration-only patch, and one referenced model snapshot. It admits only an
-experimental, non-runnable catalog record and thin result adapter. It does not authorize MCP server
-contact, approve model terms, or start packaging, publication, or real-target work.
+one retained configuration-only patch, and one referenced model snapshot. The live catalog now
+records the configuration-only image as `integrated` and `runnable: true`. This document keeps the
+original admission conditions and the current dispatch state. It does not authorize MCP server
+contact, model terms, or live MCP checks.
 
-Decision: integrate the patched static configuration-only slice as an experimental, fail-closed
-engine contract. It reads one exact MCP configuration snapshot and runs only upstream's existing
+Decision: integrate the patched static configuration-only slice as a fail-closed engine contract.
+It reads one exact MCP configuration snapshot and runs only upstream's existing
 `hardcoded_secrets` and `excessive_tool_permissions` checks. The adapter normalizes those results as
 findings, accepts a zero-finding result only when both checks completed, and preserves completed
 findings while any warning, failed check, malformed ledger, or unevaluated input marks coverage
-partial. Keep the engine non-runnable until the patch is upstreamed or deliberately packaged, and a
-typed product path binds exactly one approved configuration file. Do not integrate model-backed or
-live MCP checks until their separate artifact, license, dependency, provenance, authorization, and
-incomplete-check boundaries are resolved.
+partial. A typed product path binds exactly one approved configuration file. Do not integrate
+model-backed or live MCP checks until their separate artifact, license, dependency, provenance,
+authorization, and incomplete-check boundaries are resolved.
 
 ## Audited revisions
 
@@ -192,24 +192,20 @@ excerpt remains only in the raw artifact and never enters a finding. Control ref
 only from the two exact check ids, never from configuration-controlled names, commands, permissions,
 titles, or severities.
 
-## Remaining dispatch blockers
+## Current dispatch state
 
-The local proof is sufficient for adapter and catalog admission, not execution. The catalog stays
-`experimental`, `runnable: false`, with no image tag or digest. Dispatch remains blocked until all
-three conditions are deliberately resolved:
+The configuration-only slice is in the live catalog as `integrated` and `runnable: true`, with a
+published digest-pinned image. The original admission conditions for that slice are met:
 
-1. The product owner authorizes packaging work and a pinned image is built and tested with the
-   retained patch (or an equivalent accepted upstream release). Publication remains a separate
-   owner decision.
-2. A typed UI/domain path selects exactly one relative MCP configuration file inside the approved
+1. The pinned image `1.0.2-config-only.1` (`sha256:f8dcf9b774e0f90cfbe32d81b1dc04c6b1d61538fa9829ca28c674d78440dfdc`) is published and dispatchable.
+2. A typed product path selects exactly one relative MCP configuration file inside the approved
    immutable repository snapshot; no launcher may search default home-directory locations.
-3. The local machine-output patch is accepted upstream or its exact bytes, application step, and
-   resulting source tree are made part of a reviewed build recipe.
+3. The machine-output patch is part of the reviewed image build recipe.
 
-The model-backed and live MCP surface remains outside this slice. Considering it later still
-requires an exact model revision, every fetched-file digest, dependency lock, offline loading
-behavior, inference parameters, output provenance, applicable redistribution record, explicit
-target authorization, and fail-closed model/check errors.
+The image is not default-enabled. The model-backed and live MCP surface remains outside this slice.
+Considering it later still requires an exact model revision, every fetched-file digest, dependency
+lock, offline loading behavior, inference parameters, output provenance, applicable redistribution
+record, explicit target authorization, and fail-closed model/check errors.
 
 ## Research actions performed
 

@@ -7,11 +7,12 @@ const load = (path) => readFile(new URL(`../../${path}`, import.meta.url), "utf8
 const sha256 = (value) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
 test("MCP Armor published runtime remains digest-pinned, offline, and non-root", async () => {
-  const [catalogText, planText, statusText, thirdParty, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
+  const [catalogText, planText, statusText, thirdParty, decision, dockerfile, requirements, patch, launcher, scopeText, input, workflow, verifier] = await Promise.all([
     load("engines/catalog.json"),
     load("engines/images/mcp-armor/plan.json"),
     load("docs/development-status.md"),
     load("THIRD_PARTY.md"),
+    load("docs/research/mcp-armor-evaluation.md"),
     load("engines/images/mcp-armor/Dockerfile"),
     load("engines/images/mcp-armor/requirements.lock"),
     load("docs/research/patches/mcp-armor-1.0.2-config-only.patch"),
@@ -82,6 +83,9 @@ test("MCP Armor published runtime remains digest-pinned, offline, and non-root",
   assert.ok(thirdPartyRow, "THIRD_PARTY.md must include MCP Armor");
   assert.match(thirdPartyRow, /ALLOW/u);
   assert.doesNotMatch(thirdPartyRow, /NOT_DISTRIBUTED|no image or model is built/iu);
+  assert.match(decision, /`integrated` and `runnable: true`/u);
+  assert.match(decision, new RegExp(engine.image.digest.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
+  assert.doesNotMatch(decision, /catalog stays\s+`experimental`, `runnable: false`/u);
   assert.match(dockerfile, /USER 65532:65532/u);
   assert.match(dockerfile, /--require-hashes/u);
   assert.match(dockerfile, /--only-binary=:all:/u);
