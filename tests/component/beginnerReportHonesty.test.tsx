@@ -584,9 +584,9 @@ test("the first layer gives every requested asset one evidence-derived result st
   expect(row("https://portal.example").textContent).toContain("Open the completed-check scope");
   expect(row("https://portal.example").querySelector("button")).toBeNull();
   expect(row("Branch gateway").dataset.assetResult).toBe("incomplete_failed");
-  expect(row("Branch gateway").textContent).toContain("Retry this check");
+  expect(row("Branch gateway").textContent).toContain("Retry the failed check");
   expect(row("Branch gateway").querySelector(".asset-result-row__outcome span")?.textContent)
-    .toContain("Retry this check");
+    .toContain("Retry the failed check");
   expect(row("Branch gateway").querySelector("button")?.textContent)
     .toContain("Review scanner status");
   expect(row("Branch gateway").textContent).not.toContain("Keep this limitation visible");
@@ -596,10 +596,10 @@ test("the first layer gives every requested asset one evidence-derived result st
   expect(row("https://portal.example").textContent).toContain("No problems in completed checks");
   // A completed inventory tool is not promoted into a completed security check.
   expect(row("workstation-12").dataset.assetResult).toBe("not_tested");
-  expect(row("workstation-12").textContent).toContain("Choose an available check for this target");
+  expect(row("workstation-12").textContent).toContain("Choose an applicable security check.");
   expect(row("workstation-12").textContent).not.toContain("Retry this check");
   expect(row("workstation-12").querySelector(".asset-result-row__outcome span")?.textContent)
-    .toContain("Choose an available check for this target");
+    .toContain("Choose an applicable security check.");
   expect(row("workstation-12").querySelector("button")?.textContent)
     .toContain("Open scan setup");
 
@@ -812,9 +812,31 @@ test("a Greenbone dead host is incomplete while a completed sibling stays bounde
 
   expect(row("silent-host.example").dataset.assetResult).toBe("incomplete_failed");
   expect(row("silent-host.example").textContent).toContain(
-    "Review the requested scope, then retry.",
+    "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.",
   );
   expect(row("checked-host.example").dataset.assetResult).toBe("no_problems_completed");
+});
+
+test("the asset board keeps the recorded skip next action", () => {
+  const { container } = renderReport(report("no_checks_completed", {
+    coverageGaps: [{
+      kind: "not_tested",
+      taskId: "task-mcp",
+      targetAssetIds: ["asset-1"],
+      dimension: "mcp-armor: not-tested check dimension",
+      reason: "This check did not start, so it is not a pass. Diagnostic code: mcp_configuration_absent.",
+      nextActionCode: "no_action_unless_scope_changes",
+      nextAction: "This project has no MCP configuration to check. Continue with the other checks.",
+    }],
+    coverageCounts: counts({ notTested: 1 }),
+  }));
+
+  const row = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(row?.dataset.assetResult).toBe("not_tested");
+  expect(row?.querySelector(".asset-result-row__outcome span")?.textContent)
+    .toContain("This project has no MCP configuration to check. Continue with the other checks.");
+  expect(row?.textContent).not.toContain("No action for the current scope.");
+  expect(row?.querySelector("button")).toBeNull();
 });
 
 test("a Greenbone dead-host gap gives a Traditional Chinese reader the exact cause", () => {
@@ -871,7 +893,7 @@ test("the asset result board gives a Traditional Chinese beginner the same bound
       dimension: "vulnerability checks",
       reason: "No compatible check ran.",
       nextActionCode: "choose_compatible_check",
-      nextAction: "Choose a compatible check.",
+      nextAction: "Finish target setup or add a supported input, then start a new scan.",
     }],
     coverageCounts: counts({ notTested: 1 }),
   }));
@@ -880,9 +902,9 @@ test("the asset result board gives a Traditional Chinese beginner the same bound
   expect(board?.textContent).toContain("哪些資產需要處理");
   expect(board?.textContent).toContain("未測試");
   expect(board?.textContent).toContain("這個資產沒有已完成的資安檢查紀錄");
-  expect(board?.textContent).toContain("為這個目標選擇可用的檢查");
+  expect(board?.textContent).toContain("請完成目標設定或加入受支援的輸入，然後重新開始掃描。");
   expect(board?.querySelector(".asset-result-row__outcome span")?.textContent)
-    .toContain("為這個目標選擇可用的檢查");
+    .toContain("請完成目標設定或加入受支援的輸入，然後重新開始掃描。");
   expect(board?.querySelector("button")?.textContent).toContain("開啟掃描設定");
   expect(board?.textContent).not.toContain("No compatible check ran");
   expect(board?.textContent).not.toContain("「未發現問題」只適用於已完成的資安檢查");

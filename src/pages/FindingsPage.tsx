@@ -23,8 +23,6 @@ import {
   engineNameFrom,
   findingActionSentence,
   findingUnconfirmedByCoverage,
-  INCOMPLETE_CHECK_CONFIRM_ACTION,
-  INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
   findingConfidencePresentation,
   findingPriorityReason,
   findingUnattributedGap,
@@ -691,35 +689,6 @@ const copy = {
   testedStatusCancelled: { en: "Cancelled", zhTW: "已取消" },
   testedStatusNotTested: { en: "Not tested", zhTW: "未測試" },
   testedStatusInProgress: { en: "In progress", zhTW: "進行中" },
-  actionReviewFinding: { en: "Review the problem and its evidence.", zhTW: "檢視這個問題與相關證據。" },
-  actionConfirmAfterIncompleteCheck: {
-    en: INCOMPLETE_CHECK_CONFIRM_ACTION,
-    zhTW: INCOMPLETE_CHECK_CONFIRM_ACTION_ZH_HANT,
-  },
-  actionRetry: { en: "Retry this check.", zhTW: "重新執行這項檢查。" },
-  actionScope: { en: "Review the requested scope, then retry.", zhTW: "確認要求的範圍後再重試。" },
-  actionCompatible: { en: "Choose an available check for this target.", zhTW: "為這個目標選擇可用的檢查。" },
-  actionWait: {
-    en: "Open Review scanner status and finish or cancel this check.",
-    zhTW: "請開啟「查看掃描器狀態」完成或取消這項檢查。",
-  },
-  actionStartService: { en: "Start the expected local service, then retry.", zhTW: "先啟動預期的本機服務，再重試。" },
-  actionReviewCoverage: { en: "Open the coverage gap and complete the missing check.", zhTW: "查看涵蓋缺口並完成缺少的檢查。" },
-  actionReviewManualControl: {
-    en: "Open the upstream detail and set this control's status.",
-    zhTW: "開啟上游詳細資料，並設定這項控制措施的狀態。",
-  },
-  // The check ran and produced results and none could be tied to anything the
-  // reader authorized. The sentences naming the identifier live in
-  // findingNarrative.ts beside every other pair this product writes; these two
-  // are the placeholder-free fallback for a report stored before the
-  // structured payload existed.
-  actionAddAssetIdentifierGeneric: {
-    en: "Add the identifier the check reported on to the asset you authorized, then scan again.",
-    zhTW: "請將這項檢查所回報的識別碼，新增到你已授權的資產上，然後重新掃描。",
-  },
-  actionPreserve: { en: "Open the saved scope details.", zhTW: "查看已保存的範圍細節。" },
-  actionNoChange: { en: "No action for the current scope.", zhTW: "目前範圍不需處理。" },
   reportEndMatter: { en: "Report terms and technical record", zhTW: "報告條款與技術紀錄" },
   reportTerms: { en: "Report terms", zhTW: "報告條款" },
   reportTechnicalDetails: { en: "Technical record", zhTW: "技術紀錄" },
@@ -771,23 +740,19 @@ const testedStatusCopy = (status: BeginnerCoverageStatus) => {
   }
 };
 
-const nextActionCopy = (code: BeginnerNextActionCode) => {
-  switch (code) {
-    case "review_finding": return copy.actionReviewFinding;
-    case "confirm_finding_after_incomplete_check": return copy.actionConfirmAfterIncompleteCheck;
-    case "retry_check": return copy.actionRetry;
-    case "review_scope_and_retry": return copy.actionScope;
-    case "choose_compatible_check": return copy.actionCompatible;
-    case "wait_or_cancel": return copy.actionWait;
-    case "start_expected_service_and_retry": return copy.actionStartService;
-    case "review_coverage": return copy.actionReviewCoverage;
-    case "review_manual_control": return copy.actionReviewManualControl;
-    case "preserve_visible_limitation": return copy.actionPreserve;
-    // Interpolated by the caller, which has the identifier. The generic form
-    // is the fallback when a report predates the structured payload.
-    case "add_asset_identifier": return copy.actionAddAssetIdentifierGeneric;
-    case "no_action_unless_scope_changes": return copy.actionNoChange;
+const gapNextActionProse = (
+  gap: BeginnerMasterReport["coverageGaps"][number],
+  locale: "en" | "zh-TW",
+): string => {
+  if (gap.unattributed) {
+    return findingUnattributedGap(
+      locale,
+      gap.dimension.split(":")[0] ?? gap.dimension,
+      gap.unattributed,
+      { dimension: gap.dimension, reason: gap.reason, nextAction: gap.nextAction },
+    ).nextAction;
   }
+  return coverageGapProse(locale, gap.nextAction);
 };
 
 const localizedCheckName = (
@@ -1007,7 +972,7 @@ function AssetResultBoard({
         ? gaps.find((gap) => gap.kind === "manual_review")
         : firstApplicableGap;
     const recordedNextAction = actionGap
-      ? text(nextActionCopy(actionGap.nextActionCode))
+      ? gapNextActionProse(actionGap, locale)
       : undefined;
     const presentation = (() => {
       switch (status) {
