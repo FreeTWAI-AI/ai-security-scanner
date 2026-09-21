@@ -62,7 +62,7 @@ ai-security-scanner-cli --data-dir "DATA_DIR" --json scan status --case-id CASE_
 ai-security-scanner-cli --data-dir "DATA_DIR" --json export create --case-id CASE_ID --run-id RUN_ID --format html --redaction standard --destination "/absolute/path/report.html"
 ```
 
-Replace the placeholders with the selected IDs, existing data directory, and a new local filename. Export only after the selected run finishes or stops; if it is still active, return to **Scan progress**. The exporter refuses to overwrite an existing file.
+Replace the placeholders with the selected IDs, existing data directory, and a new local filename. Add `--locale zh-Hant` when the reader needs Traditional Chinese HTML; `en` is the default. Scan facts stay the same. Export only after the selected run finishes or stops; if it is still active, return to **Scan progress**. The exporter refuses to overwrite an existing file.
 
 3. Open the saved HTML in a browser. Check the report title, severity counts, findings, and engine coverage against the selected run. Preserve incomplete and `not_executed` rows. Hand back the absolute HTML path, file size, finding summary, and what was not tested; state any opening or verification failure plainly.
 

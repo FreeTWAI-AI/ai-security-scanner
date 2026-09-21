@@ -25,7 +25,9 @@ use ai_security_scanner_lib::domain::{
     new_id,
 };
 use ai_security_scanner_lib::error::{AppError, AppResult};
-use ai_security_scanner_lib::export::{ExportOptions, RedactionProfile, verify_case_bundle};
+use ai_security_scanner_lib::export::{
+    ExportOptions, RedactionProfile, ReportLocale, verify_case_bundle,
+};
 use ai_security_scanner_lib::external_scope::ExternalScopeRequest;
 use ai_security_scanner_lib::gateway_release::managed_egress_gateway_spec;
 use ai_security_scanner_lib::managed_network::{
@@ -720,6 +722,9 @@ struct ExportCreateArgs {
     destination: PathBuf,
     #[arg(long, value_enum, default_value_t = RedactionArg::Standard)]
     redaction: RedactionArg,
+    /// Readable HTML presentation locale. Canonical scan facts stay unchanged.
+    #[arg(long, value_enum, default_value_t = ReportLocaleArg::En)]
+    locale: ReportLocaleArg,
     /// Bundle only. Raw artifacts may contain sensitive provider or target data.
     #[arg(long, requires = "acknowledge_sensitive_raw_artifacts")]
     include_raw_artifacts: bool,
@@ -762,6 +767,22 @@ impl From<RedactionArg> for RedactionProfile {
         match value {
             RedactionArg::Standard => Self::Standard,
             RedactionArg::None => Self::None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ReportLocaleArg {
+    En,
+    #[value(name = "zh-Hant")]
+    ZhHant,
+}
+
+impl From<ReportLocaleArg> for ReportLocale {
+    fn from(value: ReportLocaleArg) -> Self {
+        match value {
+            ReportLocaleArg::En => Self::En,
+            ReportLocaleArg::ZhHant => Self::ZhHant,
         }
     }
 }
@@ -2129,7 +2150,7 @@ fn execute_export(
                 ExportOptions {
                     redaction: args.redaction.into(),
                     include_raw_artifacts: args.include_raw_artifacts,
-                    locale: ai_security_scanner_lib::export::ReportLocale::En,
+                    locale: args.locale.into(),
                 },
             )?;
             print_value(&export, json_output)?;
@@ -6075,6 +6096,78 @@ mod tests {
                 command: CaseCommand::DeleteArtifacts { .. }
             }
         ));
+    }
+
+    #[test]
+    fn html_export_defaults_to_english_and_accepts_the_closed_report_locale() {
+        let default_cli = Cli::try_parse_from([
+            "ai-security-scanner",
+            "export",
+            "create",
+            "--case-id",
+            "case-1",
+            "--run-id",
+            "run-1",
+            "--format",
+            "html",
+            "--destination",
+            "report.html",
+        ])
+        .expect("html export CLI");
+        match default_cli.command {
+            Command::Export {
+                command: ExportCommand::Create(args),
+            } => {
+                assert_eq!(args.locale, ReportLocaleArg::En);
+                assert_eq!(ReportLocale::from(args.locale), ReportLocale::En);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let chinese_cli = Cli::try_parse_from([
+            "ai-security-scanner",
+            "export",
+            "create",
+            "--case-id",
+            "case-1",
+            "--run-id",
+            "run-1",
+            "--format",
+            "html",
+            "--destination",
+            "report.zh-Hant.html",
+            "--locale",
+            "zh-Hant",
+        ])
+        .expect("zh-Hant html export CLI");
+        match chinese_cli.command {
+            Command::Export {
+                command: ExportCommand::Create(args),
+            } => {
+                assert_eq!(args.locale, ReportLocaleArg::ZhHant);
+                assert_eq!(ReportLocale::from(args.locale), ReportLocale::ZhHant);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        assert!(
+            Cli::try_parse_from([
+                "ai-security-scanner",
+                "export",
+                "create",
+                "--case-id",
+                "case-1",
+                "--run-id",
+                "run-1",
+                "--format",
+                "html",
+                "--destination",
+                "report.html",
+                "--locale",
+                "fr",
+            ])
+            .is_err()
+        );
     }
 
     #[test]
