@@ -222,6 +222,29 @@ test("an interrupted preparation explanation reaches a Traditional Chinese reade
   );
 });
 
+test("a not-tested skip reason keeps its specific next action in both languages", () => {
+  const mcp =
+    "This project has no MCP configuration to check. Continue with the other checks.";
+  const release = "Update the app, then retry these checks.";
+  const mcpReason =
+    "This check did not start, so it is not a pass. Diagnostic code: mcp_configuration_absent.";
+
+  assert.equal(coverageGapProse("en", mcp), mcp);
+  assert.equal(coverageGapProse("en", release), release);
+  assert.equal(
+    coverageGapProse("zh-TW", mcp),
+    "這個專案沒有可檢查的 MCP 設定；請繼續查看其他檢查。",
+  );
+  assert.equal(
+    coverageGapProse("zh-TW", release),
+    "請更新應用程式，再重試這些檢查。",
+  );
+  assert.equal(
+    coverageGapProse("zh-TW", mcpReason),
+    "這項檢查沒有啟動，因此不代表通過。診斷代碼：mcp_configuration_absent。",
+  );
+});
+
 test("an expired-knowledge coverage row keeps its date and moves its sentence", () => {
   // The screen and the exported report have to say the same thing about a
   // scanner whose declared knowledge support ended before the run. The date is

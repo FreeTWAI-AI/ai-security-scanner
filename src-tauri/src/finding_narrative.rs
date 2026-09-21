@@ -2090,6 +2090,38 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "請檢視目標設定，然後重新執行這項檢查。",
     ),
     (
+        "This project has no MCP configuration to check. Continue with the other checks.",
+        "這個專案沒有可檢查的 MCP 設定；請繼續查看其他檢查。",
+    ),
+    (
+        "Return to scan setup and choose which MCP configuration to check.",
+        "回到掃描設定，選擇要檢查的 MCP 設定。",
+    ),
+    (
+        "MCP configuration discovery did not finish. Continue with the other checks.",
+        "MCP 設定探索未完成；請繼續查看其他檢查。",
+    ),
+    (
+        "Update the app, then retry these checks.",
+        "請更新應用程式，再重試這些檢查。",
+    ),
+    (
+        "Retry this check; scan-tool setup is automatic.",
+        "重試這項檢查；掃描工具會自動準備。",
+    ),
+    (
+        "Return to scan setup, choose the intended target, and confirm it once.",
+        "回到掃描設定，選擇正確目標並確認一次。",
+    ),
+    (
+        "Return to cloud setup and reconnect or review the selected account.",
+        "請回到雲端設定，重新連接或檢查所選帳號。",
+    ),
+    (
+        "Open the skipped check's technical records and match this check to the approved protocol or target form.",
+        "請展開未執行檢查的技術紀錄，讓這項檢查符合已核准的通訊協定或目標形式。",
+    ),
+    (
         "Open Review scanner status and finish or cancel this check.",
         "請開啟「查看掃描器狀態」完成或取消這項檢查。",
     ),

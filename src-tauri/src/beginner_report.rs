@@ -2373,13 +2373,16 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
             NextActionCode::RetryCheck,
             "Retry this check to complete the missing coverage.",
         ),
-        CoverageDimensionStatus::NotTested => (
-            CoverageGapKind::NotTested,
-            "not-tested check dimension",
-            "This check did not start, so it is not a pass.",
-            NextActionCode::ReviewScopeAndRetry,
-            "Review the target and try this check again.",
-        ),
+        CoverageDimensionStatus::NotTested => {
+            let (next_action_code, next_action) = not_tested_next_action(task);
+            (
+                CoverageGapKind::NotTested,
+                "not-tested check dimension",
+                "This check did not start, so it is not a pass.",
+                next_action_code,
+                next_action,
+            )
+        }
         CoverageDimensionStatus::InProgress => (
             CoverageGapKind::NotTested,
             "unfinished check dimension",
@@ -4294,6 +4297,81 @@ fn stable_timeout_marker(task: &EngineRun) -> bool {
     }
 }
 
+/// Product-owned next step for a check that never started, keyed on the
+/// planner skip code stored as `error_code`.
+fn not_tested_next_action(task: &EngineRun) -> (NextActionCode, &'static str) {
+    match task.error_code.as_deref() {
+        Some("mcp_configuration_absent") => (
+            NextActionCode::NoActionUnlessScopeChanges,
+            "This project has no MCP configuration to check. Continue with the other checks.",
+        ),
+        Some("mcp_configuration_unselected") => (
+            NextActionCode::ReviewScopeAndRetry,
+            "Return to scan setup and choose which MCP configuration to check.",
+        ),
+        Some("mcp_configuration_discovery_incomplete") => (
+            NextActionCode::NoActionUnlessScopeChanges,
+            "MCP configuration discovery did not finish. Continue with the other checks.",
+        ),
+        Some(
+            "engine_release_unavailable" | "engine_deprecated" | "research_only" | "license_review",
+        ) => (
+            NextActionCode::PreserveVisibleLimitation,
+            "Update the app, then retry these checks.",
+        ),
+        Some(
+            "manifest_unavailable"
+            | "adapter_unavailable"
+            | "adapter_version_mismatch"
+            | "runtime_image_unavailable"
+            | "runtime_image_unpinned"
+            | "command_unavailable"
+            | "external_executable_unsupported"
+            | "engine_execution_contract_invalid",
+        ) => (
+            NextActionCode::RetryCheck,
+            "Retry this check; scan-tool setup is automatic.",
+        ),
+        Some(
+            "no_compatible_authorized_assets"
+            | "no_effective_scope_grants"
+            | "no_ownership_confirmed_targets"
+            | "no_compatible_authorized_targets"
+            | "workspace_snapshot_unavailable",
+        ) => (
+            NextActionCode::ReviewScopeAndRetry,
+            "Return to scan setup, choose the intended target, and confirm it once.",
+        ),
+        Some(
+            "provider_connection_required"
+            | "provider_capability_required"
+            | "provider_review_required"
+            | "provider_source_required"
+            | "provider_capability_unavailable"
+            | "provider_source_ambiguous"
+            | "provider_authorization_binding_mismatch"
+            | "provider_target_binding_mismatch"
+            | "provider_preflight_unavailable",
+        ) => (
+            NextActionCode::ReviewScopeAndRetry,
+            "Return to cloud setup and reconnect or review the selected account.",
+        ),
+        Some(
+            "direct_network_protocol_mismatch"
+            | "direct_network_target_kind_mismatch"
+            | "external_scope_missing"
+            | "authorization_reference_empty",
+        ) => (
+            NextActionCode::ChooseCompatibleCheck,
+            "Open the skipped check's technical records and match this check to the approved protocol or target form.",
+        ),
+        _ => (
+            NextActionCode::ReviewScopeAndRetry,
+            "Review the target and try this check again.",
+        ),
+    }
+}
+
 fn check_id(task: &EngineRun) -> String {
     match task.task_kind {
         EngineTaskKind::BuiltInLocalhostTcp { port, .. } => {
@@ -4821,6 +4899,85 @@ mod tests {
             "Open Review scanner status and finish or cancel this check."
         );
         assert!(!gap.next_action.to_ascii_lowercase().contains("progress"));
+    }
+
+    #[test]
+    fn not_tested_next_action_follows_the_recorded_skip_reason() {
+        let mut mcp = catalog_task("mcp", EngineRunStatus::NotExecuted);
+        mcp.engine_id = "mcp-armor".into();
+        mcp.error_code = Some("mcp_configuration_absent".into());
+        let mcp_report =
+            build_beginner_master_report(&case_with_catalog_tasks(vec![mcp], true), "run-1")
+                .unwrap();
+        let mcp_gap = mcp_report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.kind == CoverageGapKind::NotTested)
+            .expect("mcp not-tested gap");
+        assert_eq!(
+            mcp_gap.next_action_code,
+            NextActionCode::NoActionUnlessScopeChanges
+        );
+        assert_eq!(
+            mcp_gap.next_action,
+            "This project has no MCP configuration to check. Continue with the other checks."
+        );
+        assert!(mcp_gap.reason.contains("mcp_configuration_absent"));
+        assert!(mcp_report.next_steps.iter().any(|step| {
+            step.action
+                == "This project has no MCP configuration to check. Continue with the other checks."
+        }));
+
+        let mut radar = catalog_task("radar", EngineRunStatus::NotExecuted);
+        radar.engine_id = "agentic-radar".into();
+        radar.error_code = Some("engine_release_unavailable".into());
+        let radar_report =
+            build_beginner_master_report(&case_with_catalog_tasks(vec![radar], true), "run-1")
+                .unwrap();
+        let radar_gap = radar_report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.kind == CoverageGapKind::NotTested)
+            .expect("radar not-tested gap");
+        assert_eq!(
+            radar_gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
+        assert_eq!(
+            radar_gap.next_action,
+            "Update the app, then retry these checks."
+        );
+        assert!(radar_gap.reason.contains("engine_release_unavailable"));
+
+        let mut unknown = catalog_task("unknown", EngineRunStatus::NotExecuted);
+        unknown.error_code = None;
+        let mut gaps = Vec::new();
+        append_task_gap(&unknown, CoverageDimensionStatus::NotTested, &mut gaps);
+        assert_eq!(
+            gaps[0].next_action_code,
+            NextActionCode::ReviewScopeAndRetry
+        );
+        assert_eq!(
+            gaps[0].next_action,
+            "Review the target and try this check again."
+        );
+    }
+
+    #[test]
+    fn every_planner_skip_reason_has_a_specific_not_tested_next_action() {
+        for code in crate::case_service::PLANNER_NOT_EXECUTED_REASON_CODES {
+            let mut task = catalog_task(*code, EngineRunStatus::NotExecuted);
+            task.error_code = Some((*code).into());
+            let (next_code, next_action) = not_tested_next_action(&task);
+            assert_ne!(
+                (next_code, next_action),
+                (
+                    NextActionCode::ReviewScopeAndRetry,
+                    "Review the target and try this check again."
+                ),
+                "{code} kept the generic not-tested next action"
+            );
+        }
     }
 
     #[test]
