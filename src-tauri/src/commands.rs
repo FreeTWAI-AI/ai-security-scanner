@@ -3962,8 +3962,49 @@ pub async fn resume_scan(
     })
 }
 
+#[derive(Serialize)]
+pub struct CancelScanResponse {
+    #[serde(flatten)]
+    case: AssessmentCase,
+    /// Process-local acknowledgement, never persisted as a finished scan.
+    cancel_requested_run_id: Option<Id>,
+}
+
+fn live_cancel_request_run_id(
+    case: &AssessmentCase,
+    requested: Option<&str>,
+    jobs: &crate::job_manager::JobManager,
+) -> Option<Id> {
+    let run_id = requested
+        .filter(|id| !id.trim().is_empty())
+        .or_else(|| case.scan_runs.last().map(|run| run.id.as_str()))?;
+    case.scan_runs.iter().find(|run| run.id == run_id)?;
+    let key = JobKey::new(&case.id, run_id).ok()?;
+    let snapshot = jobs.snapshot(&key)?;
+    matches!(
+        snapshot.status,
+        crate::job_manager::JobStatus::CancelRequested | crate::job_manager::JobStatus::Cancelled
+    )
+    .then(|| run_id.to_owned())
+}
+
 #[tauri::command]
 pub fn cancel_scan(
+    case_id: String,
+    run_id: Option<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<CancelScanResponse> {
+    let case = cancel_scan_case(case_id, run_id.clone(), app.clone(), state)?;
+    let cancel_requested_run_id =
+        live_cancel_request_run_id(&case, run_id.as_deref(), &app.state::<AppState>().jobs);
+    Ok(CancelScanResponse {
+        case,
+        cancel_requested_run_id,
+    })
+}
+
+fn cancel_scan_case(
     case_id: String,
     run_id: Option<String>,
     app: AppHandle,
@@ -7694,6 +7735,106 @@ mod tests {
     fn ready_repository_state() -> (tempfile::TempDir, AppState, Id) {
         let (directory, state, case_id, _) = ready_repository_snapshot_state();
         (directory, state, case_id)
+    }
+
+    #[test]
+    fn cancel_response_acknowledges_only_the_exact_live_job_without_rewriting_saved_state() {
+        let (_directory, state, case_id) = ready_repository_state();
+        let service = state.case_service();
+        let plan = service
+            .persist_scan_before_execution_preflight(
+                &case_id,
+                ScanPlanRequest {
+                    engine_ids: vec!["gitleaks".into()],
+                    engine_asset_routes: Vec::new(),
+                },
+            )
+            .unwrap();
+        let case = service.show_case(&case_id).unwrap();
+        let run_id = plan.scan_run.id;
+        let saved = serde_json::to_value(&case).unwrap();
+        let key = JobKey::new(&case_id, &run_id).unwrap();
+        let manager = crate::job_manager::JobManager::default();
+        assert_eq!(
+            live_cancel_request_run_id(&case, Some(&run_id), &manager),
+            None
+        );
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (terminal_tx, terminal_rx) = std::sync::mpsc::channel();
+        manager
+            .start_job(
+                key.clone(),
+                ["gitleaks"],
+                move |context| {
+                    release_rx.recv().unwrap();
+                    context
+                        .engine("gitleaks")
+                        .unwrap()
+                        .mark_cancelled()
+                        .unwrap();
+                    JobCompletion::Cancelled
+                },
+                move |snapshot| terminal_tx.send(snapshot).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            live_cancel_request_run_id(&case, Some(&run_id), &manager),
+            None
+        );
+        manager.cancel(&key).unwrap();
+        assert_eq!(
+            live_cancel_request_run_id(&case, None, &manager),
+            Some(run_id.clone())
+        );
+        assert_eq!(
+            live_cancel_request_run_id(&case, Some("another-run"), &manager),
+            None
+        );
+        let mut other_case = case.clone();
+        other_case.id = "another-case".into();
+        assert_eq!(
+            live_cancel_request_run_id(&other_case, Some(&run_id), &manager),
+            None
+        );
+        let mut missing_run = case.clone();
+        missing_run.scan_runs.clear();
+        assert_eq!(
+            live_cancel_request_run_id(&missing_run, Some(&run_id), &manager),
+            None
+        );
+        let response = CancelScanResponse {
+            cancel_requested_run_id: live_cancel_request_run_id(&case, Some(&run_id), &manager),
+            case,
+        };
+        let mut encoded = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            encoded
+                .as_object_mut()
+                .unwrap()
+                .remove("cancel_requested_run_id"),
+            Some(serde_json::json!(run_id))
+        );
+        assert_eq!(
+            encoded, saved,
+            "acknowledgement preserves the existing case response shape"
+        );
+        assert_eq!(
+            serde_json::to_value(service.show_case(&case_id).unwrap()).unwrap(),
+            saved
+        );
+        release_tx.send(()).unwrap();
+        assert_eq!(
+            terminal_rx
+                .recv_timeout(StdDuration::from_secs(2))
+                .unwrap()
+                .status,
+            crate::job_manager::JobStatus::Cancelled
+        );
+        let case = service.show_case(&case_id).unwrap();
+        assert_eq!(
+            live_cancel_request_run_id(&case, Some(&run_id), &manager),
+            Some(run_id)
+        );
     }
 
     fn ready_repository_snapshot_state() -> (tempfile::TempDir, AppState, Id, PathBuf) {

@@ -776,6 +776,26 @@ test("a retained terminal Resume response reports the saved result instead of a 
   assert.equal(manifestReads, 0);
 });
 
+test("native Cancel carries only an exact job acknowledgement through the workspace response", async () => {
+  for (const acknowledgement of [undefined, "another-run", "localhost-run"]) {
+    setTestWindow({
+      __TAURI_INTERNALS__: {
+        invoke: async (command: string) => {
+          assert.equal(command, COMMANDS.cancelScan, "cancellation must not wait for optional reads");
+          return { ...queuedLocalhostNativeCase(), cancel_requested_run_id: acknowledgement };
+        },
+      },
+    });
+    const result = await scannerService.cancelScan("localhost-case", "localhost-run");
+    const exact = acknowledgement === "localhost-run";
+    assert.equal(result.data.accepted, true);
+    assert.equal(result.data.cancelRequestedRunId, exact ? "localhost-run" : undefined);
+    assert.equal(result.data.lifecycleDisposition?.outcome, exact ? "requested" : "unconfirmed");
+    assert.ok(result.data.workspace);
+    assert.equal("cancel_requested_run_id" in result.data.workspace.case, false);
+  }
+});
+
 test("an uncertain native Cancel outcome is typed unconfirmed and does not read manifests", async () => {
   let manifestReads = 0;
   setTestWindow({

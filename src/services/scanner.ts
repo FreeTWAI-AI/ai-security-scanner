@@ -257,16 +257,21 @@ const actionResult = async (
     return demoResult({ accepted: false, message: demoMessage });
   }
   try {
-    const returnedCase = await invoke<NativeAssessmentCase>(command, args);
+    const returnedCase = await invoke<NativeAssessmentCase & { cancel_requested_run_id?: string | null }>(command, args);
     // Mutation acknowledgement must never wait for the optional catalog read.
     // Events and the next bounded snapshot refresh can enrich engine metadata.
     const workspace = adaptNativeCase(returnedCase, []);
+    const cancelRequestedRunId = lifecycleAction === "cancel"
+      && returnedCase.cancel_requested_run_id === runId
+      ? runId
+      : undefined;
     return nativeResult({
       accepted: true,
       message: nativeMessage,
       workspace: returnWorkspace ? workspace : undefined,
+      cancelRequestedRunId,
       lifecycleDisposition: lifecycleAction && runId
-        ? deriveScanLifecycleDisposition(lifecycleAction, workspace, runId)
+        ? deriveScanLifecycleDisposition(lifecycleAction, workspace, runId, cancelRequestedRunId)
         : undefined,
     });
   } catch (error) {
@@ -338,6 +343,7 @@ export interface ActionResponse {
   snapshot?: AppSnapshot;
   workspace?: CaseWorkspace;
   lifecycleDisposition?: ScanLifecycleDisposition;
+  cancelRequestedRunId?: string;
 }
 
 export type CaseExportVerificationResult =

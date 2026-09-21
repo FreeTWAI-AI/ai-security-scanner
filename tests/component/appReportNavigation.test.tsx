@@ -47,6 +47,26 @@ const finishActiveRun = async () => {
   await act(async () => { window.dispatchEvent(new Event("focus")); });
 };
 
+test("Cancel keeps its exact native acknowledgement when App merges the returned workspace", async () => {
+  active.engineRuns = [{
+    ...active.engineRuns[0]!, status: "running", phase: "preparing_runtime", progress: 1,
+    taskKind: { kind: "catalog_engine" },
+  }];
+  vi.spyOn(scannerService, "cancelScan").mockImplementation(async () => ({
+    mode: "native", data: {
+      accepted: true, message: "Cancellation requested", workspace: structuredClone(snapshot.workspace!),
+      cancelRequestedRunId: active.id,
+      lifecycleDisposition: { action: "cancel", outcome: "requested", runId: active.id },
+    },
+  }));
+  const view = await openApp();
+  fireEvent.click(view.getByRole("button", { name: "Cancel", exact: true }));
+  expect(await view.findByText("Stop requested")).toBeTruthy();
+  expect(view.queryByText("Scan action status unavailable")).toBeNull();
+  expect(scannerService.cancelScan).toHaveBeenCalledWith(snapshot.workspace!.case.id, active.id);
+  expect(active.engineRuns[0]!.status).toBe("running");
+});
+
 test("three sidebar Results clicks stay in findings, and Export follows the finished report until completion", async () => {
   const view = await openApp();
   const resultsButton = within(view.getByRole("navigation")).getByRole("button", { name: "Results" });

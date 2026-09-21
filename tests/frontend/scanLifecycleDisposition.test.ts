@@ -137,7 +137,7 @@ test("a cancelled localhost record with a contradictory observation remains unco
   );
 });
 
-test("cancelled is never promoted to a result, while mixed saved work remains partial", () => {
+test("cancelled work stays stopped and completed sibling results are kept", () => {
   const genericCancelled = run("cancelled", [engine({
     engineId: "generic-engine",
     taskKind: { kind: "catalog_engine" },
@@ -160,8 +160,26 @@ test("cancelled is never promoted to a result, while mixed saved work remains pa
       phase: "cancelled",
     }),
   ])), "run-1");
-  assert.equal(mixed.outcome, "result_already_final");
-  assert.equal(mixed.outcome === "result_already_final" ? mixed.resultStatus : undefined, "partial");
+  assert.deepEqual(mixed, { action: "cancel", outcome: "stopped", runId: "run-1", resultsKept: true });
+  const presentation = scanLifecycleToastPresentation(mixed);
+  assert.equal(presentation.title.en, "This scan has stopped");
+  assert.match(presentation.detail.en, /Completed check results are kept/u);
+  assert.match(presentation.detail.zhTW, /已保留完成檢查的結果/u);
+  assert.doesNotMatch(presentation.detail.en, /before the stop request/u);
+});
+
+test("an exact native cancellation acknowledgement confirms stopping, never completion", () => {
+  const active = workspace(run("running", [engine({
+    engineId: "trivy", taskKind: { kind: "catalog_engine" }, phase: "preparing_runtime",
+  })]));
+  for (const acknowledgement of [undefined, "another-run"]) {
+    assert.equal(deriveCancelLifecycleDisposition(active, "run-1", acknowledgement).outcome, "unconfirmed");
+  }
+  const requested = deriveCancelLifecycleDisposition(active, "run-1", "run-1");
+  assert.deepEqual(requested, { action: "cancel", outcome: "requested", runId: "run-1", targetContactLimitMs: undefined });
+  assert.equal(scanLifecycleToastPresentation(requested).title.en, "Stop requested");
+  assert.equal(active.runs[0]!.engineRuns[0]!.status, "running");
+  assert.equal(deriveCancelLifecycleDisposition(undefined, "run-1", "run-1").outcome, "unconfirmed");
 });
 
 test("cancelled planned checks remain cancelled alongside checks that were not executable", () => {
@@ -242,7 +260,7 @@ test("a newer terminal event wins over an older requested command response", () 
     "2026-08-30T12:00:00.000000002Z",
   );
   const selected = selectNewerWorkspaceByRevision(staleResponse, terminalEvent);
-  const disposition = deriveCancelLifecycleDisposition(selected, "run-1");
+  const disposition = deriveCancelLifecycleDisposition(selected, "run-1", "run-1");
   const presentation = scanLifecycleToastPresentation(disposition);
 
   assert.equal(selected, terminalEvent);

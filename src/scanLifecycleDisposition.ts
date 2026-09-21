@@ -25,6 +25,7 @@ export type ScanLifecycleDisposition =
       targetContactLimitMs?: number;
     }
   | { action: "cancel"; outcome: "cancelled"; runId: string }
+  | { action: "cancel"; outcome: "stopped"; runId: string; resultsKept: boolean }
   | {
       action: "cancel";
       outcome: "result_already_final";
@@ -94,9 +95,21 @@ const savedLocalhostOutcome = (run: ScanRun): LocalhostTcpOutcome | undefined =>
 export const deriveCancelLifecycleDisposition = (
   workspace: CaseWorkspace | undefined,
   runId: string,
+  cancelRequestedRunId?: string,
 ): ScanLifecycleDisposition => {
   const run = exactRun(workspace, runId);
   if (!run) return { action: "cancel", outcome: "unconfirmed", runId };
+
+  if (!cancelledWorkIsTerminal(run)
+    && run.engineRuns.some((engine) => engine.status === "cancelled")
+    && run.engineRuns.every((engine) => terminalEngineStatuses.has(engine.status))) {
+    return {
+      action: "cancel",
+      outcome: "stopped",
+      runId,
+      resultsKept: run.engineRuns.some((engine) => engine.status === "completed" || engine.status === "partial"),
+    };
+  }
 
   const resultStatus = terminalResultStatus(run);
   if (resultStatus) {
@@ -120,11 +133,12 @@ export const deriveCancelLifecycleDisposition = (
     return { action: "cancel", outcome: "cancelled", runId };
   }
 
-  const durableRequestIsActive = activeRunStatuses.has(run.status)
+  const requestIsActive = activeRunStatuses.has(run.status)
     && run.engineRuns.some((engine) =>
-      activeEngineStatuses.has(engine.status) && engine.phase === "cancel_requested"
+      activeEngineStatuses.has(engine.status)
+      && (engine.phase === "cancel_requested" || cancelRequestedRunId === runId)
     );
-  if (durableRequestIsActive) {
+  if (requestIsActive) {
     return {
       action: "cancel",
       outcome: "requested",
@@ -170,8 +184,9 @@ export const deriveScanLifecycleDisposition = (
   action: ScanLifecycleDisposition["action"],
   workspace: CaseWorkspace | undefined,
   runId: string,
+  cancelRequestedRunId?: string,
 ): ScanLifecycleDisposition => action === "cancel"
-  ? deriveCancelLifecycleDisposition(workspace, runId)
+  ? deriveCancelLifecycleDisposition(workspace, runId, cancelRequestedRunId)
   : deriveResumeLifecycleDisposition(workspace, runId);
 
 export interface ScanLifecycleToastPresentation {
@@ -213,6 +228,15 @@ const finalResultDetail = (
 export const scanLifecycleToastPresentation = (
   disposition: ScanLifecycleDisposition,
 ): ScanLifecycleToastPresentation => {
+  if (disposition.action === "cancel" && disposition.outcome === "stopped") {
+    return {
+      tone: "info",
+      title: { en: "This scan has stopped", zhTW: "這次掃描已停止" },
+      detail: disposition.resultsKept
+        ? { en: "Completed check results are kept. Open Results to review them.", zhTW: "已保留完成檢查的結果；請到「掃描結果」查看。" }
+        : { en: "Open each unfinished check to retry it.", zhTW: "打開各項未完成檢查，即可重試。" },
+    };
+  }
   if (disposition.outcome === "result_already_final") {
     return {
       tone: "info",

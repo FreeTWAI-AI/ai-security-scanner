@@ -100,6 +100,26 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+test.each([
+  ["en", "Latest run: Not started", "Latest run: Failed"],
+  ["zh-TW", "最新一輪：未開始", "最新一輪：失敗"],
+])("%s distinguishes a recovered plan from a check that actually failed", (locale, notStarted, failed) => {
+  window.localStorage.setItem(localeStorageKey, locale);
+  const recovered = run({ status: "failed", engineRuns: [{
+    id: "engine-1", engineId: "gitleaks", engineName: "Gitleaks", category: "secrets",
+    status: "failed", phase: "interrupted_restart", errorCode: "desktop_process_restarted",
+    progress: 0, assetIds: [], rawArtifactCount: 0, findingCount: 0, resumable: true, warnings: [],
+  }] });
+  const beforeStart = renderCases({ latestRun: recovered, runs: [recovered] });
+  expect(beforeStart.container.querySelector(".current-case-hero__meta")?.textContent).toContain(notStarted);
+  expect(beforeStart.container.querySelector(".current-case-hero__meta")?.textContent).not.toContain(failed);
+  cleanup();
+  recovered.engineRuns[0]!.startedAt = "2026-09-02T09:00:01Z";
+  const afterStart = renderCases({ latestRun: recovered, runs: [recovered] });
+  expect(afterStart.container.querySelector(".current-case-hero__meta")?.textContent).toContain(failed);
+  expect(afterStart.container.querySelector(".current-case-hero__meta")?.textContent).not.toContain(notStarted);
+});
+
 test("zero systems with an unresolved source is not reported as having found nothing", () => {
   // Both counts are present here. The connected source really did return
   // nothing, so the reassuring notice is not false on its own terms -- but an

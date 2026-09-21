@@ -30,6 +30,7 @@ import {
   type InternalHostPortsError,
 } from "../internalHostProfile";
 import { scanRunIdentityPresentation } from "../scanRunIdentityPresentation";
+import { isNeverStartedScanRun } from "../freshScanSelection";
 import { isTerminalResultRun, isVerificationBaselineRun } from "../runLifecycle.ts";
 import { scannerService } from "../services/scanner";
 import type {
@@ -355,6 +356,7 @@ const pageCopy = {
   internalTargetRequired: { en: "Enter at least one internal IP address, range, or hostname.", zhTW: "請至少輸入一個內部 IP 位址、網段或主機名稱。" },
   demo: { en: "Demo", zhTW: "展示" },
   latestRun: { en: "Latest run: {status}", zhTW: "最新一輪：{status}" },
+  notStarted: { en: "Not started", zhTW: "未開始" },
   updated: { en: "Updated {date}", zhTW: "更新於 {date}" },
   caseSystems: { en: "Systems in this scan", zhTW: "這次檢查的系統" },
   caseIntent: { en: "Planned checks", zhTW: "預計檢查項目" },
@@ -752,6 +754,9 @@ export function CasesPage({
     (engine) => engine.phase === "interrupted_restart" || engine.errorCode === "desktop_process_restarted",
   ).length ?? 0;
   const incompleteEngineCount = latestRun?.engineRuns.filter((engine) => engine.status !== "completed").length ?? 0;
+  const latestRunNeverStarted = Boolean(latestRun
+    && isTerminalResultRun(latestRun)
+    && isNeverStartedScanRun(latestRun));
   const terminalResultRuns = runs.filter(isTerminalResultRun);
   const verificationBaselineRuns = runs.filter(isVerificationBaselineRun);
   const activeRun = runs.find((run) => ["queued", "running", "paused"].includes(run.status));
@@ -1775,7 +1780,7 @@ export function CasesPage({
             <div className="current-case-hero__meta">
               <StatusPill label={t(phaseKeys[selectedCase.phase])} tone={phaseMeta[selectedCase.phase].tone} />
               {selectedCase.isDemo && <StatusPill label={text(pageCopy.demo)} tone="demo" />}
-              {latestRun && <StatusPill label={text(pageCopy.latestRun, { status: t(runStatusKeys[latestRun.status]) })} tone={runStatusMeta[latestRun.status].tone} />}
+              {latestRun && <StatusPill label={text(pageCopy.latestRun, { status: latestRunNeverStarted ? text(pageCopy.notStarted) : t(runStatusKeys[latestRun.status]) })} tone={latestRunNeverStarted ? "warning" : runStatusMeta[latestRun.status].tone} />}
             </div>
             <h2 id="current-case-title">
               {displayedCaseLabels.get(selectedCase.id) ?? selectedCaseIdentity?.name}

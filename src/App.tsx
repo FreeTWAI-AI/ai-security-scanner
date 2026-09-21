@@ -1689,6 +1689,7 @@ export default function App() {
           result.data.lifecycleDisposition.action,
           selectedWorkspace,
           result.data.lifecycleDisposition.runId,
+          result.data.cancelRequestedRunId,
         )
         : result.data.lifecycleDisposition;
       const response: ActionResponse = selectedWorkspace || lifecycleDisposition
