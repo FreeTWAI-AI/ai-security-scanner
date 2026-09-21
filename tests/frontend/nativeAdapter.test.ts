@@ -3473,6 +3473,45 @@ test("unevaluated targets preserve known causes, legacy absence, and fail closed
   ]);
 });
 
+test("a completed catalog run leaves a recorded unevaluated asset uncovered and still covers its evaluated sibling", () => {
+  const coverageFor = (cause: string) => {
+    const workspace = adaptNativeCase(platformCaseFixture({
+      scan_runs: [{
+        id: "run-unevaluated-coverage",
+        case_id: "case-platforms-1",
+        sequence: 1,
+        created_at: "2026-08-26T00:00:00Z",
+        completed_at: "2026-08-26T00:01:00Z",
+        knowledge_cutoff: "2026-08-24T00:00:00Z",
+        engine_runs: [{
+          ...engineRunFixture("greenbone-task", "completed"),
+          task_kind: { kind: "catalog_engine" },
+          asset_ids: ["dead-host", "checked-host"],
+          unevaluated_targets: [{ asset_id: "dead-host", cause }],
+        }],
+      }],
+    }));
+    const scan = workspace.runs[0];
+    return {
+      covered: scan?.coveredAssetCount,
+      total: scan?.totalAssetCount,
+      cause: scan?.engineRuns[0]?.unevaluatedTargets?.[0]?.cause,
+    };
+  };
+
+  const named = coverageFor("target_did_not_respond");
+  assert.equal(named.total, 2);
+  assert.equal(named.cause, "target_did_not_respond");
+  assert.equal(named.covered, 1);
+
+  // An "unknown" cause keeps today's coverage. The parity test is what binds
+  // a new Rust variant before it can reach users unnamed.
+  const unrecognized = coverageFor("future_cause");
+  assert.equal(unrecognized.total, 2);
+  assert.equal(unrecognized.cause, "unknown");
+  assert.equal(unrecognized.covered, 2);
+});
+
 test("legacy engine tasks without provenance preserve catalog completion and coverage", () => {
   const legacy = adaptNativeCase(platformCaseFixture({
     scan_runs: [{

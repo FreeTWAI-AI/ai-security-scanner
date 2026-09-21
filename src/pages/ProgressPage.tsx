@@ -1187,21 +1187,25 @@ export function ProgressPage({
       : canStart
         ? copy.savedPlanBodyStart
         : copy.savedPlanBodyNoAction;
-  const incompleteCount = stateCounts.partial + stateCounts.failed + stateCounts.not_executed + stateCounts.cancelled;
+  const unevaluatedCompletedCheckCount = selectedRun.engineRuns.filter(
+    (engine) => engine.status === "completed" && engineRecordedUnevaluatedTarget(engine),
+  ).length;
+  const incompleteCount = stateCounts.partial + stateCounts.failed + stateCounts.not_executed + stateCounts.cancelled + unevaluatedCompletedCheckCount;
   const terminalCount = terminalEngineStates.reduce((sum, state) => sum + stateCounts[state], 0);
   const completedAssetCount = Math.min(selectedRun.totalAssetCount, selectedRun.coveredAssetCount);
   const uncoveredAssetCount = Math.max(0, selectedRun.totalAssetCount - completedAssetCount);
   const knownAttentionAssetCount = Math.min(
     uncoveredAssetCount,
     new Set(selectedRun.engineRuns
-      .filter((engine) => ["partial", "failed", "not_executed", "cancelled"].includes(engine.status))
+      .filter((engine) => ["partial", "failed", "not_executed", "cancelled"].includes(engine.status)
+        || engineRecordedUnevaluatedTarget(engine))
       .flatMap((engine) => engine.assetIds)).size,
   );
   const attentionAssetCount = activeRunStatuses.has(selectedRun.status)
     ? knownAttentionAssetCount
     : uncoveredAssetCount;
   const remainingAssetCount = Math.max(0, uncoveredAssetCount - attentionAssetCount);
-  const completedCheckCount = stateCounts.completed;
+  const completedCheckCount = stateCounts.completed - unevaluatedCompletedCheckCount;
   const attentionCheckCount = incompleteCount;
   const remainingCheckCount = Math.max(
     0,

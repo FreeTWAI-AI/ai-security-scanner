@@ -1891,6 +1891,12 @@ const exactCompletedLocalhostBinding = (
   );
 };
 
+/** A target the engine recorded as unevaluated was not checked, whatever the run's own status says. */
+const engineEvaluatedAsset = (engineRun: EngineRun, assetId: string): boolean =>
+  !engineRun.unevaluatedTargets?.some(
+    (target) => target.assetId === assetId && target.cause !== "unknown",
+  );
+
 const checkpointStages = new Set([
   "planned",
   "preflight",
@@ -2622,7 +2628,9 @@ export const adaptNativeCase = (
       return applicableRuns.length > 0 && applicableRuns.every((engineRun) =>
         engineRun.taskKind.kind === "built_in_localhost_tcp"
           ? exactCompletedLocalhostBinding(engineRun, assetId, nativeCase.assets)
-          : engineRun.taskKind.kind === "catalog_engine" && engineRun.status === "completed"
+          : engineRun.taskKind.kind === "catalog_engine"
+            && engineRun.status === "completed"
+            && engineEvaluatedAsset(engineRun, assetId)
       );
     });
     const status = requestOutcome ? "no_checks_completed" : runStatus(engineRuns);

@@ -545,6 +545,25 @@ test("a completed Greenbone check whose host did not respond states the recorded
   expect(clear.textContent).not.toContain("Continue with the other checks.");
 });
 
+test("a terminal run with one completed dead-host check and one clean completed check needs attention", () => {
+  const { container } = renderProgress(run([
+    engine("greenbone", "completed", {
+      unevaluatedTargets: [{ assetId: "asset-1", cause: "target_did_not_respond" }],
+    }),
+    engine("clear-check", "completed"),
+  ], "completed"));
+
+  const summary = container.querySelector(".run-overview__progress-counts")?.textContent;
+  expect(summary).toContain("Checks · Completed 1 · Remaining 0 · Need attention 1");
+
+  const notice = Array.from(container.querySelectorAll<HTMLElement>(".inline-notice")).find(
+    (candidate) => candidate.textContent?.includes("This run did not cover everything"),
+  );
+  expect(notice?.textContent).toContain(
+    "Some checks did not finish. Open each affected check below and complete or retry it.",
+  );
+});
+
 test("a completed website check with no security-template evidence states the recorded retry", () => {
   const retry = "Retry this check to complete the missing work.";
   const { container } = renderProgress(run([
