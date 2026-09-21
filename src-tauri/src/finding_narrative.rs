@@ -2022,8 +2022,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "需要弱點涵蓋時，請為資產選擇支援的精確掃描設定檔並執行。",
     ),
     (
-        "Add a supported exact service profile, then run this asset's vulnerability check.",
-        "加入支援的精確服務設定，再執行這項資產的弱點檢查。",
+        "Start a new scan and add each exact host under Internal systems.",
+        "請開始新的檢查，並在「內部系統」逐一加入精確主機。",
     ),
     (
         "Retry this scan to create a consistent coverage record.",

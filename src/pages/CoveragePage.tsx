@@ -471,8 +471,8 @@ const pageCopy = {
     "{count} 個裸主機或網段僅供盤點，不會掃描",
   ),
   environmentNotReadyBody: bilingual(
-    "These legacy bare hosts or ranges will not be contacted or vulnerability-scanned in this run; the report lists them as not tested. Edit inputs to add each exact host under Internal systems.",
-    "這些舊版裸主機或網段在本次執行中不會被連線或掃描弱點；報告會將它們列為未測試。請編輯輸入，並在「內部系統」逐一加入精確主機。",
+    "These legacy bare hosts or ranges will not be contacted or vulnerability-scanned in this run; the report lists them as not tested. Start a new scan and add each exact host under Internal systems.",
+    "這些舊版裸主機或網段在本次執行中不會被連線或掃描弱點；報告會將它們列為未測試。請開始新的檢查，並在「內部系統」逐一加入精確主機。",
   ),
   environmentNoReadyTitle: bilingual("Add one scan-ready item", "請加入至少一個可掃描項目"),
   environmentNoReadyBody: bilingual(

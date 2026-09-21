@@ -621,7 +621,7 @@ test("public website flow applies the fixed Nuclei quick profile and starts with
 test("one IT-environment Start routes repositories and exact website origins into one combined run", async () => {
   const onStartScan = vi.fn().mockResolvedValue(true);
   const onStartEnvironmentScan = vi.fn().mockResolvedValue(true);
-  const { getAllByText, getByRole, getByText } = renderRoute({
+  const { container, getAllByText, getByRole, getByText } = renderRoute({
     assessmentIntent: "internal_it_environment",
     requestedActivities: ["local_artifact_analysis", "active_external_vulnerability_tests"],
     nativeMode: false,
@@ -803,6 +803,13 @@ test("one IT-environment Start routes repositories and exact website origins int
   )).not.toBeNull();
   expect(getByText("1 bare host(s) or range(s) are inventory only — not scanned")).not.toBeNull();
   expect(getByText(/These legacy bare hosts or ranges will not be contacted or vulnerability-scanned in this run/i)).not.toBeNull();
+  expect(getByText(
+    "These legacy bare hosts or ranges will not be contacted or vulnerability-scanned in this run; the report lists them as not tested. Start a new scan and add each exact host under Internal systems.",
+  )).not.toBeNull();
+  expect(
+    Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Edit inputs")),
+    "the inventory-only notice may not name a control this situation never renders",
+  ).toBeUndefined();
   expect(getByText("10.20.0.19")).not.toBeNull();
   expect(getByText("host.internal.example")).not.toBeNull();
   expect(getByText("Greenbone remote-safe profile · TCP 22, 25, 443, 445, 3389")).not.toBeNull();
