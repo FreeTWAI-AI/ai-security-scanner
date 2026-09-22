@@ -191,14 +191,15 @@ test("execution_failed only recommends tool setup with explicit pre-start eviden
     findingCount: 0,
   }));
   assert.doesNotMatch(missingCheckpoint.en, /scan-tool setup/u);
-  assert.match(missingCheckpoint.en, /diagnostic log/u);
-  assert.match(missingCheckpoint.zhTW, /診斷紀錄/u);
+  assert.equal(missingCheckpoint.en, "This check stopped. Retry it; its error code is under Technical status and errors.");
+  assert.equal(missingCheckpoint.zhTW, "這項檢查已停止；請重試，錯誤代碼位於「技術狀態與錯誤」。");
 
   for (const started of [
     engine({
       status: "failed",
       phase: "failed",
       errorCode: "execution_failed",
+      rawArtifactCount: 0,
       runtimeProvider: "managed",
       checkpoint: { attempt: 1, stage: "failed", artifactCount: 0, cleanupCompleted: true, scopeBound: false },
     }),
@@ -206,14 +207,15 @@ test("execution_failed only recommends tool setup with explicit pre-start eviden
       status: "failed",
       phase: "failed",
       errorCode: "execution_failed",
+      rawArtifactCount: 0,
       exitCode: 2,
       checkpoint: { attempt: 1, stage: "failed", artifactCount: 0, cleanupCompleted: true, scopeBound: true },
     }),
   ]) {
     const action = engineNextStepFor(started);
     assert.doesNotMatch(action.en, /scan-tool setup/u);
-    assert.match(action.en, /did not finish|diagnostic log/u);
-    assert.match(action.zhTW, /沒有完成|診斷紀錄/u);
+    assert.equal(action.en, "This check began but did not finish. Retry it; its error code is under Technical status and errors.");
+    assert.equal(action.zhTW, "這項檢查已開始但沒有完成；請重試，錯誤代碼位於「技術狀態與錯誤」。");
   }
 });
 
@@ -226,8 +228,8 @@ test("post-start failures preserve results and cleanup guidance", () => {
     findingCount: 2,
     checkpoint: { attempt: 1, stage: "failed", artifactCount: 1, cleanupCompleted: true, scopeBound: true },
   }));
-  assert.match(withResults.en, /Open the completed results/u);
-  assert.match(withResults.zhTW, /開啟已完成結果/u);
+  assert.equal(withResults.en, "This check saved partial results before it stopped. Retry it to complete the missing work.");
+  assert.equal(withResults.zhTW, "這項檢查在停止前已保存部分結果；請重試以完成缺少的工作。");
 
   const cleanup = engineNextStepFor(engine({ status: "failed", errorCode: "runtime_cleanup_pending" }));
   assert.match(cleanup.en, /Finish cleanup/u);
@@ -242,9 +244,127 @@ test("an unclassified stopped check gives one direct retry path", () => {
     errorCode: "unclassified_failure",
   }));
 
-  assert.equal(action.en, "Retry this check. Its diagnostic log is available under Technical details.");
-  assert.equal(action.zhTW, "請重試這項檢查；診斷紀錄位於「技術細節」。");
+  assert.equal(action.en, "Retry this check. Its error code and scanner message are under Technical status and errors.");
+  assert.equal(action.zhTW, "請重試這項檢查；錯誤代碼與掃描工具訊息位於「技術狀態與錯誤」。");
   assert.doesNotMatch(`${action.en} ${action.zhTW}`, /if it stops again|for support|若再次停止|以便排查/iu);
+});
+
+test("a failed check's next step does not name a control absent from its row", () => {
+  // "Technical details" and "Download the diagnostic log" are real labels in this product,
+  // but they live on other components and inside notices this row never renders. A grep
+  // for the label alone would not have caught a failed-check sentence that names them.
+  const absentEnglish = [/Technical details/u, /Download the diagnostic log/u];
+  const absentTraditionalChinese = [/技術細節/u, /下載診斷紀錄/u];
+  const stoppedCheckpoint = {
+    attempt: 1,
+    stage: "failed" as const,
+    artifactCount: 0,
+    cleanupCompleted: true,
+    scopeBound: false,
+  };
+  const cases = [
+    {
+      branch: "runtime_cleanup_pending",
+      run: engine({ status: "failed", phase: "failed", errorCode: "runtime_cleanup_pending" }),
+      expected: {
+        en: "Finish cleanup, then retry this check.",
+        zhTW: "完成清理後，再重試這項檢查。",
+      },
+    },
+    {
+      branch: "execution_failed before the scanner starts",
+      run: engine({
+        status: "failed",
+        phase: "failed",
+        errorCode: "execution_failed",
+        rawArtifactCount: 0,
+        findingCount: 0,
+        checkpoint: stoppedCheckpoint,
+      }),
+      expected: {
+        en: "Retry this check; scan-tool setup is automatic.",
+        zhTW: "重試這項檢查；掃描工具會自動準備。",
+      },
+    },
+    {
+      branch: "execution_failed with saved results",
+      run: engine({
+        status: "failed",
+        phase: "failed",
+        errorCode: "execution_failed",
+        rawArtifactCount: 1,
+        findingCount: 2,
+        checkpoint: { ...stoppedCheckpoint, artifactCount: 1, scopeBound: true },
+      }),
+      expected: {
+        en: "This check saved partial results before it stopped. Retry it to complete the missing work.",
+        zhTW: "這項檢查在停止前已保存部分結果；請重試以完成缺少的工作。",
+      },
+    },
+    {
+      branch: "execution_failed after scope, runtime, or an exit code",
+      run: engine({
+        status: "failed",
+        phase: "failed",
+        errorCode: "execution_failed",
+        rawArtifactCount: 0,
+        findingCount: 0,
+        runtimeProvider: "managed",
+        exitCode: 2,
+        checkpoint: { ...stoppedCheckpoint, scopeBound: true },
+      }),
+      expected: {
+        en: "This check began but did not finish. Retry it; its error code is under Technical status and errors.",
+        zhTW: "這項檢查已開始但沒有完成；請重試，錯誤代碼位於「技術狀態與錯誤」。",
+      },
+    },
+    {
+      branch: "execution_failed with no start or result evidence",
+      run: engine({
+        status: "failed",
+        phase: "failed",
+        errorCode: "execution_failed",
+        checkpoint: undefined,
+        rawArtifactCount: 0,
+        findingCount: 0,
+      }),
+      expected: {
+        en: "This check stopped. Retry it; its error code is under Technical status and errors.",
+        zhTW: "這項檢查已停止；請重試，錯誤代碼位於「技術狀態與錯誤」。",
+      },
+    },
+    {
+      branch: "tool-setup error code",
+      run: engine({ status: "failed", phase: "failed", errorCode: "runtime_image_unavailable" }),
+      expected: {
+        en: "Retry this check; scan-tool setup is automatic.",
+        zhTW: "重試這項檢查；掃描工具會自動準備。",
+      },
+    },
+    {
+      branch: "release-unavailable error code",
+      run: engine({ status: "failed", phase: "failed", errorCode: "engine_release_unavailable" }),
+      expected: {
+        en: "Update the app, then retry these checks.",
+        zhTW: "請更新應用程式，再重試這些檢查。",
+      },
+    },
+    {
+      branch: "unclassified error code",
+      run: engine({ status: "failed", phase: "failed", errorCode: "unclassified_failure" }),
+      expected: {
+        en: "Retry this check. Its error code and scanner message are under Technical status and errors.",
+        zhTW: "請重試這項檢查；錯誤代碼與掃描工具訊息位於「技術狀態與錯誤」。",
+      },
+    },
+  ];
+
+  for (const { branch, run, expected } of cases) {
+    const action = engineNextStepFor(run);
+    assert.deepEqual(action, expected, branch);
+    for (const pattern of absentEnglish) assert.doesNotMatch(action.en, pattern, branch);
+    for (const pattern of absentTraditionalChinese) assert.doesNotMatch(action.zhTW, pattern, branch);
+  }
 });
 
 test("bounded retry exhaustion and cancellation never promise an impossible resume", () => {

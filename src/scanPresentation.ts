@@ -112,16 +112,16 @@ const nextStepCopy = {
     zhTW: "重試這項檢查；掃描工具會自動準備。",
   },
   executionStoppedWithResults: {
-    en: "Open the completed results and diagnostic log, then retry this check.",
-    zhTW: "請開啟已完成結果與診斷紀錄，再重試這項檢查。",
+    en: "This check saved partial results before it stopped. Retry it to complete the missing work.",
+    zhTW: "這項檢查在停止前已保存部分結果；請重試以完成缺少的工作。",
   },
   executionStopped: {
-    en: "This check began but did not finish. Download the diagnostic log, then retry it.",
-    zhTW: "這項檢查已開始但沒有完成；請下載診斷紀錄後再重試。",
+    en: "This check began but did not finish. Retry it; its error code is under Technical status and errors.",
+    zhTW: "這項檢查已開始但沒有完成；請重試，錯誤代碼位於「技術狀態與錯誤」。",
   },
   executionUnknown: {
-    en: "This check stopped. Download the diagnostic log, then retry it.",
-    zhTW: "這項檢查已停止；請下載診斷紀錄後重試。",
+    en: "This check stopped. Retry it; its error code is under Technical status and errors.",
+    zhTW: "這項檢查已停止；請重試，錯誤代碼位於「技術狀態與錯誤」。",
   },
   cleanupPending: {
     en: "Finish cleanup, then retry this check.",
@@ -176,8 +176,8 @@ const nextStepCopy = {
     zhTW: "請展開未執行檢查的技術紀錄，讓這項檢查符合已核准的通訊協定或目標形式。",
   },
   retry: {
-    en: "Retry this check. Its diagnostic log is available under Technical details.",
-    zhTW: "請重試這項檢查；診斷紀錄位於「技術細節」。",
+    en: "Retry this check. Its error code and scanner message are under Technical status and errors.",
+    zhTW: "請重試這項檢查；錯誤代碼與掃描工具訊息位於「技術狀態與錯誤」。",
   },
   cancelled: {
     en: "Start a new scan to run this check again.",
