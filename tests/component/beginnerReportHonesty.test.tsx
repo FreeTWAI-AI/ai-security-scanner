@@ -1325,6 +1325,7 @@ const incompleteAssetWithNextAction = (
 
 const assetNextActionControlCases = [
   ["retry_check", "progress"],
+  ["start_new_scan", "progress"],
   ["review_scope_and_retry", "coverage"],
   ["wait_or_cancel", "progress"],
   ["start_expected_service_and_retry", "progress"],

@@ -946,6 +946,7 @@ export type BeginnerNextActionCode =
   | "review_finding"
   | "confirm_finding_after_incomplete_check"
   | "retry_check"
+  | "start_new_scan"
   | "review_scope_and_retry"
   | "choose_compatible_check"
   | "wait_or_cancel"

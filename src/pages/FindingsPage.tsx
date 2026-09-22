@@ -836,6 +836,8 @@ const isCoverageLossGap = (
 const assetNextActionDestination = {
   // The retry lives in Progress.
   retry_check: "progress",
+  // Progress renders Start when this check cannot be resumed.
+  start_new_scan: "progress",
   // The active work and its cancel are in Progress.
   wait_or_cancel: "progress",
   // Ends in the same retry as retry_check.

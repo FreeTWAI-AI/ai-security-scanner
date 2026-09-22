@@ -497,6 +497,7 @@ pub enum NextActionCode {
     ReviewFinding,
     ConfirmFindingAfterIncompleteCheck,
     RetryCheck,
+    StartNewScan,
     ReviewScopeAndRetry,
     ChooseCompatibleCheck,
     WaitOrCancel,
@@ -2340,6 +2341,94 @@ fn append_naabu_coverage_gaps(
     }
 }
 
+/// Error codes for which `engineRecoveryAction` returns `"none"`.
+const TASK_RETRY_UNAVAILABLE_ERROR_CODES: [&str; 5] = [
+    "resume_release_incompatible",
+    "resume_work_plan_invalid",
+    "runtime_cleanup_identity_unavailable",
+    "coverage_incomplete_after_bounded_retries",
+    "cancelled_after_partial_results",
+];
+
+/// Phases that force recovery action `"none"` before `engineRecoveryAction`.
+const TASK_RETRY_UNAVAILABLE_PHASES: [&str; 2] = [
+    "cleanup_identity_unavailable",
+    "interrupted_restart_cleanup_identity_unavailable",
+];
+
+/// `stage` values `parseCheckpoint` accepts. Any other stage leaves no Resume control.
+const TASK_RETRY_CHECKPOINT_STAGES: [&str; 11] = [
+    "planned",
+    "preflight",
+    "pulling_image",
+    "running",
+    "capturing_artifacts",
+    "adapting_artifacts",
+    "captured_awaiting_adapter",
+    "cleanup_pending",
+    "completed",
+    "cancelled",
+    "failed",
+];
+
+/// Mirrors `engineRecoveryAction` in `src/services/nativeAdapter.ts`: true when
+/// the Progress page renders a per-check Resume/Retry control for this task.
+/// Kept in sync by `retry_control_blocklist_matches_the_progress_adapter`.
+///
+/// A resume token counts only when `parseCheckpoint` would accept it: non-empty
+/// JSON whose `engine_run_id`, `engine_id`, numeric `attempt`, and `stage`
+/// match this task. `PartiallyCompleted` is the wire status `partial`.
+fn task_retry_control_is_available(task: &EngineRun) -> bool {
+    let blocked_code = task
+        .error_code
+        .as_deref()
+        .is_some_and(|code| TASK_RETRY_UNAVAILABLE_ERROR_CODES.contains(&code));
+    let blocked_phase = TASK_RETRY_UNAVAILABLE_PHASES
+        .iter()
+        .any(|phase| *phase == task.phase);
+    if blocked_code || blocked_phase {
+        return false;
+    }
+    matches!(
+        task.status,
+        EngineRunStatus::Paused
+            | EngineRunStatus::Failed
+            | EngineRunStatus::PartiallyCompleted
+            | EngineRunStatus::Cancelled,
+    ) && progress_resume_checkpoint_is_accepted(task)
+}
+
+fn progress_resume_checkpoint_is_accepted(task: &EngineRun) -> bool {
+    let Some(token) = task
+        .resume_token
+        .as_deref()
+        .filter(|token| !token.is_empty())
+    else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(token) else {
+        return false;
+    };
+    let Some(checkpoint) = value.as_object() else {
+        return false;
+    };
+    checkpoint
+        .get("engine_run_id")
+        .and_then(serde_json::Value::as_str)
+        == Some(task.id.as_str())
+        && checkpoint
+            .get("engine_id")
+            .and_then(serde_json::Value::as_str)
+            == Some(task.engine_id.as_str())
+        && checkpoint
+            .get("attempt")
+            .is_some_and(serde_json::Value::is_number)
+        && checkpoint
+            .get("stage")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|stage| TASK_RETRY_CHECKPOINT_STAGES.contains(&stage))
+}
+
 fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut Vec<CoverageGap>) {
     let (not_tested_code, not_tested_action) = not_tested_next_action(task);
     let (kind, dimension, reason, next_action_code, next_action) = match status {
@@ -2386,6 +2475,26 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
             NextActionCode::WaitOrCancel,
             "Open Review scanner status and finish or cancel this check.",
         ),
+    };
+    // Only these four arms name the per-check Resume control. `NotTested`
+    // keeps the sentence from `not_tested_next_action`, including automatic
+    // setup. A recorded localhost observation is retried from its own control.
+    let (next_action_code, next_action) = if matches!(
+        status,
+        CoverageDimensionStatus::TestedPartial
+            | CoverageDimensionStatus::TimedOut
+            | CoverageDimensionStatus::Failed
+            | CoverageDimensionStatus::Cancelled,
+    ) && next_action_code == NextActionCode::RetryCheck
+        && task.localhost_tcp_observation.is_none()
+        && !task_retry_control_is_available(task)
+    {
+        (
+            NextActionCode::StartNewScan,
+            "Start a new scan for a fresh result.",
+        )
+    } else {
+        (next_action_code, next_action)
     };
     gaps.push(CoverageGap {
         unattributed: None,
@@ -4904,6 +5013,234 @@ mod tests {
         assert!(!gap.next_action.to_ascii_lowercase().contains("progress"));
     }
 
+    /// Checkpoint JSON `parseCheckpoint` accepts: matching ids, a numeric attempt, a known stage.
+    fn progress_resume_token(task: &EngineRun, stage: &str) -> String {
+        serde_json::json!({
+            "engine_run_id": task.id,
+            "engine_id": task.engine_id,
+            "attempt": 1,
+            "stage": stage,
+        })
+        .to_string()
+    }
+
+    fn task_gap(task: &EngineRun, status: CoverageDimensionStatus) -> CoverageGap {
+        let mut gaps = Vec::new();
+        append_task_gap(task, status, &mut gaps);
+        assert_eq!(gaps.len(), 1, "{status:?}");
+        gaps.pop().expect("one task gap")
+    }
+
+    #[test]
+    fn bounded_naabu_retry_exhaustion_on_the_task_gap_asks_for_a_new_scan() {
+        let mut task = catalog_task("naabu-exhausted", EngineRunStatus::PartiallyCompleted);
+        task.engine_id = NAABU_ENGINE_ID.into();
+        task.phase = "results_partial".into();
+        task.error_code = Some("coverage_incomplete_after_bounded_retries".into());
+        task.resume_token = Some(progress_resume_token(&task, "captured_awaiting_adapter"));
+
+        let gap = task_gap(&task, CoverageDimensionStatus::TestedPartial);
+
+        assert_eq!(gap.next_action_code, NextActionCode::StartNewScan);
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
+        assert_eq!(
+            gap.reason,
+            "This check did not reach a confirmed complete result. Diagnostic code: coverage_incomplete_after_bounded_retries."
+        );
+    }
+
+    #[test]
+    fn a_failed_check_with_a_resume_checkpoint_still_asks_to_retry() {
+        let mut task = catalog_task("failed-resumable", EngineRunStatus::Failed);
+        task.error_code = Some(RECONCILED_EXECUTION_ERROR_CODE.into());
+        task.phase = "failed".into();
+        task.resume_token = Some(progress_resume_token(&task, "failed"));
+
+        let gap = task_gap(&task, CoverageDimensionStatus::Failed);
+
+        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
+        assert_eq!(gap.next_action, "Retry this check.");
+        assert_eq!(
+            gap.reason,
+            "This check failed, so it cannot be shown as tested."
+        );
+    }
+
+    #[test]
+    fn a_cleanup_identity_phase_asks_for_a_new_scan_even_with_a_resume_checkpoint() {
+        let mut task = catalog_task("cleanup-blocked", EngineRunStatus::Failed);
+        task.phase = "cleanup_identity_unavailable".into();
+        task.error_code = None;
+        task.resume_token = Some(progress_resume_token(&task, "failed"));
+
+        let gap = task_gap(&task, CoverageDimensionStatus::Failed);
+
+        assert_eq!(gap.next_action_code, NextActionCode::StartNewScan);
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
+        assert_eq!(
+            gap.reason,
+            "This check failed, so it cannot be shown as tested."
+        );
+    }
+
+    #[test]
+    fn a_failed_check_without_a_resume_token_asks_for_a_new_scan() {
+        let task = catalog_task("no-token", EngineRunStatus::Failed);
+        assert!(task.resume_token.is_none());
+
+        for status in [
+            CoverageDimensionStatus::TestedPartial,
+            CoverageDimensionStatus::TimedOut,
+            CoverageDimensionStatus::Failed,
+            CoverageDimensionStatus::Cancelled,
+        ] {
+            let gap = task_gap(&task, status);
+            assert_eq!(
+                gap.next_action_code,
+                NextActionCode::StartNewScan,
+                "{status:?}"
+            );
+            assert_eq!(
+                gap.next_action, "Start a new scan for a fresh result.",
+                "{status:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unreadable_resume_token_asks_for_a_new_scan() {
+        let mut garbage = catalog_task("garbage-token", EngineRunStatus::Failed);
+        garbage.resume_token = Some("not-a-checkpoint".into());
+        let gap = task_gap(&garbage, CoverageDimensionStatus::Failed);
+        assert_eq!(gap.next_action_code, NextActionCode::StartNewScan);
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
+
+        let mut foreign = catalog_task("foreign-token", EngineRunStatus::Cancelled);
+        foreign.resume_token = Some(progress_resume_token(&foreign, "cancelled"));
+        foreign.id = "different-task".into();
+        let gap = task_gap(&foreign, CoverageDimensionStatus::Cancelled);
+        assert_eq!(gap.next_action_code, NextActionCode::StartNewScan);
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
+    }
+
+    #[test]
+    fn not_executed_manifest_unavailable_keeps_the_automatic_setup_retry() {
+        let mut task = catalog_task("manifest", EngineRunStatus::NotExecuted);
+        task.error_code = Some("manifest_unavailable".into());
+
+        let report =
+            build_beginner_master_report(&case_with_catalog_tasks(vec![task], true), "run-1")
+                .unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension.contains("not-tested check dimension"))
+            .expect("not-tested task gap");
+
+        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
+        assert_eq!(
+            gap.next_action,
+            "Retry this check; scan-tool setup is automatic."
+        );
+    }
+
+    #[test]
+    fn timed_out_localhost_without_a_resume_token_still_asks_to_retry() {
+        let case = localhost_case(
+            LocalhostTcpOutcome::TimedOut,
+            EngineRunStatus::PartiallyCompleted,
+            true,
+        );
+        let task = &case.scan_runs[0].engine_runs[0];
+        assert!(task.resume_token.is_none());
+        assert!(task.localhost_tcp_observation.is_some());
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.kind == CoverageGapKind::TimedOut)
+            .expect("timed-out localhost gap");
+
+        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
+        assert_eq!(gap.next_action, "Retry the timed-out work.");
+    }
+
+    fn quoted_strings(source: &str) -> Vec<&str> {
+        let mut found = Vec::new();
+        let mut rest = source;
+        while let Some(open) = rest.find('"') {
+            let after = &rest[open + 1..];
+            let Some(close) = after.find('"') else {
+                break;
+            };
+            found.push(&after[..close]);
+            rest = &after[close + 1..];
+        }
+        found
+    }
+
+    fn quoted_array_before<'a>(source: &'a str, marker: &str) -> Vec<&'a str> {
+        let at = source
+            .find(marker)
+            .unwrap_or_else(|| panic!("Progress adapter is missing {marker}"));
+        let start = source[..at]
+            .rfind('[')
+            .unwrap_or_else(|| panic!("no array opens before {marker}"));
+        quoted_strings(&source[start..at])
+    }
+
+    fn quoted_strings_between<'a>(
+        source: &'a str,
+        start_marker: &str,
+        end_marker: &str,
+    ) -> Vec<&'a str> {
+        let start = source
+            .find(start_marker)
+            .unwrap_or_else(|| panic!("Progress adapter is missing {start_marker}"));
+        let from = start + start_marker.len();
+        let end_rel = source[from..]
+            .find(end_marker)
+            .unwrap_or_else(|| panic!("Progress adapter is missing {end_marker}"));
+        quoted_strings(&source[from..from + end_rel])
+    }
+
+    fn assert_same_strings(label: &str, expected: &[&str], mut actual: Vec<&str>) {
+        let mut expected = expected.to_vec();
+        expected.sort_unstable();
+        actual.sort_unstable();
+        assert_eq!(actual, expected, "{label}");
+    }
+
+    #[test]
+    fn retry_control_blocklist_matches_the_progress_adapter() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../src/services/nativeAdapter.ts");
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("reading {} failed: {error}", path.display()));
+
+        assert_same_strings(
+            "error codes",
+            &TASK_RETRY_UNAVAILABLE_ERROR_CODES,
+            quoted_array_before(&source, "].includes(errorCode ?? \"\")"),
+        );
+        assert_same_strings(
+            "phases",
+            &TASK_RETRY_UNAVAILABLE_PHASES,
+            quoted_array_before(&source, "].includes(engineRun.phase)"),
+        );
+        assert_same_strings(
+            "checkpoint stages",
+            &TASK_RETRY_CHECKPOINT_STAGES,
+            quoted_strings_between(&source, "const checkpointStages = new Set([", "]);"),
+        );
+        assert!(
+            source
+                .contains("[\"paused\", \"failed\", \"partial\", \"cancelled\"].includes(status)"),
+            "Progress resumable statuses drifted"
+        );
+    }
+
     #[test]
     fn not_tested_next_action_follows_the_recorded_skip_reason() {
         let mut mcp = catalog_task("mcp", EngineRunStatus::NotExecuted);
@@ -5919,6 +6256,8 @@ mod tests {
             "{}; container cleanup completed",
             crate::container_runtime::CONTAINER_EXECUTION_TIMEOUT_ERROR
         ));
+        // A recorded host-deadline failure keeps the checkpoint Progress uses for Resume.
+        timed_out.resume_token = Some(progress_resume_token(&timed_out, "failed"));
         let report =
             build_beginner_master_report(&case_with_catalog_tasks(vec![timed_out], true), "run-1")
                 .unwrap();
@@ -8834,8 +9173,14 @@ mod tests {
     #[test]
     fn partially_completed_check_with_no_saved_results_does_not_claim_durable_work() {
         let mut case = internal_host_case();
-        case.scan_runs[0].engine_runs[0].status = EngineRunStatus::PartiallyCompleted;
-        case.scan_runs[0].engine_runs[0].phase = "cleanup_pending".into();
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.status = EngineRunStatus::PartiallyCompleted;
+            task.phase = "cleanup_pending".into();
+            // Cleanup-pending work keeps a checkpoint, and Progress offers Resume for it.
+            let token = progress_resume_token(task, "cleanup_pending");
+            task.resume_token = Some(token);
+        }
 
         let report = build_beginner_master_report(&case, "run-1").unwrap();
         assert!(report.findings.is_empty());
