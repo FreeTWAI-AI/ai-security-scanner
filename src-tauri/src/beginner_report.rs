@@ -3468,7 +3468,7 @@ fn append_internal_device_profile_gaps(
                 dimension: dimension.into(),
                 reason: reason.into(),
                 next_action_code: NextActionCode::PreserveVisibleLimitation,
-                next_action: "Choose a supported device product and firmware vulnerability check."
+                next_action: "Run a separately approved device firmware assessment or use endpoint inventory."
                     .into(),
             });
         }
@@ -8760,6 +8760,14 @@ mod tests {
         assert_eq!(gap.target_asset_ids, vec!["device-asset"]);
         assert!(gap.reason.contains("no device product or firmware"));
         assert!(gap.reason.contains("TLS protocol"));
+        assert_eq!(
+            gap.next_action,
+            "Run a separately approved device firmware assessment or use endpoint inventory."
+        );
+        assert_eq!(
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
         assert_eq!(report.coverage_counts.not_tested, 1);
         assert_eq!(report.coverage_counts.tested_complete, 1);
         assert_eq!(report.state.summary, BeginnerReportSummary::Partial);

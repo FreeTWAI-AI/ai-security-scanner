@@ -1990,8 +1990,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "重新執行 HTTPS 管理服務設定檔以建立完整涵蓋記錄。",
     ),
     (
-        "Choose a supported device product and firmware vulnerability check.",
-        "選擇支援的設備產品與韌體弱點檢查。",
+        "Run a separately approved device firmware assessment or use endpoint inventory.",
+        "另行執行經核准的裝置韌體評估，或使用端點盤點資料。",
     ),
     (
         "Use an approved endpoint inventory or local snapshot for host-level checks.",
