@@ -30984,7 +30984,9 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert!(english.contains("Host response unavailable. Vulnerability checks did not complete."));
+        assert!(
+            english.contains("Host response unavailable. Vulnerability checks did not complete.")
+        );
         assert!(english.contains(
             "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again."
         ));
