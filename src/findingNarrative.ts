@@ -1420,8 +1420,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "回到掃描設定，選擇正確目標並確認一次。",
   ],
   [
-    "Return to cloud setup and reconnect or review the selected account.",
-    "請回到雲端設定，重新連接或檢查所選帳號。",
+    "Return to scan setup and reconnect or review the cloud account.",
+    "請回到掃描設定，重新連接或檢查雲端帳號。",
   ],
   [
     "Open the skipped check's technical records and match this check to the approved protocol or target form.",

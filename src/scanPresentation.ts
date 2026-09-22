@@ -128,8 +128,8 @@ const nextStepCopy = {
     zhTW: "完成清理後，再重試這項檢查。",
   },
   providerSetup: {
-    en: "Return to cloud setup and reconnect or review the selected account.",
-    zhTW: "請回到雲端設定，重新連接或檢查所選帳號。",
+    en: "Return to scan setup and reconnect or review the cloud account.",
+    zhTW: "請回到掃描設定，重新連接或檢查雲端帳號。",
   },
   gatewayPreparation: {
     en: "Retry this check; private connection setup is automatic.",

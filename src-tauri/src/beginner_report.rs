@@ -4352,7 +4352,7 @@ fn not_tested_next_action(task: &EngineRun) -> (NextActionCode, &'static str) {
             | "provider_preflight_unavailable",
         ) => (
             NextActionCode::ReviewScopeAndRetry,
-            "Return to cloud setup and reconnect or review the selected account.",
+            "Return to scan setup and reconnect or review the cloud account.",
         ),
         Some(
             "direct_network_protocol_mismatch"

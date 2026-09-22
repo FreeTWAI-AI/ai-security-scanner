@@ -199,8 +199,8 @@ const copy = {
   },
   providerSourceTitle: { en: "Connect the cloud account you want to scan", zhTW: "請先連接你要掃描的雲端帳號" },
   providerSourceDescription: {
-    en: "Choose the exact account in Cloud setup.",
-    zhTW: "請到雲端設定選擇正確帳號。",
+    en: "Choose the exact account, then return here to start the scan.",
+    zhTW: "請選擇正確的帳號，再回到這裡開始掃描。",
   },
   providerCapabilityTitle: { en: "Your read-only connection is no longer available", zhTW: "唯讀連線已失效" },
   providerCapabilityDescription: {
@@ -209,8 +209,8 @@ const copy = {
   },
   providerAmbiguousTitle: { en: "Choose the right cloud connection", zhTW: "請選擇正確的雲端連線" },
   providerAmbiguousDescription: {
-    en: "More than one saved connection matches. Choose the exact one in Cloud setup before scanning.",
-    zhTW: "有多個已保存的連線可能符合；請到雲端設定選擇正確連線。",
+    en: "More than one saved connection matches. Choose the exact one, then return here to start the scan.",
+    zhTW: "有多個已保存的連線可能符合；請選擇正確的連線，再回到這裡開始掃描。",
   },
   providerAuthorizationTitle: { en: "Review this cloud connection", zhTW: "請檢查這個雲端連線" },
   providerAuthorizationDescription: {
