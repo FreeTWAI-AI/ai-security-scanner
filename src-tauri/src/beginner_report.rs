@@ -3419,7 +3419,7 @@ fn append_report_asset_snapshot_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>)
             reason:
                 "Supported service-specific vulnerability profile unavailable. Outcome: not tested."
                     .into(),
-            next_action_code: NextActionCode::ChooseCompatibleCheck,
+            next_action_code: NextActionCode::PreserveVisibleLimitation,
             next_action: "Start a new scan and add each exact host under Internal systems.".into(),
         });
     }
@@ -8469,7 +8469,7 @@ mod tests {
         );
         assert_eq!(
             inventory_gap.next_action_code,
-            NextActionCode::ChooseCompatibleCheck
+            NextActionCode::PreserveVisibleLimitation
         );
 
         let reopened: AssessmentCase =

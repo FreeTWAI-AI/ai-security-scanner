@@ -3387,6 +3387,33 @@ test("a manual-review control with no completed check keeps its decision step an
   expect(assetRow?.textContent).not.toContain("Open scan setup");
 });
 
+test("an asset with no supported vulnerability profile keeps its new-scan instruction and shows no scan-setup button", () => {
+  // Adding the exact host happens on a new scan, under Internal systems.
+  // Scan setup only lists hosts that already exist, so the row must not
+  // send the reader there.
+  const unsupportedProfileGap = {
+    kind: "not_tested" as const,
+    targetAssetIds: ["asset-1"],
+    dimension: "supported vulnerability profile",
+    reason:
+      "Supported service-specific vulnerability profile unavailable. Outcome: not tested.",
+    nextActionCode: "preserve_visible_limitation" as const,
+    nextAction: "Start a new scan and add each exact host under Internal systems.",
+  };
+  const { container } = renderReport(report("no_checks_completed", {
+    coverageGaps: [unsupportedProfileGap],
+    coverageCounts: counts({ notTested: 1 }),
+  }));
+
+  const assetRow = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(assetRow?.dataset.assetResult).toBe("not_tested");
+  expect(assetRow?.textContent).toContain(
+    "Start a new scan and add each exact host under Internal systems.",
+  );
+  expect(assetRow?.querySelectorAll("button")).toHaveLength(0);
+  expect(assetRow?.textContent).not.toContain("Open scan setup");
+});
+
 test("an empty findings list caused by a missing identifier names that identifier", () => {
   const { container } = renderReport(
     report("partial", { coverageGaps: [unattributedGap], coverageCounts: counts({ unattributed: 1 }) }),
