@@ -804,7 +804,7 @@ pub fn build_beginner_master_report(
             dimension: unavailable.dimension.clone(),
             reason: unavailable.explanation.clone(),
             next_action_code: NextActionCode::PreserveVisibleLimitation,
-            next_action: "Open the saved scope details.".into(),
+            next_action: "Rerun the scan to create a fully frozen result.".into(),
         });
     }
     if contradictory_request_outcome {
@@ -2276,12 +2276,12 @@ fn append_naabu_coverage_gaps(
                 if task_is_active(task) {
                     NextActionCode::WaitOrCancel
                 } else {
-                    NextActionCode::PreserveVisibleLimitation
+                    NextActionCode::RetryCheck
                 },
                 if task_is_active(task) {
                     "Open Review scanner status and finish or cancel this check."
                 } else {
-                    "Open the saved scope details."
+                    "Retry this check to create a consistent terminal record."
                 },
             )
         };
@@ -5289,6 +5289,167 @@ mod tests {
         assert_eq!(report.state.summary, BeginnerReportSummary::Partial);
         assert_eq!(report.coverage_counts.tested_partial, 1);
         assert_eq!(report.coverage_counts.not_tested, 1);
+    }
+
+    #[test]
+    fn naabu_work_finished_without_a_completed_final_state_asks_for_a_retry() {
+        let frozen_at = instant(10);
+        let address = "192.168.50.10".parse().expect("fixture address");
+        let resolved = ResolvedExternalPlan {
+            grant_id: "grant-1".into(),
+            case_id: "case-1".into(),
+            asset_id: "asset-1".into(),
+            target: CanonicalTarget::Address(address),
+            resolution: ResolutionSnapshot {
+                hostname: None,
+                addresses: BTreeSet::from([address]),
+                resolved_at: frozen_at,
+            },
+            ports: BTreeSet::from([80, 443]),
+            protocol: TransportProtocol::Tcp,
+            activity: ExternalActivity::LowImpactExternal,
+            rate_policy: RatePolicy {
+                requests_per_second: 25,
+                concurrency: 10,
+                timeout_seconds: 3,
+            },
+            template_policy: TemplatePolicy::conservative("not_applicable", Vec::new()),
+            frozen_at,
+            expires_at: frozen_at + Duration::hours(1),
+            allow_sensitive_networks: true,
+        };
+        let plan = build_naabu_work_plan(
+            NaabuWorkPlanIdentity::new("case-1", "run-1", "task-finished", frozen_at),
+            &[resolved],
+            None,
+        )
+        .expect("exact two-port plan");
+        assert_eq!(
+            plan.work_units.len(),
+            2,
+            "fixture requires one unit per port"
+        );
+
+        let requested_unit_ids = plan
+            .work_units
+            .iter()
+            .map(|unit| unit.unit_id.clone())
+            .collect::<Vec<_>>();
+        let selected = requested_unit_ids.iter().cloned().collect::<BTreeSet<_>>();
+        let launcher = plan
+            .launcher_plan_v3(1, Some(&selected))
+            .expect("current compact launcher plan");
+        let request = NaabuAttemptRequest {
+            schema_version: NAABU_ATTEMPT_REQUEST_SCHEMA_VERSION,
+            execution_attempt: 1,
+            requested_unit_ids,
+            launcher_plan_sha256: hex::encode(Sha256::digest(
+                serde_json::to_vec(&launcher).expect("launcher JSON"),
+            )),
+        };
+
+        let mut work_units = Vec::new();
+        let mut bindings = Vec::new();
+        for (index, unit) in plan.work_units.iter().enumerate() {
+            let identity = FinalArtifactIdentity {
+                engine_run_id: plan.identity.engine_run_id.clone(),
+                unit_id: unit.unit_id.clone(),
+                scope_sha256: unit.scope_sha256.clone(),
+                attempt: 1,
+                relative_path: format!("attempt-1/{}.jsonl", unit.unit_id),
+                sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+                byte_length: 0,
+            };
+            bindings.push(ValidatedArtifactBinding {
+                raw_artifact_id: format!("raw-complete-{index}"),
+                identity: identity.clone(),
+            });
+            work_units.push(WorkUnitCoverage {
+                unit_id: unit.unit_id.clone(),
+                scope_sha256: unit.scope_sha256.clone(),
+                outcome: WorkUnitOutcome::TestedComplete,
+                attempts: vec![WorkUnitAttempt {
+                    attempt: 1,
+                    outcome: WorkUnitOutcome::TestedComplete,
+                    incomplete_reason: None,
+                    final_artifact: Some(identity),
+                }],
+            });
+        }
+        let requested = plan.work_units.len();
+        let result = NaabuAttemptResult {
+            schema_version: NAABU_ATTEMPT_RESULT_SCHEMA_VERSION,
+            execution_attempt: 1,
+            journal_raw_artifact_id: "raw-journal-1".into(),
+            coverage: ValidatedExecutionCoverage {
+                schema_version: LAUNCHER_V2_JOURNAL_SCHEMA_VERSION,
+                engine_run_id: plan.identity.engine_run_id.clone(),
+                execution_attempt: 1,
+                recovered_trailing_record: false,
+                validated_artifact_bindings: bindings,
+                unreferenced_final_artifacts: Vec::new(),
+                work_units,
+                summary: ExecutionCoverageSummary {
+                    requested,
+                    tested_complete: requested,
+                    tested_partial: 0,
+                    failed: 0,
+                    timed_out: 0,
+                    cancelled: 0,
+                    not_tested: 0,
+                    partial: false,
+                    has_usable_results: true,
+                },
+            },
+            normalization_complete: true,
+        };
+
+        let mut task = catalog_task("finished", EngineRunStatus::PartiallyCompleted);
+        task.id = "task-finished".into();
+        task.engine_id = NAABU_ENGINE_ID.into();
+        task.progress_percent = 100;
+        task.error_message = None;
+        task.naabu_work_plan = Some(plan);
+        task.naabu_attempt_requests = vec![request];
+        task.naabu_attempt_results = vec![result];
+        let coverage = reduce_naabu_attempt_coverage(
+            task.naabu_work_plan.as_ref().expect("saved work plan"),
+            &task.naabu_attempt_requests,
+            &task.naabu_attempt_results,
+        )
+        .expect("saved work-unit history");
+        assert!(
+            coverage.fully_complete,
+            "fixture coverage must be fully complete"
+        );
+        assert_eq!(task.status, EngineRunStatus::PartiallyCompleted);
+
+        let mut case = case_with_catalog_tasks(vec![task], true);
+        case.assets[0].kind = AssetKind::IpAddress;
+        case.assets[0].name = address.to_string();
+
+        let projected = project_actual_coverage(&case, &case.scan_runs[0]);
+        let gap = projected
+            .gaps
+            .iter()
+            .find(|gap| gap.dimension == format!("{NAABU_ENGINE_ID} final-state reconciliation"))
+            .expect("final-state reconciliation gap");
+        assert_eq!(gap.kind, CoverageGapKind::Unavailable);
+        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
+        assert_eq!(
+            gap.next_action,
+            "Retry this check to create a consistent terminal record."
+        );
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        let reported = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == format!("{NAABU_ENGINE_ID} final-state reconciliation"))
+            .expect("report carries the final-state reconciliation gap");
+        assert_eq!(reported.kind, gap.kind);
+        assert_eq!(reported.next_action_code, gap.next_action_code);
+        assert_eq!(reported.next_action, gap.next_action);
     }
 
     #[test]

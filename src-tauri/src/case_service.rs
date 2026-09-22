@@ -35745,7 +35745,7 @@ mod tests {
             // as English prose and printed under translated headings.
             "本輪沒有保留精確的縮減記錄",
             "至少有一筆舊版的問題觀察結果",
-            "查看已保存的範圍細節。",
+            "重新執行掃描以建立完全凍結的結果。",
             // The limits the run was executed under, the dimension each check
             // actually tested, and why a finding-derived next step is listed.
             // All three were printed as stored English under translated
@@ -35844,7 +35844,7 @@ mod tests {
             "requested scan stage",
             "run-frozen target label or type",
             "This run did not retain an exact reduction record",
-            "Open the saved scope details",
+            "Rerun the scan to create a fully frozen result",
             "Execution Timeout",
             "3600 seconds",
             "Check-to-target Coordinate",
@@ -36241,7 +36241,7 @@ mod tests {
             dimension: "requested scan stage".into(),
             reason: "The saved record did not retain the requested scan stage.".into(),
             next_action_code: NextActionCode::PreserveVisibleLimitation,
-            next_action: "Open the saved scope details.".into(),
+            next_action: "Rerun the scan to create a fully frozen result.".into(),
             unattributed: None,
         }];
         report.coverage_counts = Default::default();
@@ -36645,7 +36645,8 @@ mod tests {
             reason: "The completed SSH service profile did not inspect the host operating system."
                 .into(),
             next_action_code: NextActionCode::PreserveVisibleLimitation,
-            next_action: "Open the saved scope details.".into(),
+            next_action:
+                "Use an approved endpoint inventory or local snapshot for host-level checks.".into(),
             unattributed: None,
         }];
 

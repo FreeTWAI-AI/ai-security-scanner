@@ -531,7 +531,7 @@ test("the first layer gives every requested asset one evidence-derived result st
       dimension: "authenticated administration",
       reason: "The completed profile deliberately excluded signed-in checks.",
       nextActionCode: "preserve_visible_limitation",
-      nextAction: "Open the saved scope details.",
+      nextAction: "Use an approved endpoint inventory or local snapshot for host-level checks.",
     }, {
       kind: "failed",
       taskId: "task-device-failed",
@@ -774,7 +774,7 @@ test("a completed asset stays bounded while an unrun sibling task makes another 
       dimension: "host operating-system checks",
       reason: "The completed SSH service profile did not inspect the host operating system.",
       nextActionCode: "preserve_visible_limitation",
-      nextAction: "Open the saved scope details.",
+      nextAction: "Use an approved endpoint inventory or local snapshot for host-level checks.",
     }, {
       kind: "not_tested",
       taskId: "task-never-ran",
@@ -1694,7 +1694,7 @@ const recordNotesOnlyGaps = (): BeginnerMasterReport["coverageGaps"] => [
     reason:
       "Recorded stage selection: unavailable. Current project settings: excluded from this historical record.",
     nextActionCode: "preserve_visible_limitation",
-    nextAction: "Open the saved scope details.",
+    nextAction: "Rerun the scan to create a fully frozen result.",
   },
   {
     kind: "unavailable",
@@ -1704,7 +1704,7 @@ const recordNotesOnlyGaps = (): BeginnerMasterReport["coverageGaps"] => [
     reason:
       "This run did not retain an exact reduction record. An empty list therefore cannot be interpreted as proof that no requested dimension was reduced.",
     nextActionCode: "preserve_visible_limitation",
-    nextAction: "Open the saved scope details.",
+    nextAction: "Rerun the scan to create a fully frozen result.",
   },
   {
     kind: "unavailable",
@@ -1714,7 +1714,7 @@ const recordNotesOnlyGaps = (): BeginnerMasterReport["coverageGaps"] => [
     reason:
       "At least one target identifier is frozen with the run, but its displayed label or type comes from current project data or is unavailable. The report labels that provenance and does not call it historical fact.",
     nextActionCode: "preserve_visible_limitation",
-    nextAction: "Open the saved scope details.",
+    nextAction: "Rerun the scan to create a fully frozen result.",
   },
 ];
 
@@ -2330,7 +2330,7 @@ test("what the run could not establish is shown with its own dimension", () => {
           dimension: "automatic scope reductions or truncations",
           reason: "This run did not retain an exact reduction record.",
           nextActionCode: "preserve_visible_limitation",
-          nextAction: "Open the saved scope details.",
+          nextAction: "Rerun the scan to create a fully frozen result.",
         },
         {
           kind: "unavailable",
@@ -2338,7 +2338,7 @@ test("what the run could not establish is shown with its own dimension", () => {
           dimension: "requested scan stage",
           reason: "The requested stage was not retained.",
           nextActionCode: "preserve_visible_limitation",
-          nextAction: "Open the saved scope details.",
+          nextAction: "Rerun the scan to create a fully frozen result.",
         },
       ],
     }),

@@ -1272,10 +1272,6 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "請完成目標設定或加入受支援的輸入，然後重新開始掃描。",
   ],
   [
-    "Open the saved scope details.",
-    "查看已保存的範圍細節。",
-  ],
-  [
     "Run this SSH profile again to create a complete coverage record.",
     "重新執行此 SSH 設定檔以建立完整涵蓋記錄。",
   ],
