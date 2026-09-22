@@ -1004,8 +1004,8 @@ const withCheck = (check: string, label: string): string => {
  */
 const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
   [
-    "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
-    "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。這不是你的設定問題，也不是掃描失敗；更改設定或再執行一次都無法改變這項結果。只有這項檢查的更新版內建掃描工具能改變這項狀況。",
+    "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
+    "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。",
   ],
   [
     "Maester evaluated this control but did not return a pass or fail verdict.",
@@ -1486,6 +1486,10 @@ const normalizeDirectCoverageGapProse = (english: string): string => {
     .replace(
       "This check produced some durable work but did not complete every planned dimension.",
       "This check did not reach a confirmed complete result.",
+    )
+    .replace(
+      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
     );
   if (normalized.includes("additional packaged checks were unavailable before planning")) {
     normalized = "Packaged scanner information unavailable. Additional checks: not tested.";

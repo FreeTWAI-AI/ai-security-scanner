@@ -1877,7 +1877,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                 task_id: Some(task.id.clone()),
                 target_asset_ids: task.asset_ids.clone(),
                 dimension: format!("{}: unsupported target input", check_id(task)),
-                reason: "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that."
+                reason: "This check's packaged scanner cannot read this kind of target, so nothing was tested by it."
                     .into(),
                 next_action_code: NextActionCode::PreserveVisibleLimitation,
                 next_action: "Update the app, then retry these checks.".into(),
@@ -5507,7 +5507,7 @@ mod tests {
         );
         assert_eq!(
             task_gaps[0].reason,
-            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that."
+            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it."
         );
         assert_eq!(
             task_gaps[0].next_action,
@@ -5519,6 +5519,27 @@ mod tests {
         }));
         assert_eq!(report.coverage_counts.not_tested, 1);
         assert_eq!(report.coverage_counts.failed, 0);
+    }
+
+    #[test]
+    fn a_check_that_cannot_read_the_target_does_not_tell_the_reader_their_actions_are_pointless() {
+        let mut unsupported = catalog_task("unsupported-input", EngineRunStatus::Failed);
+        unsupported.error_code = Some("local_input_profile_unsupported".into());
+        let case = case_with_catalog_tasks(vec![unsupported], true);
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.task_id.as_deref() == Some("unsupported-input"))
+            .expect("unsupported-input gap");
+        assert_eq!(
+            gap.reason,
+            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it."
+        );
+        assert!(!gap.reason.contains("not a setup problem"));
+        assert!(!gap.reason.contains("not a failed scan"));
+        assert!(!gap.reason.contains("cannot fix it"));
+        assert_eq!(gap.next_action, "Update the app, then retry these checks.");
     }
 
     fn knowledge_dated(knowledge_date: &str, support_until: &str) -> EngineKnowledgeInput {

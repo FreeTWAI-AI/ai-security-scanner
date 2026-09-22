@@ -215,6 +215,11 @@ test("stored defensive coverage prose is normalized into direct bilingual outcom
       "This check did not reach a confirmed complete result.",
       "這項檢查沒有取得可確認的完整結果。",
     ],
+    [
+      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
+      "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。",
+    ],
   ] as const;
 
   for (const [stored, english, traditionalChinese] of legacy) {

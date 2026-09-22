@@ -3423,7 +3423,7 @@ test("a check the packaged scanner cannot read keeps the update instruction and 
     targetAssetIds: ["asset-1"],
     dimension: "grype: unsupported target input",
     reason:
-      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
     nextActionCode: "preserve_visible_limitation" as const,
     nextAction: "Update the app, then retry these checks.",
   };

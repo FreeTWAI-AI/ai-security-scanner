@@ -1700,8 +1700,8 @@ fn strip_frame<'a>(value: &'a str, prefix: &str, suffix: &str) -> Option<&'a str
 /// exercises its path rather than passing silently in English.
 const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
     (
-        "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
-        "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。這不是你的設定問題，也不是掃描失敗；更改設定或再執行一次都無法改變這項結果。只有這項檢查的更新版內建掃描工具能改變這項狀況。",
+        "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
+        "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。",
     ),
     // Why the coverage is missing.
     (
@@ -2163,6 +2163,10 @@ fn normalize_direct_coverage_gap_prose(english: &str) -> String {
         .replace(
             "This check produced some durable work but did not complete every planned dimension.",
             "This check did not reach a confirmed complete result.",
+        )
+        .replace(
+            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
         );
     if normalized.contains("additional packaged checks were unavailable before planning") {
         "Packaged scanner information unavailable. Additional checks: not tested.".to_owned()
@@ -2756,6 +2760,11 @@ mod tests {
                 "This check produced some durable work but did not complete every planned dimension.",
                 "This check did not reach a confirmed complete result.",
                 "這項檢查沒有取得可確認的完整結果。",
+            ),
+            (
+                "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+                "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
+                "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。",
             ),
         ] {
             assert_eq!(coverage_gap_prose_english(stored), english);
