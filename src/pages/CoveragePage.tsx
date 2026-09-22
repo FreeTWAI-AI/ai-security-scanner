@@ -276,7 +276,7 @@ const isAwaitingFirstScan = (state: CoverageState, scanAttempted: boolean | unde
 
 const pageCopy = {
   headerEyebrow: bilingual("Set up your scan", "設定這次掃描"),
-  headerTitle: bilingual("Set up scan", "設定掃描"),
+  headerTitle: bilingual("Scan setup", "掃描設定"),
   refresh: bilingual("Refresh items", "重新整理項目"),
   refreshing: bilingual("Refreshing…", "正在重新確認…"),
   addEyebrow: bilingual("Step 1", "步驟 1"),

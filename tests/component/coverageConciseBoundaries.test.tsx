@@ -1128,7 +1128,7 @@ test("external setup omits the public-record mode when no shipped scanner can ru
   });
 
   await waitFor(() => expect(container.querySelector(".scope-mode-fieldset")).not.toBeNull());
-  expect(container.querySelector(".page-header h1")?.textContent).toBe("Set up scan");
+  expect(container.querySelector(".page-header h1")?.textContent).toBe("Scan setup");
   expect(container.querySelector(".asset-review-list")?.textContent).toContain("example.com");
   expect(container.querySelector(".asset-review-list input")?.getAttribute("aria-label")).toBe("Choose example.com");
   expect(container.textContent).not.toContain("Use public records");
