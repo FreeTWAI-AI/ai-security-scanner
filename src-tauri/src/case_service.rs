@@ -35742,11 +35742,11 @@ mod tests {
             "要求的掃描深度",
             "自動縮減的範圍",
             "目標的歷史顯示資料",
-            "本輪問題顯示資料",
+            "記錄的問題說明文字",
             // Why each row is a gap, and what to do about it. Both were stored
             // as English prose and printed under translated headings.
             "本輪沒有保留精確的縮減記錄",
-            "至少有一筆舊版的問題觀察結果",
+            "部分問題顯示的說明不是這次掃描當時記錄的內容",
             "重新執行掃描以建立完全凍結的結果。",
             // The limits the run was executed under, the dimension each check
             // actually tested, and why a finding-derived next step is listed.
@@ -36338,7 +36338,7 @@ mod tests {
         assert_eq!(classified_coverage_item_counts(&report), (0, 1));
         let note = report.coverage_gaps.first().expect("record note");
         assert_eq!(note.class, CoverageGapClass::RecordNote);
-        assert_eq!(note.dimension, "request outcome integrity");
+        assert_eq!(note.dimension, "saved run summary");
         assert!(!note.reason.is_empty());
 
         let html = String::from_utf8(
@@ -36357,7 +36357,7 @@ mod tests {
             "<span class=\"kpi__value\">1</span><span class=\"kpi__label\">Record notes</span>"
         ));
         assert!(html.contains("<h3>Record notes (1)</h3>"));
-        assert!(html.contains("Request outcome integrity"));
+        assert!(html.contains("Saved run summary"));
         let displayed_reason = crate::finding_narrative::coverage_gap_prose_english(&note.reason);
         assert!(html.contains(&html_escape(&displayed_reason)));
     }

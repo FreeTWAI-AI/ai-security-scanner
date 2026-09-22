@@ -1929,9 +1929,9 @@ test("a record note does not make a completed asset look incomplete", () => {
       kind: "unavailable",
       class: "record_note",
       targetAssetIds: ["asset-1"],
-      dimension: "request outcome integrity",
+      dimension: "saved run summary",
       reason:
-        "The request-level outcome contradicts the run's durable task state and was ignored.",
+        "The saved summary did not match this run's checks, so the report follows the checks.",
       nextActionCode: "retry_check",
       nextAction: "Retry this scan to create a consistent coverage record.",
     }],

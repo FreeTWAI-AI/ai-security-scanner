@@ -824,6 +824,8 @@ pub(crate) fn recognized_coverage_dimension_zh_hant(dimension: &str) -> Option<S
         ("target type", "目標的歷史顯示資料"),
         ("finding presentation", "本輪問題顯示資料"),
         ("request outcome", "掃描結果資料一致性"),
+        ("recorded finding wording", "記錄的問題說明文字"),
+        ("saved run summary", "保存的掃描摘要"),
         (
             "partly completed planned work units",
             "部分完成的計畫工作單元",
@@ -1721,12 +1723,12 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "Greenbone 掃描器錯誤；主機檢查：部分完成。",
     ),
     (
-        "The request-level outcome contradicts the run's durable task state and was ignored.",
-        "這次請求層級的結果與本輪儲存的檢查狀態互相矛盾，因此未被採用。",
+        "The saved summary did not match this run's checks, so the report follows the checks.",
+        "保存的摘要與這次掃描的檢查不符，因此報告以檢查為準。",
     ),
     (
-        "At least one legacy finding observation did not retain its full run-specific presentation snapshot.",
-        "至少有一筆舊版的問題觀察結果，沒有保留該輪完整的顯示資料。",
+        "Some findings are shown without the wording this scan recorded.",
+        "部分問題顯示的說明不是這次掃描當時記錄的內容。",
     ),
     (
         "Saved work-unit coverage is inconsistent; tested units are unknown.",

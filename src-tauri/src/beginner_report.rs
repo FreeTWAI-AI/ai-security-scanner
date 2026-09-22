@@ -818,8 +818,8 @@ pub fn build_beginner_master_report(
                 .iter()
                 .map(|target| target.asset_id.clone())
                 .collect(),
-            dimension: "request outcome integrity".into(),
-            reason: "The request-level outcome contradicts the run's durable task state and was ignored."
+            dimension: "saved run summary".into(),
+            reason: "The saved summary did not match this run's checks, so the report follows the checks."
                 .into(),
             next_action_code: NextActionCode::RetryCheck,
             next_action: "Retry this scan to create a consistent coverage record."
@@ -844,12 +844,10 @@ pub fn build_beginner_master_report(
             class: CoverageGapClass::RecordNote,
             task_id: None,
             target_asset_ids: Vec::new(),
-            dimension: "selected-run finding presentation snapshot".into(),
-            reason: "At least one legacy finding observation did not retain its full run-specific presentation snapshot."
-                .into(),
+            dimension: "recorded finding wording".into(),
+            reason: "Some findings are shown without the wording this scan recorded.".into(),
             next_action_code: NextActionCode::PreserveVisibleLimitation,
-            next_action: "Rerun the scan to create a fully frozen result."
-                .into(),
+            next_action: "Rerun the scan to create a fully frozen result.".into(),
         });
     }
 
@@ -6188,11 +6186,73 @@ mod tests {
         let note = report
             .coverage_gaps
             .iter()
-            .find(|gap| gap.dimension == "request outcome integrity")
-            .expect("request outcome integrity note");
+            .find(|gap| gap.dimension == "saved run summary")
+            .expect("saved run summary note");
         assert_eq!(note.class, CoverageGapClass::RecordNote);
         assert_eq!(note.next_action_code, NextActionCode::RetryCheck);
         assert!(!note.target_asset_ids.is_empty());
+    }
+
+    #[test]
+    fn mismatched_summary_and_unfrozen_wording_stay_beginner_record_notes() {
+        let mut case = localhost_case(
+            LocalhostTcpOutcome::Reachable,
+            EngineRunStatus::Completed,
+            true,
+        );
+        case.scan_runs[0].request_outcome = Some(
+            ScanRequestOutcome::no_checks_completed(
+                ScanRequestOutcomeCode::NoApplicableChecks,
+                vec!["different-asset".into()],
+                vec!["different-check".into()],
+                "Contradictory old state.",
+            )
+            .unwrap(),
+        );
+        let finding = frozen_finding(&case, "finding-legacy", 10, Severity::Low);
+        let mut observed = observation(&finding, "run-1", instant(17));
+        observed.finding_snapshot = None;
+        case.findings.push(finding);
+        case.finding_observations.push(observed);
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let saved_summary = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "saved run summary")
+            .expect("saved run summary note");
+        assert_eq!(
+            saved_summary.reason,
+            "The saved summary did not match this run's checks, so the report follows the checks."
+        );
+        assert!(!saved_summary.reason.contains("durable task state"));
+        assert!(!saved_summary.reason.contains("presentation snapshot"));
+        assert!(!saved_summary.reason.contains("legacy finding observation"));
+        assert_eq!(
+            saved_summary.next_action,
+            "Retry this scan to create a consistent coverage record."
+        );
+
+        let recorded_wording = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "recorded finding wording")
+            .expect("recorded finding wording note");
+        assert_eq!(
+            recorded_wording.reason,
+            "Some findings are shown without the wording this scan recorded."
+        );
+        assert!(!recorded_wording.reason.contains("durable task state"));
+        assert!(!recorded_wording.reason.contains("presentation snapshot"));
+        assert!(
+            !recorded_wording
+                .reason
+                .contains("legacy finding observation")
+        );
+        assert_eq!(
+            recorded_wording.next_action,
+            "Rerun the scan to create a fully frozen result."
+        );
     }
 
     #[test]
