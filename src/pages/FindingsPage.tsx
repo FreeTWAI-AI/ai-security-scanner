@@ -836,7 +836,6 @@ const isCoverageLossGap = (
 const assetNextActionDestination = {
   // The retry lives in Progress.
   retry_check: "progress",
-  review_scope_and_retry: "progress",
   // The active work and its cancel are in Progress.
   wait_or_cancel: "progress",
   // Ends in the same retry as retry_check.
@@ -844,6 +843,8 @@ const assetNextActionDestination = {
   // Coverage is where applicable checks are chosen.
   choose_compatible_check: "coverage",
   review_coverage: "coverage",
+  // Scope, target, connection, and the Start control live on Coverage.
+  review_scope_and_retry: "coverage",
   // The control and its upstream detail are on the surface the user is already reading.
   review_manual_control: undefined,
   // Coverage is where the gap and its reason are stated before the user changes setup.

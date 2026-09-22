@@ -1325,7 +1325,7 @@ const incompleteAssetWithNextAction = (
 
 const assetNextActionControlCases = [
   ["retry_check", "progress"],
-  ["review_scope_and_retry", "progress"],
+  ["review_scope_and_retry", "coverage"],
   ["wait_or_cancel", "progress"],
   ["start_expected_service_and_retry", "progress"],
   ["choose_compatible_check", "coverage"],
@@ -1376,6 +1376,46 @@ test.each(assetNextActionControlCases)(
     fireEvent.click(action!);
     expect(onOpenProgress).toHaveBeenCalledTimes(destination === "progress" ? 1 : 0);
     expect(onOpenCoverage).toHaveBeenCalledTimes(destination === "coverage" ? 1 : 0);
+  },
+);
+
+// The table above proves the code is wired, using the placeholder sentence
+// "Recorded next action." These are the sentences the backend writes when it
+// names scan setup, so the card button has to open that screen for the words
+// the reader actually sees.
+test.each([
+  "Return to scan setup and choose which MCP configuration to check.",
+  "Return to scan setup, choose the intended target, and confirm it once.",
+  "Return to scan setup and reconnect or review the cloud account.",
+])(
+  "a not-tested asset opens scan setup when told: %s",
+  (nextAction) => {
+    const onOpenProgress = vi.fn();
+    const onOpenCoverage = vi.fn();
+    const { container } = renderReport(report("no_checks_completed", {
+      coverageGaps: [{
+        kind: "not_tested",
+        targetAssetIds: ["asset-1"],
+        dimension: "requested check: not-tested check dimension",
+        reason: "This check did not start, so it is not a pass.",
+        nextActionCode: "review_scope_and_retry",
+        nextAction,
+      }],
+      coverageCounts: counts({ notTested: 1 }),
+    }), [], [], { onOpenProgress, onOpenCoverage });
+
+    const row = container.querySelector<HTMLElement>(".asset-result-row");
+    if (!row) throw new Error("the asset result card did not render");
+    expect(row.dataset.assetResult).toBe("not_tested");
+    expect(row.textContent).toContain(nextAction);
+
+    const action = row.querySelector("button");
+    expect(action).not.toBeNull();
+    expect(action?.textContent).toContain("Open scan setup");
+    expect(action?.textContent).not.toContain("Review scanner status");
+    fireEvent.click(action!);
+    expect(onOpenCoverage).toHaveBeenCalledTimes(1);
+    expect(onOpenProgress).toHaveBeenCalledTimes(0);
   },
 );
 
