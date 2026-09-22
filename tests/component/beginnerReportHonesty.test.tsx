@@ -134,7 +134,7 @@ const greenboneDeadHostReport = (): BeginnerMasterReport => {
       taskId: "greenbone-dead-host",
       targetAssetIds: ["asset-dead-host"],
       dimension: "greenbone: target response",
-      reason: "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
+      reason: "Host response unavailable. Vulnerability checks did not complete.",
       nextActionCode: "review_scope_and_retry",
       nextAction: "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.",
     }],

@@ -2124,131 +2124,10 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
 
 /// One sentence of a coverage row, in Traditional Chinese, or `None` when this
 /// product did not author it.
-fn normalize_direct_coverage_gap_prose(english: &str) -> String {
-    let normalized = english
-        .replace(
-            "No completed upstream security-template execution record was retained for this website, so the scan cannot be shown as tested. The site may not have responded, or upstream technology detection may not have selected an applicable template.",
-            "Website security-template evidence unavailable. This website cannot be shown as tested.",
-        )
-        .replace(
-            "Website security-template evidence unavailable. Outcome: not tested.",
-            "Website security-template evidence unavailable. This website cannot be shown as tested.",
-        )
-        .replace(
-            "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-            "Host response unavailable. Vulnerability checks did not complete.",
-        )
-        .replace(
-            "Greenbone reported one or more scanner errors for this host, so some of its checks did not finish. Findings and checks that did complete remain valid.",
-            "Greenbone scanner errors. Host checks: partially completed.",
-        )
-        .replace(
-            "Greenbone scanner errors left some host checks incomplete. Completed findings and checks remain in this report.",
-            "Greenbone scanner errors. Host checks: partially completed.",
-        )
-        .replace(
-            "The packaged check list could not be loaded. Available checks may still run, but checks from that list are not tested.",
-            "Packaged check list unavailable. Additional checks: not tested.",
-        )
-        .replace(
-            "One additional packaged check was unavailable before planning. Whether it applied to the selected target is unknown, so it is not tested.",
-            "Some packaged checks could not be loaded. Additional checks: not tested.",
-        )
-        .replace(
-            "This asset was added to the IT environment, but this run had no supported service-specific vulnerability profile for it. It was not contacted or tested.",
-            "Supported service-specific vulnerability profile unavailable. Outcome: not tested.",
-        )
-        .replace(
-            "No actionable finding was recorded, but a no-findings result is only as broad as the displayed coverage.",
-            "Actionable findings in completed checks: 0.",
-        )
-        .replace(
-            "This check produced some durable work but did not complete every planned dimension.",
-            "This check did not reach a confirmed complete result.",
-        )
-        .replace(
-            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
-            "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
-        );
-    if normalized.contains("additional packaged checks were unavailable before planning") {
-        "Some packaged checks could not be loaded. Additional checks: not tested.".to_owned()
-    } else {
-        normalized
-    }
-}
-
 pub fn coverage_gap_prose_zh_hant(english: &str) -> Option<String> {
-    const LEGACY_REVIEW_BASE: &str = "Maester evaluated this control but did not return a pass or fail verdict. It requires manual review and is not a vulnerability finding.";
     const REVIEW_BASE: &str =
         "Maester evaluated this control but did not return a pass or fail verdict.";
-    let normalized =
-        normalize_direct_coverage_gap_prose(english).replace(LEGACY_REVIEW_BASE, REVIEW_BASE);
-    let normalized = if normalized
-        .contains("saved work-unit coverage for this check is internally inconsistent")
-    {
-        "Saved work-unit coverage is inconsistent; tested units are unknown.".to_owned()
-    } else {
-        normalized
-    };
-    let normalized = if normalized
-        .contains("does not retain selected-run finding evidence for every SMTP TLS check")
-    {
-        "Selected-run SMTP TLS evidence: incomplete. Fixed profile status: attempted. TLS availability and per-check execution: shown only by each finding's source OID."
-            .to_owned()
-    } else {
-        normalized
-    };
-    let normalized = if normalized
-        .contains("did not freeze a quick-discovery, inventory, or deep-stage selection")
-    {
-        "Recorded stage selection: unavailable. Current project settings: excluded from this historical record."
-            .to_owned()
-    } else {
-        normalized
-    };
-    let normalized =
-        if normalized.contains("neither a finish time nor a bounded native observation time") {
-            "Completed-check time: unavailable. Finish and bounded observation times are absent."
-                .to_owned()
-        } else {
-            normalized
-        };
-    let normalized = if normalized.contains("validated scanner result has not been fully processed")
-    {
-        "Result processing status: incomplete.".to_owned()
-    } else {
-        normalized
-    };
-    let normalized = if normalized.contains("result processing retries automatically") {
-        "Start a new scan for a fresh result.".to_owned()
-    } else {
-        normalized
-    };
-    // Whole-sentence equality. A resumable check uses a longer sentence that
-    // only ends in the same words, and that sentence must stay untouched.
-    let normalized = if normalized == "Retry this check to complete the missing work." {
-        "Start a new scan for a fresh result.".to_owned()
-    } else {
-        normalized
-    };
-    let normalized =
-        if normalized == "Confirm reachability in Scan setup, then retry the timed-out work." {
-            "Retry the timed-out work.".to_owned()
-        } else {
-            normalized
-        };
-    let normalized = if normalized == "Choose a check that can read this kind of target." {
-        "Update the app, then retry these checks.".to_owned()
-    } else {
-        normalized
-    };
-    let normalized =
-        if normalized.contains("No action is needed unless this area should be included") {
-            "No action for the current scope.".to_owned()
-        } else {
-            normalized
-        };
-    let trimmed = normalized.trim();
+    let trimmed = english.trim();
     if let Some(detail) = trimmed.strip_prefix(&format!("{REVIEW_BASE} Upstream detail: "))
         && !detail.is_empty()
     {
@@ -2277,44 +2156,6 @@ pub fn coverage_gap_prose_zh_hant(english: &str) -> Option<String> {
         return Some(format!("{base}支援結束日期：{ended}。"));
     }
     lookup(trimmed)
-}
-
-pub fn coverage_gap_prose_english(english: &str) -> String {
-    let normalized = normalize_direct_coverage_gap_prose(english)
-        .replace(
-            "Maester evaluated this control but did not return a pass or fail verdict. It requires manual review and is not a vulnerability finding.",
-            "Maester evaluated this control but did not return a pass or fail verdict.",
-        );
-    if normalized.contains("saved work-unit coverage for this check is internally inconsistent") {
-        "Saved work-unit coverage is inconsistent; tested units are unknown.".into()
-    } else if normalized
-        .contains("does not retain selected-run finding evidence for every SMTP TLS check")
-    {
-        "Selected-run SMTP TLS evidence: incomplete. Fixed profile status: attempted. TLS availability and per-check execution: shown only by each finding's source OID."
-            .into()
-    } else if normalized
-        .contains("did not freeze a quick-discovery, inventory, or deep-stage selection")
-    {
-        "Recorded stage selection: unavailable. Current project settings: excluded from this historical record."
-            .into()
-    } else if normalized.contains("neither a finish time nor a bounded native observation time") {
-        "Completed-check time: unavailable. Finish and bounded observation times are absent.".into()
-    } else if normalized.contains("validated scanner result has not been fully processed") {
-        "Result processing status: incomplete.".into()
-    } else if normalized.contains("result processing retries automatically")
-        || normalized == "Retry this check to complete the missing work."
-    {
-        // Equality, not a substring: a resumable-check sentence ends in the same words.
-        "Start a new scan for a fresh result.".into()
-    } else if normalized == "Confirm reachability in Scan setup, then retry the timed-out work." {
-        "Retry the timed-out work.".into()
-    } else if normalized == "Choose a check that can read this kind of target." {
-        "Update the app, then retry these checks.".into()
-    } else if normalized.contains("No action is needed unless this area should be included") {
-        "No action for the current scope.".into()
-    } else {
-        normalized
-    }
 }
 
 fn lookup(english: &str) -> Option<String> {
@@ -2734,48 +2575,6 @@ pub fn finding_next_action_zh_hant(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn stored_defensive_coverage_prose_is_normalized_to_direct_outcomes() {
-        for (stored, english, traditional_chinese) in [
-            (
-                "No completed upstream security-template execution record was retained for this website, so the scan cannot be shown as tested. The site may not have responded, or upstream technology detection may not have selected an applicable template.",
-                "Website security-template evidence unavailable. This website cannot be shown as tested.",
-                "網站安全模板證據無法取得；無法確認此網站已測試。",
-            ),
-            (
-                "Website security-template evidence unavailable. Outcome: not tested.",
-                "Website security-template evidence unavailable. This website cannot be shown as tested.",
-                "網站安全模板證據無法取得；無法確認此網站已測試。",
-            ),
-            (
-                "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-                "Host response unavailable. Vulnerability checks did not complete.",
-                "主機回應無法取得；弱點檢查未完成。",
-            ),
-            (
-                "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",
-                "Some packaged checks could not be loaded. Additional checks: not tested.",
-                "部分內建檢查無法載入；額外檢查：未測試。",
-            ),
-            (
-                "This check produced some durable work but did not complete every planned dimension.",
-                "This check did not reach a confirmed complete result.",
-                "這項檢查沒有取得可確認的完整結果。",
-            ),
-            (
-                "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
-                "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
-                "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。",
-            ),
-        ] {
-            assert_eq!(coverage_gap_prose_english(stored), english);
-            assert_eq!(
-                coverage_gap_prose_zh_hant(stored),
-                Some(traditional_chinese.to_owned())
-            );
-        }
-    }
 
     #[test]
     fn control_mapping_rationale_lookup_translates_only_reviewed_catalog_prose() {

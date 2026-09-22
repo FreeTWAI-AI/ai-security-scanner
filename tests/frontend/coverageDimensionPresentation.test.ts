@@ -188,46 +188,6 @@ test("every tested-dimension observation has a Traditional Chinese sentence", ()
   }
 });
 
-test("stored defensive coverage prose is normalized into direct bilingual outcomes", () => {
-  const legacy = [
-    [
-      "No completed upstream security-template execution record was retained for this website, so the scan cannot be shown as tested. The site may not have responded, or upstream technology detection may not have selected an applicable template.",
-      "Website security-template evidence unavailable. This website cannot be shown as tested.",
-      "網站安全模板證據無法取得；無法確認此網站已測試。",
-    ],
-    [
-      "Website security-template evidence unavailable. Outcome: not tested.",
-      "Website security-template evidence unavailable. This website cannot be shown as tested.",
-      "網站安全模板證據無法取得；無法確認此網站已測試。",
-    ],
-    [
-      "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-      "Host response unavailable. Vulnerability checks did not complete.",
-      "主機回應無法取得；弱點檢查未完成。",
-    ],
-    [
-      "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",
-      "Some packaged checks could not be loaded. Additional checks: not tested.",
-      "部分內建檢查無法載入；額外檢查：未測試。",
-    ],
-    [
-      "This check produced some durable work but did not complete every planned dimension.",
-      "This check did not reach a confirmed complete result.",
-      "這項檢查沒有取得可確認的完整結果。",
-    ],
-    [
-      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
-      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
-      "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。",
-    ],
-  ] as const;
-
-  for (const [stored, english, traditionalChinese] of legacy) {
-    assert.equal(coverageGapProse("en", stored), english);
-    assert.equal(coverageGapProse("zh-TW", stored), traditionalChinese);
-  }
-});
-
 test("an interrupted preparation explanation reaches a Traditional Chinese reader", () => {
   const english = "The app closed while preparing this check. Retry from the saved plan.";
   assert.equal(coverageGapProse("en", english), english);

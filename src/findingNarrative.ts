@@ -1442,106 +1442,17 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
 /**
  * One sentence of a coverage row, in the reader's language.
  *
- * English uses the stored detail after normalizing superseded product wording.
- * It is more specific than anything derivable from the gap's kind: the same
- * `not_tested` kind is written for a check that saved partial work, one that
- * never started, and one still running.
+ * English is the stored sentence. Traditional Chinese is that sentence when
+ * this product authored it, with a recorded upstream detail, diagnostic code,
+ * or support-end date kept verbatim.
  */
-const normalizeDirectCoverageGapProse = (english: string): string => {
-  let normalized = english
-    .replace(
-      "No completed upstream security-template execution record was retained for this website, so the scan cannot be shown as tested. The site may not have responded, or upstream technology detection may not have selected an applicable template.",
-      "Website security-template evidence unavailable. This website cannot be shown as tested.",
-    )
-    .replace(
-      "Website security-template evidence unavailable. Outcome: not tested.",
-      "Website security-template evidence unavailable. This website cannot be shown as tested.",
-    )
-    .replace(
-      "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-      "Host response unavailable. Vulnerability checks did not complete.",
-    )
-    .replace(
-      "Greenbone reported one or more scanner errors for this host, so some of its checks did not finish. Findings and checks that did complete remain valid.",
-      "Greenbone scanner errors. Host checks: partially completed.",
-    )
-    .replace(
-      "Greenbone scanner errors left some host checks incomplete. Completed findings and checks remain in this report.",
-      "Greenbone scanner errors. Host checks: partially completed.",
-    )
-    .replace(
-      "The packaged check list could not be loaded. Available checks may still run, but checks from that list are not tested.",
-      "Packaged check list unavailable. Additional checks: not tested.",
-    )
-    .replace(
-      "One additional packaged check was unavailable before planning. Whether it applied to the selected target is unknown, so it is not tested.",
-      "Some packaged checks could not be loaded. Additional checks: not tested.",
-    )
-    .replace(
-      "This asset was added to the IT environment, but this run had no supported service-specific vulnerability profile for it. It was not contacted or tested.",
-      "Supported service-specific vulnerability profile unavailable. Outcome: not tested.",
-    )
-    .replace(
-      "No actionable finding was recorded, but a no-findings result is only as broad as the displayed coverage.",
-      "Actionable findings in completed checks: 0.",
-    )
-    .replace(
-      "This check produced some durable work but did not complete every planned dimension.",
-      "This check did not reach a confirmed complete result.",
-    )
-    .replace(
-      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
-      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
-    );
-  if (normalized.includes("additional packaged checks were unavailable before planning")) {
-    normalized = "Some packaged checks could not be loaded. Additional checks: not tested.";
-  }
-  return normalized;
-};
-
 export const coverageGapProse = (
   locale: "en" | "zh-TW",
   english: string,
 ): string => {
-  const legacyReviewBase = "Maester evaluated this control but did not return a pass or fail verdict. It requires manual review and is not a vulnerability finding.";
+  if (locale === "en") return english;
+  const trimmed = english.trim();
   const reviewBase = "Maester evaluated this control but did not return a pass or fail verdict.";
-  let normalized = normalizeDirectCoverageGapProse(english)
-    .replace(legacyReviewBase, reviewBase);
-  if (normalized.includes("saved work-unit coverage for this check is internally inconsistent")) {
-    normalized = "Saved work-unit coverage is inconsistent; tested units are unknown.";
-  }
-  if (normalized.includes("does not retain selected-run finding evidence for every SMTP TLS check")) {
-    normalized = "Selected-run SMTP TLS evidence: incomplete. Fixed profile status: attempted. TLS availability and per-check execution: shown only by each finding's source OID.";
-  }
-  if (normalized.includes("did not freeze a quick-discovery, inventory, or deep-stage selection")) {
-    normalized = "Recorded stage selection: unavailable. Current project settings: excluded from this historical record.";
-  }
-  if (normalized.includes("neither a finish time nor a bounded native observation time")) {
-    normalized = "Completed-check time: unavailable. Finish and bounded observation times are absent.";
-  }
-  if (normalized.includes("validated scanner result has not been fully processed")) {
-    normalized = "Result processing status: incomplete.";
-  }
-  if (normalized.includes("result processing retries automatically")) {
-    normalized = "Start a new scan for a fresh result.";
-  }
-  // Whole-sentence equality. A resumable check uses a longer sentence that
-  // only ends in the same words, and that sentence must stay untouched.
-  // This runs before the English return below, so both locales share it.
-  if (normalized === "Retry this check to complete the missing work.") {
-    normalized = "Start a new scan for a fresh result.";
-  }
-  if (normalized === "Confirm reachability in Scan setup, then retry the timed-out work.") {
-    normalized = "Retry the timed-out work.";
-  }
-  if (normalized === "Choose a check that can read this kind of target.") {
-    normalized = "Update the app, then retry these checks.";
-  }
-  if (normalized.includes("No action is needed unless this area should be included")) {
-    normalized = "No action for the current scope.";
-  }
-  if (locale === "en") return normalized;
-  const trimmed = normalized.trim();
   const reviewDetailPrefix = `${reviewBase} Upstream detail: `;
   if (trimmed.startsWith(reviewDetailPrefix) && trimmed.length > reviewDetailPrefix.length) {
     const base = lookupProse(reviewBase);
@@ -1553,7 +1464,7 @@ export const coverageGapProse = (
   if (withCode) {
     const base = lookupProse(withCode[1] ?? "");
     if (base) return `${base}診斷代碼：${withCode[2]}。`;
-    return normalized;
+    return english;
   }
   // The stale-knowledge reason carries the support date the run recorded.
   // Same split as the diagnostic code above: the date is data and stays
@@ -1562,9 +1473,9 @@ export const coverageGapProse = (
   if (withSupportEnd) {
     const base = lookupProse(withSupportEnd[1] ?? "");
     if (base) return `${base}支援結束日期：${withSupportEnd[2]}。`;
-    return normalized;
+    return english;
   }
-  return lookupProse(trimmed) ?? normalized;
+  return lookupProse(trimmed) ?? english;
 };
 
 const lookupProse = (english: string): string | undefined =>

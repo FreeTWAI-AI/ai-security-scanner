@@ -14551,9 +14551,7 @@ fn html_gap_next_action(gap: &CoverageGap, catalog: HtmlReportCatalog) -> String
             crate::finding_narrative::coverage_gap_prose_zh_hant(&gap.next_action)
                 .unwrap_or_else(|| gap.next_action.clone())
         }
-        (crate::export::ReportLocale::En, _) => {
-            crate::finding_narrative::coverage_gap_prose_english(&gap.next_action)
-        }
+        (crate::export::ReportLocale::En, _) => gap.next_action.clone(),
     }
 }
 
@@ -15689,9 +15687,7 @@ fn beginner_step_action(
         (crate::export::ReportLocale::ZhHant, None, None) => {
             crate::finding_narrative::coverage_gap_prose_zh_hant(&action).unwrap_or(action)
         }
-        (crate::export::ReportLocale::En, None, None) => {
-            crate::finding_narrative::coverage_gap_prose_english(&action)
-        }
+        (crate::export::ReportLocale::En, None, None) => action,
         _ => action,
     }
 }
@@ -17669,8 +17665,8 @@ fn html_report_bytes(
             (crate::export::ReportLocale::En, None) => (
                 gap.dimension
                     .replace(": manual review for ", ": no verdict for "),
-                crate::finding_narrative::coverage_gap_prose_english(&gap.reason),
-                crate::finding_narrative::coverage_gap_prose_english(&gap.next_action),
+                gap.reason.clone(),
+                gap.next_action.clone(),
             ),
             (crate::export::ReportLocale::En, Some(_)) => (
                 gap.dimension.clone(),
@@ -17773,9 +17769,7 @@ fn html_report_bytes(
                     crate::finding_narrative::coverage_gap_prose_zh_hant(&step.reason)
                         .unwrap_or_else(|| step.reason.clone())
                 }
-                (crate::export::ReportLocale::En, None, None) => {
-                    crate::finding_narrative::coverage_gap_prose_english(&step.reason)
-                }
+                (crate::export::ReportLocale::En, None, None) => step.reason.clone(),
                 _ => step.reason.clone(),
             };
             // A gap-derived step's stored reason is the coverage row's own
@@ -36358,7 +36352,7 @@ mod tests {
         ));
         assert!(html.contains("<h3>Record notes (1)</h3>"));
         assert!(html.contains("Saved run summary"));
-        let displayed_reason = crate::finding_narrative::coverage_gap_prose_english(&note.reason);
+        let displayed_reason = note.reason.clone();
         assert!(html.contains(&html_escape(&displayed_reason)));
     }
 
