@@ -2125,8 +2125,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "恢復內建掃描工具資訊，然後執行缺少的檢查。",
     ),
     (
-        "Open the upstream detail and set this control's status.",
-        "開啟上游詳細資料，並設定這項控制措施的狀態。",
+        "Review the upstream detail and record a human decision for this control.",
+        "請檢視上游詳細資料，並為這項控制措施記錄人工判定。",
     ),
     ("No action for the current scope.", "目前範圍不需處理。"),
 ];
@@ -2178,12 +2178,8 @@ pub fn coverage_gap_prose_zh_hant(english: &str) -> Option<String> {
     const LEGACY_REVIEW_BASE: &str = "Maester evaluated this control but did not return a pass or fail verdict. It requires manual review and is not a vulnerability finding.";
     const REVIEW_BASE: &str =
         "Maester evaluated this control but did not return a pass or fail verdict.";
-    let normalized = normalize_direct_coverage_gap_prose(english)
-        .replace(LEGACY_REVIEW_BASE, REVIEW_BASE)
-        .replace(
-            "Review the upstream detail and record a human decision for this control.",
-            "Open the upstream detail and set this control's status.",
-        );
+    let normalized =
+        normalize_direct_coverage_gap_prose(english).replace(LEGACY_REVIEW_BASE, REVIEW_BASE);
     let normalized = if normalized
         .contains("saved work-unit coverage for this check is internally inconsistent")
     {
@@ -2267,10 +2263,6 @@ pub fn coverage_gap_prose_english(english: &str) -> String {
         .replace(
             "Maester evaluated this control but did not return a pass or fail verdict. It requires manual review and is not a vulnerability finding.",
             "Maester evaluated this control but did not return a pass or fail verdict.",
-        )
-        .replace(
-            "Review the upstream detail and record a human decision for this control.",
-            "Open the upstream detail and set this control's status.",
         );
     if normalized.contains("saved work-unit coverage for this check is internally inconsistent") {
         "Saved work-unit coverage is inconsistent; tested units are unknown.".into()

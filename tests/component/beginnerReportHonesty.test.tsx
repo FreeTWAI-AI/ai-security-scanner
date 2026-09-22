@@ -3286,7 +3286,7 @@ test("a completed Maester review item is visible without being labelled untested
     reason:
       "Maester evaluated this control but did not return a pass or fail verdict. Upstream detail: Confirm the tenant exception.",
     nextActionCode: "review_manual_control" as const,
-    nextAction: "Open the upstream detail and set this control's status.",
+    nextAction: "Review the upstream detail and record a human decision for this control.",
   };
   const { container } = renderReport(report("complete", {
     actual: {
@@ -3312,7 +3312,9 @@ test("a completed Maester review item is visible without being labelled untested
   expect(rendered).not.toContain("What was not tested");
   const assetRow = container.querySelector<HTMLElement>(".asset-result-row");
   expect(assetRow?.dataset.assetResult).toBe("no_problems_completed");
-  expect(assetRow?.textContent).toContain("set this control's status");
+  expect(assetRow?.textContent).toContain(
+    "Review the upstream detail and record a human decision for this control.",
+  );
 });
 
 test("an empty findings list caused by a missing identifier names that identifier", () => {

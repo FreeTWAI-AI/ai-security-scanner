@@ -1427,7 +1427,8 @@ fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &Asses
             gap.dimension = "Maester: manual review for [redacted control]".into();
             gap.reason =
                 "Maester evaluated this control but did not return a pass or fail verdict.".into();
-            gap.next_action = "Open the upstream detail and set this control's status.".into();
+            gap.next_action =
+                "Review the upstream detail and record a human decision for this control.".into();
         } else if let Some(unattributed) = &mut gap.unattributed {
             // The identifier names the reader's cloud tenancy and appears in
             // all three prose fields. `redact_known_literals` cannot reach it:
@@ -1578,7 +1579,8 @@ fn redact_beginner_master_report(report: &mut BeginnerMasterReport, case: &Asses
             continue;
         }
         if step.code == crate::beginner_report::NextActionCode::ReviewManualControl {
-            step.action = "Open the upstream detail and set this control's status.".into();
+            step.action =
+                "Review the upstream detail and record a human decision for this control.".into();
             step.reason =
                 "Maester evaluated this control but did not return a pass or fail verdict.".into();
             continue;

@@ -2611,7 +2611,9 @@ fn append_manual_review_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>) {
                 ),
                 reason,
                 next_action_code: NextActionCode::ReviewManualControl,
-                next_action: "Open the upstream detail and set this control's status.".into(),
+                next_action:
+                    "Review the upstream detail and record a human decision for this control."
+                        .into(),
                 unattributed: None,
             });
         }
@@ -6821,7 +6823,9 @@ mod tests {
                 .next_steps
                 .iter()
                 .any(|step| step.task_id.as_deref() == Some("maester")
-                    && step.action.contains("set this control's status"))
+                    && step.action.contains(
+                        "Review the upstream detail and record a human decision for this control."
+                    ))
         );
 
         let reopened: AssessmentCase =
