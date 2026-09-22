@@ -2357,7 +2357,7 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
             "timed-out check dimension",
             "The bounded check reached its time limit, so it cannot be treated as tested complete.",
             NextActionCode::RetryCheck,
-            "Confirm reachability in Scan setup, then retry the timed-out work.",
+            "Retry the timed-out work.",
         ),
         CoverageDimensionStatus::Failed => (
             CoverageGapKind::Failed,
@@ -4284,10 +4284,9 @@ fn stable_timeout_marker(task: &EngineRun) -> bool {
         // time, and it never reached the two markers above: the recorded
         // error reconciles to one generic code and the phase becomes the
         // failure stage, so a timed-out check was reported as a check that
-        // failed and the reader was told to retry it rather than to check
-        // reachability first. The sentence is an exact product-owned constant
-        // and is matched as one; a cleanup-pending record can carry it
-        // alongside a later error, so it is searched for rather than compared.
+        // failed. The sentence is an exact product-owned constant and is
+        // matched as one; a cleanup-pending record can carry it alongside a
+        // later error, so it is searched for rather than compared.
         task.error_message.as_deref().is_some_and(|message| {
             message.contains(crate::container_runtime::CONTAINER_EXECUTION_TIMEOUT_ERROR)
         })
@@ -5707,8 +5706,8 @@ mod tests {
     fn the_host_deadline_is_a_timed_out_check_not_a_failed_one() {
         // A host-deadline timeout ends the task as a failure and reconciles
         // its error to the same generic code as every other error, so the two
-        // stable markers never saw it. The reader was told to retry a check
-        // that had run out of time, instead of to check reachability first.
+        // stable markers never saw it. Classifying it as timed out is what
+        // asks the reader to retry the timed-out work.
         let mut timed_out = catalog_task("timed-out", EngineRunStatus::Failed);
         timed_out.error_code = Some(RECONCILED_EXECUTION_ERROR_CODE.into());
         timed_out.error_message = Some(format!(
@@ -5735,9 +5734,11 @@ mod tests {
             "The bounded check reached its time limit, so it cannot be treated as tested complete."
         );
         assert!(
-            report.next_steps.iter().any(|step| step.action
-                == "Confirm reachability in Scan setup, then retry the timed-out work."),
-            "a timed-out check asks for reachability before a retry"
+            report.next_steps.iter().any(|step| {
+                step.action == "Retry the timed-out work."
+                    && step.code == NextActionCode::RetryCheck
+            }),
+            "a timed-out check retries the timed-out work"
         );
         // Not a pass, either way it is classified.
         assert_eq!(

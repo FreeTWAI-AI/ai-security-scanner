@@ -2123,7 +2123,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             for named in [
                 "Retry this check.</strong> — Checkov: failed check dimension",
                 "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.</strong> — Greenbone Community Edition: target response",
-                "Confirm reachability in Scan setup, then retry the timed-out work.</strong> — KICS: timed-out check dimension",
+                "Retry the timed-out work.</strong> — KICS: timed-out check dimension",
                 "Retry this check to complete the unfinished dimensions.</strong> — Nuclei: remaining requested dimensions",
                 "Treat these results as evidence from expired knowledge, not as current coverage.</strong> — CloudQuery: expired detection knowledge",
                 // One step closes two rows, and says so rather than showing one

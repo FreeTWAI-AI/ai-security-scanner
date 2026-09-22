@@ -1376,8 +1376,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "重新執行這項檢查以完成尚未完成的項目。",
   ],
   [
-    "Confirm reachability in Scan setup, then retry the timed-out work.",
-    "到「掃描設定」確認連線，再重試逾時的工作。",
+    "Retry the timed-out work.",
+    "重新執行逾時的工作。",
   ],
   [
     "Retry this check.",
@@ -1520,6 +1520,9 @@ export const coverageGapProse = (
   // This runs before the English return below, so both locales share it.
   if (normalized === "Retry this check to complete the missing work.") {
     normalized = "Start a new scan for a fresh result.";
+  }
+  if (normalized === "Confirm reachability in Scan setup, then retry the timed-out work.") {
+    normalized = "Retry the timed-out work.";
   }
   if (normalized.includes("No action is needed unless this area should be included")) {
     normalized = "No action for the current scope.";

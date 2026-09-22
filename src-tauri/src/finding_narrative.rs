@@ -2067,10 +2067,7 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "Retry this check to complete the unfinished dimensions.",
         "重新執行這項檢查以完成尚未完成的項目。",
     ),
-    (
-        "Confirm reachability in Scan setup, then retry the timed-out work.",
-        "到「掃描設定」確認連線，再重試逾時的工作。",
-    ),
+    ("Retry the timed-out work.", "重新執行逾時的工作。"),
     ("Retry this check.", "重新執行這項檢查。"),
     (
         "Retry this check to complete the missing coverage.",
@@ -2225,6 +2222,12 @@ pub fn coverage_gap_prose_zh_hant(english: &str) -> Option<String> {
         normalized
     };
     let normalized =
+        if normalized == "Confirm reachability in Scan setup, then retry the timed-out work." {
+            "Retry the timed-out work.".to_owned()
+        } else {
+            normalized
+        };
+    let normalized =
         if normalized.contains("No action is needed unless this area should be included") {
             "No action for the current scope.".to_owned()
         } else {
@@ -2288,6 +2291,8 @@ pub fn coverage_gap_prose_english(english: &str) -> String {
     {
         // Equality, not a substring: a resumable-check sentence ends in the same words.
         "Start a new scan for a fresh result.".into()
+    } else if normalized == "Confirm reachability in Scan setup, then retry the timed-out work." {
+        "Retry the timed-out work.".into()
     } else if normalized.contains("No action is needed unless this area should be included") {
         "No action for the current scope.".into()
     } else {
