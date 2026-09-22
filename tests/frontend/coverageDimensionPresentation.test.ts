@@ -207,8 +207,8 @@ test("stored defensive coverage prose is normalized into direct bilingual outcom
     ],
     [
       "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",
-      "Packaged scanner information unavailable. Additional checks: not tested.",
-      "內建掃描工具資訊無法取得；額外檢查：未測試。",
+      "Some packaged checks could not be loaded. Additional checks: not tested.",
+      "部分內建檢查無法載入；額外檢查：未測試。",
     ],
     [
       "This check produced some durable work but did not complete every planned dimension.",

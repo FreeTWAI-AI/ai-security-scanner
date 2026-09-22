@@ -2540,11 +2540,10 @@ fn append_engine_admission_gaps(run: &ScanRun, gaps: &mut Vec<CoverageGap>) {
         reason: if catalog_list_unavailable {
             "Packaged check list unavailable. Additional checks: not tested.".into()
         } else {
-            "Packaged scanner information unavailable. Additional checks: not tested.".into()
+            "Some packaged checks could not be loaded. Additional checks: not tested.".into()
         },
         next_action_code: NextActionCode::PreserveVisibleLimitation,
-        next_action: "Restore the packaged scanner information, then run the missing checks."
-            .into(),
+        next_action: "Update the app, then run these checks again.".into(),
     });
 }
 
@@ -6092,6 +6091,39 @@ mod tests {
         assert!(!gap.reason.contains("gitleaks"));
         assert!(!gap.reason.contains("engine_contract_invalid"));
         assert_eq!(report.coverage_counts.not_tested, 1);
+    }
+
+    #[test]
+    fn rejected_present_catalog_entry_says_the_checks_could_not_be_loaded() {
+        let mut case = localhost_case(
+            LocalhostTcpOutcome::Reachable,
+            EngineRunStatus::Completed,
+            true,
+        );
+        case.scan_runs[0]
+            .engine_admission_issues
+            .push(crate::domain::EngineAdmissionIssue {
+                engine_id: Some("gitleaks".into()),
+                code: "engine_contract_invalid".into(),
+                detail: "technical fixture detail".into(),
+            });
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "additional packaged checks")
+            .expect("catalog limitation gap");
+
+        assert_eq!(
+            gap.reason,
+            "Some packaged checks could not be loaded. Additional checks: not tested."
+        );
+        assert!(!gap.reason.contains("information unavailable"));
+        assert_eq!(
+            gap.next_action,
+            "Update the app, then run these checks again."
+        );
+        assert!(!gap.next_action.contains("Restore"));
     }
 
     #[test]

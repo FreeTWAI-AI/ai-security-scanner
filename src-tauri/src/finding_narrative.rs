@@ -1825,8 +1825,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "內建檢查清單無法取得；額外檢查：未測試。",
     ),
     (
-        "Packaged scanner information unavailable. Additional checks: not tested.",
-        "內建掃描工具資訊無法取得；額外檢查：未測試。",
+        "Some packaged checks could not be loaded. Additional checks: not tested.",
+        "部分內建檢查無法載入；額外檢查：未測試。",
     ),
     (
         "At least one target identifier is frozen with the run, but its displayed label or type comes from current project data or is unavailable. The report labels that provenance and does not call it historical fact.",
@@ -2110,8 +2110,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "請開啟「查看掃描器狀態」完成或取消這項檢查。",
     ),
     (
-        "Restore the packaged scanner information, then run the missing checks.",
-        "恢復內建掃描工具資訊，然後執行缺少的檢查。",
+        "Update the app, then run these checks again.",
+        "請更新應用程式，再重新執行這些檢查。",
     ),
     (
         "Review the upstream detail and record a human decision for this control.",
@@ -2150,7 +2150,7 @@ fn normalize_direct_coverage_gap_prose(english: &str) -> String {
         )
         .replace(
             "One additional packaged check was unavailable before planning. Whether it applied to the selected target is unknown, so it is not tested.",
-            "Packaged scanner information unavailable. Additional checks: not tested.",
+            "Some packaged checks could not be loaded. Additional checks: not tested.",
         )
         .replace(
             "This asset was added to the IT environment, but this run had no supported service-specific vulnerability profile for it. It was not contacted or tested.",
@@ -2169,7 +2169,7 @@ fn normalize_direct_coverage_gap_prose(english: &str) -> String {
             "This check's packaged scanner cannot read this kind of target, so nothing was tested by it.",
         );
     if normalized.contains("additional packaged checks were unavailable before planning") {
-        "Packaged scanner information unavailable. Additional checks: not tested.".to_owned()
+        "Some packaged checks could not be loaded. Additional checks: not tested.".to_owned()
     } else {
         normalized
     }
@@ -2753,8 +2753,8 @@ mod tests {
             ),
             (
                 "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",
-                "Packaged scanner information unavailable. Additional checks: not tested.",
-                "內建掃描工具資訊無法取得；額外檢查：未測試。",
+                "Some packaged checks could not be loaded. Additional checks: not tested.",
+                "部分內建檢查無法載入；額外檢查：未測試。",
             ),
             (
                 "This check produced some durable work but did not complete every planned dimension.",
