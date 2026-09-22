@@ -2060,10 +2060,6 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。",
     ),
     (
-        "Retry this check to complete the missing work.",
-        "重新執行這項檢查以完成缺少的工作。",
-    ),
-    (
         "Retry only the unfinished work.",
         "只重新執行尚未完成的工作。",
     ),
@@ -2221,6 +2217,13 @@ pub fn coverage_gap_prose_zh_hant(english: &str) -> Option<String> {
     } else {
         normalized
     };
+    // Whole-sentence equality. A resumable check uses a longer sentence that
+    // only ends in the same words, and that sentence must stay untouched.
+    let normalized = if normalized == "Retry this check to complete the missing work." {
+        "Start a new scan for a fresh result.".to_owned()
+    } else {
+        normalized
+    };
     let normalized =
         if normalized.contains("No action is needed unless this area should be included") {
             "No action for the current scope.".to_owned()
@@ -2280,7 +2283,10 @@ pub fn coverage_gap_prose_english(english: &str) -> String {
         "Completed-check time: unavailable. Finish and bounded observation times are absent.".into()
     } else if normalized.contains("validated scanner result has not been fully processed") {
         "Result processing status: incomplete.".into()
-    } else if normalized.contains("result processing retries automatically") {
+    } else if normalized.contains("result processing retries automatically")
+        || normalized == "Retry this check to complete the missing work."
+    {
+        // Equality, not a substring: a resumable-check sentence ends in the same words.
         "Start a new scan for a fresh result.".into()
     } else if normalized.contains("No action is needed unless this area should be included") {
         "No action for the current scope.".into()

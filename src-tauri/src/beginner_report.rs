@@ -1745,9 +1745,8 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         ),
                         reason: "The Greenbone process completed, but this run does not retain one exact reviewed vulnerability profile for every bound asset. Process completion is not counted as a vulnerability result."
                             .into(),
-                        next_action_code: NextActionCode::RetryCheck,
-                        next_action: "Retry this check to create a consistent coverage record."
-                            .into(),
+                        next_action_code: NextActionCode::PreserveVisibleLimitation,
+                        next_action: "Start a new scan for a fresh result.".into(),
                     });
                     task_gap_already_projected = true;
                 }
@@ -1777,8 +1776,8 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         reason:
                             "Website security-template evidence unavailable. Outcome: not tested."
                                 .into(),
-                        next_action_code: NextActionCode::RetryCheck,
-                        next_action: "Retry this check to complete the missing work.".into(),
+                        next_action_code: NextActionCode::PreserveVisibleLimitation,
+                        next_action: "Start a new scan for a fresh result.".into(),
                     });
                 }
                 if !unproven_nuclei_asset_ids.is_empty() {
@@ -1839,8 +1838,8 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         dimension: format!("{}: scanner errors", check_id(task)),
                         reason: "Greenbone scanner errors. Host checks: partially completed."
                             .into(),
-                        next_action_code: NextActionCode::RetryCheck,
-                        next_action: "Retry this check to complete the missing work.".into(),
+                        next_action_code: NextActionCode::PreserveVisibleLimitation,
+                        next_action: "Start a new scan for a fresh result.".into(),
                     });
                 }
                 if !dead_host_asset_ids.is_empty() || !scanner_error_asset_ids.is_empty() {
@@ -8607,11 +8606,11 @@ mod tests {
             gap.reason,
             "Greenbone scanner errors. Host checks: partially completed."
         );
-        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
         assert_eq!(
-            gap.next_action,
-            "Retry this check to complete the missing work."
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
         );
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
         assert_eq!(report.state.summary, BeginnerReportSummary::Partial);
     }
 
@@ -8691,6 +8690,41 @@ mod tests {
             report.state.summary,
             BeginnerReportSummary::NoChecksCompleted
         );
+    }
+
+    #[test]
+    fn completed_nuclei_without_execution_evidence_records_a_visible_limitation() {
+        // `nuclei_website_case` is already a completed catalog task with no
+        // security-template execution record, so this is the Unavailable gap
+        // inside the Completed arm and needs no extra fixture mutation.
+        let case = nuclei_website_case();
+        let task = &case.scan_runs[0].engine_runs[0];
+        assert_eq!(task.status, EngineRunStatus::Completed);
+        assert!(matches!(task.task_kind, EngineTaskKind::CatalogEngine));
+        assert_eq!(task.engine_id, NUCLEI_ENGINE_ID);
+
+        let projected = project_actual_coverage(&case, &case.scan_runs[0]);
+        let gap = projected
+            .gaps
+            .iter()
+            .find(|gap| gap.dimension == "nuclei: website execution evidence")
+            .expect("missing Nuclei execution evidence gap");
+        assert_eq!(gap.kind, CoverageGapKind::Unavailable);
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
+        assert_eq!(
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        let reported = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "nuclei: website execution evidence")
+            .expect("report carries the missing Nuclei execution evidence gap");
+        assert_eq!(reported.kind, gap.kind);
+        assert_eq!(reported.next_action_code, gap.next_action_code);
+        assert_eq!(reported.next_action, gap.next_action);
     }
 
     #[test]
@@ -8865,11 +8899,11 @@ mod tests {
                     && gap.dimension == "greenbone: vulnerability profile evidence"
             })
             .expect("vulnerability profile evidence gap");
+        assert_eq!(gap.next_action, "Start a new scan for a fresh result.");
         assert_eq!(
-            gap.next_action,
-            "Retry this check to create a consistent coverage record."
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
         );
-        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
     }
 
     #[test]

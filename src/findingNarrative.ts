@@ -1032,10 +1032,6 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "Greenbone 掃描器錯誤；主機檢查：部分完成。",
   ],
   [
-    "Retry this check to complete the missing work.",
-    "重新執行這項檢查以完成缺少的工作。",
-  ],
-  [
     "The request-level outcome contradicts the run's durable task state and was ignored.",
     "這次請求層級的結果與本輪儲存的檢查狀態互相矛盾，因此未被採用。",
   ],
@@ -1517,6 +1513,12 @@ export const coverageGapProse = (
     normalized = "Result processing status: incomplete.";
   }
   if (normalized.includes("result processing retries automatically")) {
+    normalized = "Start a new scan for a fresh result.";
+  }
+  // Whole-sentence equality. A resumable check uses a longer sentence that
+  // only ends in the same words, and that sentence must stay untouched.
+  // This runs before the English return below, so both locales share it.
+  if (normalized === "Retry this check to complete the missing work.") {
     normalized = "Start a new scan for a fresh result.";
   }
   if (normalized.includes("No action is needed unless this area should be included")) {
