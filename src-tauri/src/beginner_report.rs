@@ -2143,14 +2143,47 @@ fn append_naabu_coverage_gaps(
     coverage: &CumulativeNaabuCoverage,
     gaps: &mut Vec<CoverageGap>,
 ) {
+    const TARGETED_RESUME_ACTIONS: [&str; 5] = [
+        "Retry only the unfinished work.",
+        "Retry only the failed work.",
+        "Retry only the timed-out work.",
+        "Retry the work without a tested outcome.",
+        "Restart the cancelled work.",
+    ];
+    const WHOLE_CHECK_RETRY_ACTIONS: [&str; 1] = ["Run this check again to confirm the result."];
+
     let summary = &coverage.summary;
     let task_id = Some(task.id.clone());
     let targets = task.asset_ids.clone();
+    // Computed before the closure so `push` keeps capturing the pre-cloned
+    // ids rather than `task`. False when Progress has no per-check Resume.
+    let retry_available = task_retry_control_is_available(task);
     let mut push = |kind: CoverageGapKind,
                     dimension: String,
                     reason: String,
                     next_action_code: NextActionCode,
                     next_action: &str| {
+        if next_action_code == NextActionCode::RetryCheck {
+            debug_assert!(
+                TARGETED_RESUME_ACTIONS.contains(&next_action)
+                    || WHOLE_CHECK_RETRY_ACTIONS.contains(&next_action),
+                "unclassified retry sentence in append_naabu_coverage_gaps: {next_action}"
+            );
+        }
+        // These five sentences tell the reader to resume exactly the units
+        // that did not finish. That is the per-check Resume control. When it
+        // is absent, run-level Start is a new scan.
+        let (next_action_code, next_action) = if next_action_code == NextActionCode::RetryCheck
+            && TARGETED_RESUME_ACTIONS.contains(&next_action)
+            && !retry_available
+        {
+            (
+                NextActionCode::StartNewScan,
+                "Start a new scan for a fresh result.",
+            )
+        } else {
+            (next_action_code, next_action)
+        };
         gaps.push(CoverageGap {
             unattributed: None,
             kind,
@@ -4763,8 +4796,9 @@ mod tests {
         ReportAssetSnapshot, ScopeGrant, SecurityTemplateExecution, SourceKind, new_id,
     };
     use crate::execution_coverage::{
-        ExecutionCoverageSummary, FinalArtifactIdentity, LAUNCHER_V2_JOURNAL_SCHEMA_VERSION,
-        ValidatedArtifactBinding, ValidatedExecutionCoverage, WorkUnitAttempt, WorkUnitCoverage,
+        ExecutionCoverageSummary, FinalArtifactIdentity, IncompleteReason,
+        LAUNCHER_V2_JOURNAL_SCHEMA_VERSION, ValidatedArtifactBinding, ValidatedExecutionCoverage,
+        WorkUnitAttempt, WorkUnitCoverage,
     };
     use crate::external_scope::{
         CanonicalTarget, ExternalActivity, ExternalScopeGrant, RatePolicy, ResolutionSnapshot,
@@ -5768,6 +5802,42 @@ mod tests {
         case
     }
 
+    /// One planned unit is `TestedPartial` and the other is complete, so the
+    /// report writes the unfinished-work row and no failed, timed-out,
+    /// cancelled, or not-tested unit row.
+    fn naabu_case_with_one_partial_unit(task_id: &str, status: EngineRunStatus) -> AssessmentCase {
+        let mut case = naabu_case_with_complete_unit_evidence(task_id, status, true);
+        let task = &mut case.scan_runs[0].engine_runs[0];
+        let coverage = &mut task.naabu_attempt_results[0].coverage;
+        let unit = &mut coverage.work_units[0];
+        unit.outcome = WorkUnitOutcome::TestedPartial;
+        let attempt = &mut unit.attempts[0];
+        attempt.outcome = WorkUnitOutcome::TestedPartial;
+        attempt.incomplete_reason = Some(IncompleteReason::Failed);
+        let artifact = attempt
+            .final_artifact
+            .as_mut()
+            .expect("partial evidence has a final artifact");
+        artifact.byte_length = 1;
+        let path = artifact.relative_path.clone();
+        let binding = coverage
+            .validated_artifact_bindings
+            .iter_mut()
+            .find(|binding| binding.identity.relative_path == path)
+            .expect("partial evidence binding");
+        binding.identity.byte_length = 1;
+        let summary = &mut coverage.summary;
+        assert!(
+            summary.tested_complete >= 1,
+            "fixture needs a unit to demote"
+        );
+        summary.tested_complete -= 1;
+        summary.tested_partial = 1;
+        summary.partial = true;
+        summary.has_usable_results = true;
+        case
+    }
+
     fn assert_reported_gap(
         report: &BeginnerMasterReport,
         dimension: &str,
@@ -5961,6 +6031,288 @@ mod tests {
         assert!(coverage.fully_complete);
         assert_eq!(task.status, EngineRunStatus::PartiallyCompleted);
         assert!(!stable_timeout_marker(task));
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} final-state reconciliation"),
+            CoverageGapKind::Unavailable,
+            NextActionCode::RetryCheck,
+            "All of this check's planned work produced evidence, but the check never recorded that it finished.",
+            "Run this check again to confirm the result.",
+        );
+    }
+
+    fn partial_unit_count(case: &AssessmentCase) -> usize {
+        let task = &case.scan_runs[0].engine_runs[0];
+        reduce_naabu_attempt_coverage(
+            task.naabu_work_plan.as_ref().expect("saved work plan"),
+            &task.naabu_attempt_requests,
+            &task.naabu_attempt_results,
+        )
+        .expect("saved work-unit history")
+        .summary
+        .tested_partial
+    }
+
+    #[test]
+    fn bounded_naabu_retry_exhaustion_asks_for_a_new_scan() {
+        let mut case =
+            naabu_case_with_one_partial_unit("task-exhausted", EngineRunStatus::PartiallyCompleted);
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "results_partial".into();
+            task.error_code = Some("coverage_incomplete_after_bounded_retries".into());
+            let token = progress_resume_token(task, "captured_awaiting_adapter");
+            task.resume_token = Some(token);
+            assert!(
+                !task_retry_control_is_available(task),
+                "the bounded-retry code removes Resume even with a checkpoint"
+            );
+        }
+        assert!(
+            partial_unit_count(&case) > 0,
+            "the unfinished-work row is the one this case writes"
+        );
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} partly completed work units (1)"),
+            CoverageGapKind::NotTested,
+            NextActionCode::StartNewScan,
+            "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
+            "Start a new scan for a fresh result.",
+        );
+    }
+
+    #[test]
+    fn a_completed_naabu_check_with_unfinished_units_asks_for_a_new_scan() {
+        let mut case =
+            naabu_case_with_one_partial_unit("task-completed-partial", EngineRunStatus::Completed);
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "completed".into();
+            assert!(task.resume_token.is_none());
+            assert_eq!(task.error_code, None);
+            assert!(
+                !task_retry_control_is_available(task),
+                "a completed check has no Resume control"
+            );
+        }
+        assert!(partial_unit_count(&case) > 0);
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} partly completed work units (1)"),
+            CoverageGapKind::NotTested,
+            NextActionCode::StartNewScan,
+            "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
+            "Start a new scan for a fresh result.",
+        );
+    }
+
+    #[test]
+    fn a_non_resumable_naabu_check_with_cancelled_units_asks_for_a_new_scan() {
+        let mut case = naabu_case_with_complete_unit_evidence(
+            "task-cancelled-unit",
+            EngineRunStatus::Cancelled,
+            true,
+        );
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "cancelled".into();
+            assert!(task.resume_token.is_none());
+            assert!(!task_retry_control_is_available(task));
+
+            let coverage = &mut task.naabu_attempt_results[0].coverage;
+            let unit = &mut coverage.work_units[0];
+            unit.outcome = WorkUnitOutcome::Cancelled;
+            let attempt = &mut unit.attempts[0];
+            attempt.outcome = WorkUnitOutcome::Cancelled;
+            let artifact = attempt.final_artifact.take().expect("complete artifact");
+            coverage
+                .validated_artifact_bindings
+                .retain(|binding| binding.identity.relative_path != artifact.relative_path);
+            coverage.summary.tested_complete -= 1;
+            coverage.summary.cancelled = 1;
+            coverage.summary.partial = true;
+
+            let coverage = reduce_naabu_attempt_coverage(
+                task.naabu_work_plan.as_ref().expect("saved work plan"),
+                &task.naabu_attempt_requests,
+                &task.naabu_attempt_results,
+            )
+            .expect("saved work-unit history");
+            assert_eq!(coverage.summary.cancelled, 1);
+        }
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} cancelled work units (1)"),
+            CoverageGapKind::Cancelled,
+            NextActionCode::StartNewScan,
+            "These planned work units were cancelled before completed coverage was recorded.",
+            "Start a new scan for a fresh result.",
+        );
+    }
+
+    #[test]
+    fn a_non_resumable_naabu_check_with_failed_units_asks_for_a_new_scan() {
+        let mut case = naabu_case_with_complete_unit_evidence(
+            "task-failed-unit",
+            EngineRunStatus::PartiallyCompleted,
+            true,
+        );
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "results_partial".into();
+            task.error_code = Some("coverage_incomplete_after_bounded_retries".into());
+            task.resume_token = Some(progress_resume_token(task, "captured_awaiting_adapter"));
+            assert!(!task_retry_control_is_available(task));
+
+            let coverage = &mut task.naabu_attempt_results[0].coverage;
+            let unit = &mut coverage.work_units[0];
+            unit.outcome = WorkUnitOutcome::Failed;
+            let attempt = &mut unit.attempts[0];
+            attempt.outcome = WorkUnitOutcome::Failed;
+            let artifact = attempt.final_artifact.take().expect("complete artifact");
+            coverage
+                .validated_artifact_bindings
+                .retain(|binding| binding.identity.relative_path != artifact.relative_path);
+            coverage.summary.tested_complete -= 1;
+            coverage.summary.failed = 1;
+            coverage.summary.partial = true;
+
+            let coverage = reduce_naabu_attempt_coverage(
+                task.naabu_work_plan.as_ref().expect("saved work plan"),
+                &task.naabu_attempt_requests,
+                &task.naabu_attempt_results,
+            )
+            .expect("saved work-unit history");
+            assert_eq!(coverage.summary.failed, 1);
+        }
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} failed work units (1)"),
+            CoverageGapKind::Failed,
+            NextActionCode::StartNewScan,
+            "These planned work units stopped before establishing completed coverage.",
+            "Start a new scan for a fresh result.",
+        );
+    }
+
+    #[test]
+    fn a_non_resumable_naabu_check_with_timed_out_units_asks_for_a_new_scan() {
+        let mut case = naabu_case_with_complete_unit_evidence(
+            "task-timed-out-unit",
+            EngineRunStatus::PartiallyCompleted,
+            true,
+        );
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "results_partial".into();
+            task.error_code = Some("coverage_incomplete_after_bounded_retries".into());
+            task.resume_token = Some(progress_resume_token(task, "captured_awaiting_adapter"));
+            assert!(!task_retry_control_is_available(task));
+
+            let coverage = &mut task.naabu_attempt_results[0].coverage;
+            let unit = &mut coverage.work_units[0];
+            unit.outcome = WorkUnitOutcome::TimedOut;
+            let attempt = &mut unit.attempts[0];
+            attempt.outcome = WorkUnitOutcome::TimedOut;
+            let artifact = attempt.final_artifact.take().expect("complete artifact");
+            coverage
+                .validated_artifact_bindings
+                .retain(|binding| binding.identity.relative_path != artifact.relative_path);
+            coverage.summary.tested_complete -= 1;
+            coverage.summary.timed_out = 1;
+            coverage.summary.partial = true;
+
+            let coverage = reduce_naabu_attempt_coverage(
+                task.naabu_work_plan.as_ref().expect("saved work plan"),
+                &task.naabu_attempt_requests,
+                &task.naabu_attempt_results,
+            )
+            .expect("saved work-unit history");
+            assert_eq!(coverage.summary.timed_out, 1);
+        }
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} timed-out work units (1)"),
+            CoverageGapKind::TimedOut,
+            NextActionCode::StartNewScan,
+            "These planned work units reached their bounded time limit before completed coverage was recorded.",
+            "Start a new scan for a fresh result.",
+        );
+    }
+
+    #[test]
+    fn a_resumable_naabu_check_still_retries_only_the_unfinished_work() {
+        let mut case = naabu_case_with_one_partial_unit("task-resumable", EngineRunStatus::Failed);
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "failed".into();
+            task.error_code = None;
+            let token = progress_resume_token(task, "failed");
+            task.resume_token = Some(token);
+            assert!(
+                task_retry_control_is_available(task),
+                "Failed with a matching checkpoint and no blocklisted code is resumable"
+            );
+        }
+        assert!(partial_unit_count(&case) > 0);
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} partly completed work units (1)"),
+            CoverageGapKind::NotTested,
+            NextActionCode::RetryCheck,
+            "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
+            "Retry only the unfinished work.",
+        );
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} stopped before finishing"),
+            CoverageGapKind::Failed,
+            NextActionCode::RetryCheck,
+            "The check stopped after saving some usable results.",
+            "Retry only the unfinished work.",
+        );
+    }
+
+    #[test]
+    fn a_whole_check_rerun_stays_a_retry_when_resume_is_unavailable() {
+        let mut case = naabu_case_with_complete_unit_evidence(
+            "task-confirm",
+            EngineRunStatus::PartiallyCompleted,
+            true,
+        );
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "results_partial".into();
+            task.error_code = Some("coverage_incomplete_after_bounded_retries".into());
+            let token = progress_resume_token(task, "captured_awaiting_adapter");
+            task.resume_token = Some(token);
+            let coverage = reduce_naabu_attempt_coverage(
+                task.naabu_work_plan.as_ref().expect("saved work plan"),
+                &task.naabu_attempt_requests,
+                &task.naabu_attempt_results,
+            )
+            .expect("saved work-unit history");
+            assert!(coverage.fully_complete);
+            assert!(
+                !task_retry_control_is_available(task),
+                "the bounded-retry code removes Resume"
+            );
+        }
 
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
