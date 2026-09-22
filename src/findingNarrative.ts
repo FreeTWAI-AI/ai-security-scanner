@@ -1038,8 +1038,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "部分問題顯示的說明不是這次掃描當時記錄的內容。",
   ],
   [
-    "Saved work-unit coverage is inconsistent; tested units are unknown.",
-    "已保存的工作單元涵蓋記錄不一致；已檢測單元為未知。",
+    "This check's own record of what it scanned is unusable, so it cannot be shown as complete.",
+    "這項檢查自己對已掃描內容的記錄無法使用，因此不能顯示為已完成。",
   ],
   [
     "This check ran on detection knowledge whose declared support had already ended, so issues published after that date were not tested.",
@@ -1070,12 +1070,24 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "這些已凍結的工作單元，在任何一次已儲存的嘗試中都沒有通過驗證的檢測結果。",
   ],
   [
-    "Result processing status: incomplete.",
-    "結果處理狀態：未完成。",
+    "Some of this check's results could not be read, so findings from it may be missing.",
+    "這項檢查的部分結果無法讀取，因此這項檢查的問題可能有所遺漏。",
   ],
   [
-    "Every planned work unit has completed evidence, but the check itself has not recorded a completed final state.",
-    "每個計畫中的工作單元都有完成的證據，但這項檢查本身尚未記錄完成的最終狀態。",
+    "All of this check's planned work produced evidence, but the check timed out before it finished.",
+    "這項檢查所有計畫中的工作都已產生證據，但這項檢查在完成之前就逾時。",
+  ],
+  [
+    "All of this check's planned work produced evidence, but the check ended in failure.",
+    "這項檢查所有計畫中的工作都已產生證據，但這項檢查以失敗結束。",
+  ],
+  [
+    "All of this check's planned work produced evidence, but the check was cancelled before it finished.",
+    "這項檢查所有計畫中的工作都已產生證據，但這項檢查在完成之前就被取消。",
+  ],
+  [
+    "All of this check's planned work produced evidence, but the check never recorded that it finished.",
+    "這項檢查所有計畫中的工作都已產生證據，但這項檢查從未記錄自己已完成。",
   ],
   [
     "The check reached its time limit after saving some usable results.",
@@ -1330,8 +1342,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "重新執行掃描以建立完全凍結的結果。",
   ],
   [
-    "Retry this check to create a consistent coverage record.",
-    "重新執行這項檢查以建立一致的涵蓋記錄。",
+    "Run this check again to get a usable record.",
+    "重新執行這項檢查以取得可用的記錄。",
   ],
   [
     "Retry only the unfinished work.",
@@ -1362,8 +1374,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "開始新的掃描以取得新結果。",
   ],
   [
-    "Retry this check to create a consistent terminal record.",
-    "重新執行這項檢查以建立一致的終止記錄。",
+    "Run this check again to confirm the result.",
+    "重新執行這項檢查以確認結果。",
   ],
   [
     "Retry only the unfinished work.",

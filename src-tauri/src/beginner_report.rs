@@ -1662,8 +1662,6 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                     }
                     Err(_) => {
                         status = untrusted_naabu_history_status(task);
-                        let explanation =
-                            "Saved work-unit coverage is inconsistent; tested units are unknown.";
                         gaps.push(CoverageGap {
                             unattributed: None,
                             kind: CoverageGapKind::Unavailable,
@@ -1671,10 +1669,10 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                             task_id: Some(task.id.clone()),
                             target_asset_ids: task.asset_ids.clone(),
                             dimension: format!("{} saved work-unit coverage", check_id(task)),
-                            reason: explanation.into(),
-                            next_action_code: NextActionCode::RetryCheck,
-                            next_action: "Retry this check to create a consistent coverage record."
+                            reason: "This check's own record of what it scanned is unusable, so it cannot be shown as complete."
                                 .into(),
+                            next_action_code: NextActionCode::RetryCheck,
+                            next_action: "Run this check again to get a usable record.".into(),
                         });
                         data_quality_warnings
                             .push("One check has incomplete coverage history.".into());
@@ -2241,30 +2239,34 @@ fn append_naabu_coverage_gaps(
         push(
             CoverageGapKind::Unavailable,
             format!("{} saved result processing", check_id(task)),
-            "Result processing status: incomplete.".into(),
+            "Some of this check's results could not be read, so findings from it may be missing."
+                .into(),
             NextActionCode::PreserveVisibleLimitation,
             "Start a new scan for a fresh result.",
         );
     }
 
     if coverage.fully_complete && task.status != EngineRunStatus::Completed {
-        let (kind, code, action) = if stable_timeout_marker(task) {
+        let (kind, code, action, reason) = if stable_timeout_marker(task) {
             (
                 CoverageGapKind::TimedOut,
                 NextActionCode::RetryCheck,
-                "Retry this check to create a consistent terminal record.",
+                "Run this check again to confirm the result.",
+                "All of this check's planned work produced evidence, but the check timed out before it finished.",
             )
         } else if task.status == EngineRunStatus::Failed {
             (
                 CoverageGapKind::Failed,
                 NextActionCode::RetryCheck,
-                "Retry this check to create a consistent terminal record.",
+                "Run this check again to confirm the result.",
+                "All of this check's planned work produced evidence, but the check ended in failure.",
             )
         } else if task.status == EngineRunStatus::Cancelled {
             (
                 CoverageGapKind::Cancelled,
                 NextActionCode::RetryCheck,
-                "Retry this check to create a consistent terminal record.",
+                "Run this check again to confirm the result.",
+                "All of this check's planned work produced evidence, but the check was cancelled before it finished.",
             )
         } else {
             (
@@ -2277,15 +2279,15 @@ fn append_naabu_coverage_gaps(
                 if task_is_active(task) {
                     "Open Review scanner status and finish or cancel this check."
                 } else {
-                    "Retry this check to create a consistent terminal record."
+                    "Run this check again to confirm the result."
                 },
+                "All of this check's planned work produced evidence, but the check never recorded that it finished.",
             )
         };
         push(
             kind,
             format!("{} final-state reconciliation", check_id(task)),
-            "Every planned work unit has completed evidence, but the check itself has not recorded a completed final state."
-                .into(),
+            reason.into(),
             code,
             action,
         );
@@ -5287,8 +5289,13 @@ mod tests {
         assert_eq!(report.coverage_counts.not_tested, 1);
     }
 
-    #[test]
-    fn naabu_work_finished_without_a_completed_final_state_asks_for_a_retry() {
+    /// Every planned unit has completed evidence. `normalization_complete` is
+    /// the only switch: false leaves saved artifacts unread.
+    fn naabu_case_with_complete_unit_evidence(
+        task_id: &str,
+        status: EngineRunStatus,
+        normalization_complete: bool,
+    ) -> AssessmentCase {
         let frozen_at = instant(10);
         let address = "192.168.50.10".parse().expect("fixture address");
         let resolved = ResolvedExternalPlan {
@@ -5315,7 +5322,7 @@ mod tests {
             allow_sensitive_networks: true,
         };
         let plan = build_naabu_work_plan(
-            NaabuWorkPlanIdentity::new("case-1", "run-1", "task-finished", frozen_at),
+            NaabuWorkPlanIdentity::new("case-1", "run-1", task_id, frozen_at),
             &[resolved],
             None,
         )
@@ -5397,55 +5404,227 @@ mod tests {
                     has_usable_results: true,
                 },
             },
-            normalization_complete: true,
+            normalization_complete,
         };
 
-        let mut task = catalog_task("finished", EngineRunStatus::PartiallyCompleted);
-        task.id = "task-finished".into();
+        let mut task = catalog_task(task_id, status);
         task.engine_id = NAABU_ENGINE_ID.into();
         task.progress_percent = 100;
+        task.error_code = None;
         task.error_message = None;
+        task.phase = "test".into();
         task.naabu_work_plan = Some(plan);
         task.naabu_attempt_requests = vec![request];
         task.naabu_attempt_results = vec![result];
+        let mut case = case_with_catalog_tasks(vec![task], true);
+        case.assets[0].kind = AssetKind::IpAddress;
+        case.assets[0].name = address.to_string();
+        case
+    }
+
+    fn assert_reported_gap(
+        report: &BeginnerMasterReport,
+        dimension: &str,
+        kind: CoverageGapKind,
+        code: NextActionCode,
+        reason: &str,
+        next_action: &str,
+    ) {
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == dimension)
+            .unwrap_or_else(|| panic!("report is missing the {dimension} coverage gap"));
+        assert_eq!(gap.kind, kind);
+        assert_eq!(gap.next_action_code, code);
+        assert_eq!(gap.reason, reason);
+        assert_eq!(gap.next_action, next_action);
+    }
+
+    #[test]
+    fn a_naabu_check_with_an_unusable_scan_record_cannot_be_shown_as_complete() {
+        let reason = "This check's own record of what it scanned is unusable, so it cannot be shown as complete.";
+        let next_action = "Run this check again to get a usable record.";
+        let dimension = format!("{NAABU_ENGINE_ID} saved work-unit coverage");
+
+        // The saved work plan is missing, so this arm never calls the reducer.
+        let mut missing_plan = catalog_task("missing-plan", EngineRunStatus::Completed);
+        missing_plan.engine_id = NAABU_ENGINE_ID.into();
+        missing_plan.naabu_work_plan = None;
+        missing_plan.naabu_attempt_requests = vec![NaabuAttemptRequest {
+            schema_version: NAABU_ATTEMPT_REQUEST_SCHEMA_VERSION,
+            execution_attempt: 1,
+            requested_unit_ids: vec!["unit-1".into()],
+            launcher_plan_sha256: "unused".into(),
+        }];
+        let missing_report = build_beginner_master_report(
+            &case_with_catalog_tasks(vec![missing_plan], true),
+            "run-1",
+        )
+        .expect("beginner report");
+        assert_reported_gap(
+            &missing_report,
+            &dimension,
+            CoverageGapKind::Unavailable,
+            NextActionCode::RetryCheck,
+            reason,
+            next_action,
+        );
+
+        // Present plan whose saved attempts do not reduce.
+        let mut inconsistent = naabu_case_with_complete_unit_evidence(
+            "task-inconsistent",
+            EngineRunStatus::Failed,
+            true,
+        );
+        {
+            let task = &mut inconsistent.scan_runs[0].engine_runs[0];
+            task.naabu_attempt_requests[0].execution_attempt = 2;
+            assert!(
+                reduce_naabu_attempt_coverage(
+                    task.naabu_work_plan.as_ref().expect("saved work plan"),
+                    &task.naabu_attempt_requests,
+                    &task.naabu_attempt_results,
+                )
+                .is_err(),
+                "attempt history must fail to reduce"
+            );
+        }
+        let inconsistent_report =
+            build_beginner_master_report(&inconsistent, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &inconsistent_report,
+            &dimension,
+            CoverageGapKind::Unavailable,
+            NextActionCode::RetryCheck,
+            reason,
+            next_action,
+        );
+    }
+
+    #[test]
+    fn a_naabu_check_whose_results_could_not_be_read_says_findings_may_be_missing() {
+        let case = naabu_case_with_complete_unit_evidence(
+            "task-unreadable",
+            EngineRunStatus::Completed,
+            false,
+        );
+        let task = &case.scan_runs[0].engine_runs[0];
         let coverage = reduce_naabu_attempt_coverage(
             task.naabu_work_plan.as_ref().expect("saved work plan"),
             &task.naabu_attempt_requests,
             &task.naabu_attempt_results,
         )
         .expect("saved work-unit history");
-        assert!(
-            coverage.fully_complete,
-            "fixture coverage must be fully complete"
-        );
-        assert_eq!(task.status, EngineRunStatus::PartiallyCompleted);
-
-        let mut case = case_with_catalog_tasks(vec![task], true);
-        case.assets[0].kind = AssetKind::IpAddress;
-        case.assets[0].name = address.to_string();
-
-        let projected = project_actual_coverage(&case, &case.scan_runs[0]);
-        let gap = projected
-            .gaps
-            .iter()
-            .find(|gap| gap.dimension == format!("{NAABU_ENGINE_ID} final-state reconciliation"))
-            .expect("final-state reconciliation gap");
-        assert_eq!(gap.kind, CoverageGapKind::Unavailable);
-        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
-        assert_eq!(
-            gap.next_action,
-            "Retry this check to create a consistent terminal record."
-        );
+        assert!(!coverage.all_validated_final_artifacts_normalized);
+        assert!(!coverage.fully_complete);
 
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
-        let reported = report
-            .coverage_gaps
-            .iter()
-            .find(|gap| gap.dimension == format!("{NAABU_ENGINE_ID} final-state reconciliation"))
-            .expect("report carries the final-state reconciliation gap");
-        assert_eq!(reported.kind, gap.kind);
-        assert_eq!(reported.next_action_code, gap.next_action_code);
-        assert_eq!(reported.next_action, gap.next_action);
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} saved result processing"),
+            CoverageGapKind::Unavailable,
+            NextActionCode::PreserveVisibleLimitation,
+            "Some of this check's results could not be read, so findings from it may be missing.",
+            "Start a new scan for a fresh result.",
+        );
+        assert!(report.coverage_gaps.iter().all(|gap| {
+            gap.dimension != format!("{NAABU_ENGINE_ID} final-state reconciliation")
+        }));
+    }
+
+    #[test]
+    fn naabu_complete_evidence_that_timed_out_says_the_check_timed_out() {
+        let mut case =
+            naabu_case_with_complete_unit_evidence("task-timed-out", EngineRunStatus::Failed, true);
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "timed_out".into();
+            task.error_code = Some("execution_timeout".into());
+            assert!(stable_timeout_marker(task));
+        }
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} final-state reconciliation"),
+            CoverageGapKind::TimedOut,
+            NextActionCode::RetryCheck,
+            "All of this check's planned work produced evidence, but the check timed out before it finished.",
+            "Run this check again to confirm the result.",
+        );
+    }
+
+    #[test]
+    fn naabu_complete_evidence_that_failed_says_the_check_ended_in_failure() {
+        let mut case =
+            naabu_case_with_complete_unit_evidence("task-failed", EngineRunStatus::Failed, true);
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "failed".into();
+            task.error_code = Some("execution_failed".into());
+            assert!(!stable_timeout_marker(task));
+        }
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} final-state reconciliation"),
+            CoverageGapKind::Failed,
+            NextActionCode::RetryCheck,
+            "All of this check's planned work produced evidence, but the check ended in failure.",
+            "Run this check again to confirm the result.",
+        );
+    }
+
+    #[test]
+    fn naabu_complete_evidence_that_was_cancelled_says_the_check_was_cancelled() {
+        let mut case = naabu_case_with_complete_unit_evidence(
+            "task-cancelled",
+            EngineRunStatus::Cancelled,
+            true,
+        );
+        {
+            let task = &mut case.scan_runs[0].engine_runs[0];
+            task.phase = "cancelled".into();
+            assert!(!stable_timeout_marker(task));
+        }
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} final-state reconciliation"),
+            CoverageGapKind::Cancelled,
+            NextActionCode::RetryCheck,
+            "All of this check's planned work produced evidence, but the check was cancelled before it finished.",
+            "Run this check again to confirm the result.",
+        );
+    }
+
+    #[test]
+    fn naabu_work_finished_without_a_completed_final_state_asks_for_a_retry() {
+        let case = naabu_case_with_complete_unit_evidence(
+            "task-finished",
+            EngineRunStatus::PartiallyCompleted,
+            true,
+        );
+        let task = &case.scan_runs[0].engine_runs[0];
+        let coverage = reduce_naabu_attempt_coverage(
+            task.naabu_work_plan.as_ref().expect("saved work plan"),
+            &task.naabu_attempt_requests,
+            &task.naabu_attempt_results,
+        )
+        .expect("saved work-unit history");
+        assert!(coverage.fully_complete);
+        assert_eq!(task.status, EngineRunStatus::PartiallyCompleted);
+        assert!(!stable_timeout_marker(task));
+
+        let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
+        assert_reported_gap(
+            &report,
+            &format!("{NAABU_ENGINE_ID} final-state reconciliation"),
+            CoverageGapKind::Unavailable,
+            NextActionCode::RetryCheck,
+            "All of this check's planned work produced evidence, but the check never recorded that it finished.",
+            "Run this check again to confirm the result.",
+        );
     }
 
     #[test]
