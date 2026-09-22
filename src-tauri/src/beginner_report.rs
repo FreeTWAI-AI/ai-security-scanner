@@ -1831,7 +1831,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: format!("{}: scanner errors", check_id(task)),
-                        reason: "Greenbone scanner errors. Host checks: partially completed."
+                        reason: "Greenbone reported errors for this host, so its checks cannot be shown as complete."
                             .into(),
                         next_action_code: NextActionCode::PreserveVisibleLimitation,
                         next_action: "Start a new scan for a fresh result.".into(),
@@ -2361,7 +2361,7 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
         CoverageDimensionStatus::Failed => (
             CoverageGapKind::Failed,
             "failed check dimension",
-            "This check stopped before it could establish completed coverage.",
+            "This check failed, so it cannot be shown as tested.",
             NextActionCode::RetryCheck,
             "Retry this check.",
         ),
@@ -3455,7 +3455,11 @@ fn append_internal_device_profile_gaps(
             let (dimension, reason) = match profile {
                 DeclaredWebServiceScanProfile::InternalDeviceHttps => (
                     "device product and firmware vulnerability coverage",
-                    "This HTTPS management-service profile contains no device product or firmware vulnerability checks. TLS protocol, cipher, and certificate checks are reported separately.",
+                    if task.status == EngineRunStatus::Completed {
+                        "This HTTPS management-service profile contains no device product or firmware vulnerability checks. TLS protocol, cipher, and certificate checks are reported separately."
+                    } else {
+                        "This HTTPS management-service profile contains no device product or firmware vulnerability checks."
+                    },
                 ),
             };
             gaps.push(CoverageGap {
@@ -4379,7 +4383,7 @@ fn check_id(task: &EngineRun) -> String {
 ///
 /// It is set from `last_error.is_some()` and nothing else, so it is the same
 /// string for a host deadline, a rejected adapter result, and an unfinished
-/// cleanup. Printed after a sentence that already says the check stopped, it
+/// cleanup. Printed after a sentence that already says the check failed, it
 /// reads as a diagnosis and is not one.
 const RECONCILED_EXECUTION_ERROR_CODE: &str = "execution_failed";
 
@@ -5856,7 +5860,7 @@ mod tests {
     #[test]
     fn the_reconciled_error_code_stays_out_of_the_reason_and_a_real_one_stays_in() {
         // Every recorded execution error reconciles to one constant, so
-        // printing it after "This check stopped" is a diagnosis-shaped
+        // printing it after "This check failed" is a diagnosis-shaped
         // sentence that says only what the sentence before it already said.
         // The constant is still in the technical record either way.
         let mut generic = catalog_task("generic", EngineRunStatus::Failed);
@@ -5871,7 +5875,7 @@ mod tests {
             .expect("failed gap");
         assert_eq!(
             generic_gap.reason,
-            "This check stopped before it could establish completed coverage."
+            "This check failed, so it cannot be shown as tested."
         );
         assert!(
             generic_report
@@ -5894,7 +5898,7 @@ mod tests {
                 .find(|gap| gap.kind == CoverageGapKind::Failed)
                 .expect("failed gap")
                 .reason,
-            "This check stopped before it could establish completed coverage. Diagnostic code: image_pull_denied."
+            "This check failed, so it cannot be shown as tested. Diagnostic code: image_pull_denied."
         );
     }
 
@@ -8917,7 +8921,7 @@ mod tests {
         assert_eq!(gap.target_asset_ids, ["host-asset"]);
         assert_eq!(
             gap.reason,
-            "Greenbone scanner errors. Host checks: partially completed."
+            "Greenbone reported errors for this host, so its checks cannot be shown as complete."
         );
         assert_eq!(
             gap.next_action_code,
@@ -9340,6 +9344,67 @@ mod tests {
             build_beginner_master_report(&reopened, "run-1").unwrap(),
             "reopening the durable case must not change the shared report"
         );
+    }
+
+    #[test]
+    fn completed_https_management_profile_names_the_separate_tls_checks() {
+        let case = internal_device_case(DeclaredWebServiceScanProfile::InternalDeviceHttps);
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "device product and firmware vulnerability coverage")
+            .expect("device product and firmware coverage limits stay visible");
+        assert_eq!(gap.kind, CoverageGapKind::NotTested);
+        assert_eq!(
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
+        assert_eq!(
+            gap.next_action,
+            "Run a separately approved device firmware assessment or use endpoint inventory."
+        );
+        assert_eq!(
+            gap.reason,
+            "This HTTPS management-service profile contains no device product or firmware vulnerability checks. TLS protocol, cipher, and certificate checks are reported separately."
+        );
+        assert!(report.actual.checks.iter().any(|check| {
+            check
+                .tested_dimensions
+                .iter()
+                .any(|tested| tested.dimension == "internal-device TLS vulnerability checks")
+        }));
+    }
+
+    #[test]
+    fn failed_https_management_profile_does_not_promise_separate_tls_checks() {
+        let mut case = internal_device_case(DeclaredWebServiceScanProfile::InternalDeviceHttps);
+        case.scan_runs[0].engine_runs[0].status = EngineRunStatus::Failed;
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "device product and firmware vulnerability coverage")
+            .expect("device product and firmware coverage limits stay visible");
+        assert_eq!(gap.kind, CoverageGapKind::NotTested);
+        assert_eq!(
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
+        assert_eq!(
+            gap.next_action,
+            "Run a separately approved device firmware assessment or use endpoint inventory."
+        );
+        assert_eq!(
+            gap.reason,
+            "This HTTPS management-service profile contains no device product or firmware vulnerability checks."
+        );
+        assert!(report.actual.checks.iter().all(|check| {
+            check
+                .tested_dimensions
+                .iter()
+                .all(|tested| tested.dimension != "internal-device TLS vulnerability checks")
+        }));
     }
 
     #[test]

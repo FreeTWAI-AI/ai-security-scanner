@@ -3601,7 +3601,7 @@ test("the asset board is read in attention order, not in the order targets were 
       taskId: "task-failed",
       targetAssetIds: ["asset-failed"],
       dimension: "greenbone: failed check dimension",
-      reason: "This check stopped before it could establish completed coverage.",
+      reason: "This check failed, so it cannot be shown as tested.",
       nextActionCode: "retry_check",
       nextAction: "Retry this check.",
     }],

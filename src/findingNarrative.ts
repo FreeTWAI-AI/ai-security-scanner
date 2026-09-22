@@ -1026,8 +1026,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。",
   ],
   [
-    "Greenbone scanner errors. Host checks: partially completed.",
-    "Greenbone 掃描器錯誤；主機檢查：部分完成。",
+    "Greenbone reported errors for this host, so its checks cannot be shown as complete.",
+    "Greenbone 回報了這台主機的錯誤，因此其檢查不能顯示為已完成。",
   ],
   [
     "The saved summary did not match this run's checks, so the report follows the checks.",
@@ -1122,8 +1122,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "這項受限的檢查達到時間上限，因此不能視為已完整檢測。",
   ],
   [
-    "This check stopped before it could establish completed coverage.",
-    "這項檢查在建立完整涵蓋之前就停止了。",
+    "This check failed, so it cannot be shown as tested.",
+    "這項檢查失敗了，因此不能顯示為已測試。",
   ],
   [
     "This check was cancelled before completed coverage was recorded.",
@@ -1176,6 +1176,10 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
   [
     "This HTTPS management-service profile contains no device product or firmware vulnerability checks. TLS protocol, cipher, and certificate checks are reported separately.",
     "此 HTTPS 管理服務設定檔不包含設備產品或韌體弱點檢查；TLS 協定、加密套件與憑證檢查會另行回報。",
+  ],
+  [
+    "This HTTPS management-service profile contains no device product or firmware vulnerability checks.",
+    "此 HTTPS 管理服務設定檔不包含設備產品或韌體弱點檢查。",
   ],
   [
     "This run does not retain one exact frozen HTTPS management-service profile for this asset. Current project metadata is not used to claim historical TLS coverage.",
