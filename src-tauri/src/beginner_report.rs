@@ -1745,8 +1745,8 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         ),
                         reason: "The Greenbone process completed, but this run does not retain one exact reviewed vulnerability profile for every bound asset. Process completion is not counted as a vulnerability result."
                             .into(),
-                        next_action_code: NextActionCode::ChooseCompatibleCheck,
-                        next_action: "Choose a supported exact asset profile and run it when vulnerability coverage is needed."
+                        next_action_code: NextActionCode::RetryCheck,
+                        next_action: "Retry this check to create a consistent coverage record."
                             .into(),
                     });
                     task_gap_already_projected = true;
@@ -8692,10 +8692,19 @@ mod tests {
                 .iter()
                 .all(|dimension| dimension.dimension != "Greenbone remote vulnerability scan")
         );
-        assert!(report.coverage_gaps.iter().any(|gap| {
-            gap.target_asset_ids == ["host-asset"]
-                && gap.dimension == "greenbone: vulnerability profile evidence"
-        }));
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| {
+                gap.target_asset_ids == ["host-asset"]
+                    && gap.dimension == "greenbone: vulnerability profile evidence"
+            })
+            .expect("vulnerability profile evidence gap");
+        assert_eq!(
+            gap.next_action,
+            "Retry this check to create a consistent coverage record."
+        );
+        assert_eq!(gap.next_action_code, NextActionCode::RetryCheck);
     }
 
     #[test]
