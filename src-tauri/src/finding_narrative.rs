@@ -1703,10 +1703,6 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
         "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。這不是你的設定問題，也不是掃描失敗；更改設定或再執行一次都無法改變這項結果。只有這項檢查的更新版內建掃描工具能改變這項狀況。",
     ),
-    (
-        "Choose a check that can read this kind of target.",
-        "請選擇能讀取這類目標的檢查。",
-    ),
     // Why the coverage is missing.
     (
         "Maester evaluated this control but did not return a pass or fail verdict.",
@@ -2227,6 +2223,11 @@ pub fn coverage_gap_prose_zh_hant(english: &str) -> Option<String> {
         } else {
             normalized
         };
+    let normalized = if normalized == "Choose a check that can read this kind of target." {
+        "Update the app, then retry these checks.".to_owned()
+    } else {
+        normalized
+    };
     let normalized =
         if normalized.contains("No action is needed unless this area should be included") {
             "No action for the current scope.".to_owned()
@@ -2293,6 +2294,8 @@ pub fn coverage_gap_prose_english(english: &str) -> String {
         "Start a new scan for a fresh result.".into()
     } else if normalized == "Confirm reachability in Scan setup, then retry the timed-out work." {
         "Retry the timed-out work.".into()
+    } else if normalized == "Choose a check that can read this kind of target." {
+        "Update the app, then retry these checks.".into()
     } else if normalized.contains("No action is needed unless this area should be included") {
         "No action for the current scope.".into()
     } else {

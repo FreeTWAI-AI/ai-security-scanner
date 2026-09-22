@@ -3414,6 +3414,31 @@ test("an asset with no supported vulnerability profile keeps its new-scan instru
   expect(assetRow?.textContent).not.toContain("Open scan setup");
 });
 
+test("a check the packaged scanner cannot read keeps the update instruction and shows no scan-setup button", () => {
+  // The packaged scanner is what cannot read the target. Scan setup has no
+  // control that chooses a different check, so the row must not send the
+  // reader there.
+  const unsupportedInputGap = {
+    kind: "not_tested" as const,
+    targetAssetIds: ["asset-1"],
+    dimension: "grype: unsupported target input",
+    reason:
+      "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that.",
+    nextActionCode: "preserve_visible_limitation" as const,
+    nextAction: "Update the app, then retry these checks.",
+  };
+  const { container } = renderReport(report("no_checks_completed", {
+    coverageGaps: [unsupportedInputGap],
+    coverageCounts: counts({ notTested: 1 }),
+  }));
+
+  const assetRow = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(assetRow?.dataset.assetResult).toBe("not_tested");
+  expect(assetRow?.textContent).toContain("Update the app, then retry these checks.");
+  expect(assetRow?.querySelectorAll("button")).toHaveLength(0);
+  expect(assetRow?.textContent).not.toContain("Open scan setup");
+});
+
 test("an empty findings list caused by a missing identifier names that identifier", () => {
   const { container } = renderReport(
     report("partial", { coverageGaps: [unattributedGap], coverageCounts: counts({ unattributed: 1 }) }),

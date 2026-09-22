@@ -1008,10 +1008,6 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "這項檢查的內建掃描工具無法讀取這類目標，因此沒有測試任何內容。這不是你的設定問題，也不是掃描失敗；更改設定或再執行一次都無法改變這項結果。只有這項檢查的更新版內建掃描工具能改變這項狀況。",
   ],
   [
-    "Choose a check that can read this kind of target.",
-    "請選擇能讀取這類目標的檢查。",
-  ],
-  [
     "Maester evaluated this control but did not return a pass or fail verdict.",
     "Maester 已評估這項控制措施，但未回傳通過或失敗的判定。",
   ],
@@ -1523,6 +1519,9 @@ export const coverageGapProse = (
   }
   if (normalized === "Confirm reachability in Scan setup, then retry the timed-out work.") {
     normalized = "Retry the timed-out work.";
+  }
+  if (normalized === "Choose a check that can read this kind of target.") {
+    normalized = "Update the app, then retry these checks.";
   }
   if (normalized.includes("No action is needed unless this area should be included")) {
     normalized = "No action for the current scope.";

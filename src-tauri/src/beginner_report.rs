@@ -1880,8 +1880,8 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                 dimension: format!("{}: unsupported target input", check_id(task)),
                 reason: "This check's packaged scanner cannot read this kind of target, so nothing was tested by it. This is not a setup problem and not a failed scan; changing settings or running it again cannot fix it. Only an updated packaged scanner for this check changes that."
                     .into(),
-                next_action_code: NextActionCode::ChooseCompatibleCheck,
-                next_action: "Choose a check that can read this kind of target.".into(),
+                next_action_code: NextActionCode::PreserveVisibleLimitation,
+                next_action: "Update the app, then retry these checks.".into(),
             });
             task_gap_already_projected = true;
         }
@@ -5504,7 +5504,7 @@ mod tests {
         assert_eq!(task_gaps[0].kind, CoverageGapKind::NotTested);
         assert_eq!(
             task_gaps[0].next_action_code,
-            NextActionCode::ChooseCompatibleCheck
+            NextActionCode::PreserveVisibleLimitation
         );
         assert_eq!(
             task_gaps[0].reason,
@@ -5512,7 +5512,7 @@ mod tests {
         );
         assert_eq!(
             task_gaps[0].next_action,
-            "Choose a check that can read this kind of target."
+            "Update the app, then retry these checks."
         );
         assert!(!report.coverage_gaps.iter().any(|gap| {
             gap.task_id.as_deref() == Some("unsupported-input")
