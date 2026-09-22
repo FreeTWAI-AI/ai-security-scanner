@@ -1218,8 +1218,12 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "這項不需登入的 SMTP 設定檔會讀取 banner、送出 EHLO、在服務提供時協商 STARTTLS，並檢查服務宣告的 AUTH 是否存在未加密的明文登入風險。只有在能協商 TLS 時才會執行 TLS 檢查。它不會送出帳號或密碼、寄信，也不會測試 relay 或投遞、驗證強制或繞過、anti-spam 行為、一般郵件伺服器實作 CVE、作業系統修補、已安裝軟體或本機設定。",
   ],
   [
-    "Selected-run SMTP TLS evidence: incomplete. Fixed profile status: attempted. TLS availability and per-check execution: shown only by each finding's source OID.",
-    "所選輪次的 SMTP TLS 證據：未完成。固定設定檔狀態：已嘗試。TLS 可用性與各項檢查的執行情況：只由各問題的來源 OID 顯示。",
+    "The SMTP profile ran, but this scan did not record every one of its TLS checks. Which TLS checks ran is shown only by each finding's source OID.",
+    "SMTP 設定檔已執行，但這次掃描沒有記錄它的每一項 TLS 檢查。哪些 TLS 檢查已執行，只由各問題的來源 OID 顯示。",
+  ],
+  [
+    "This check did not complete, so its SMTP TLS checks cannot be shown as run. Which TLS checks ran is shown only by each finding's source OID.",
+    "這項檢查沒有完成，因此其 SMTP TLS 檢查不能顯示為已執行。哪些 TLS 檢查已執行，只由各問題的來源 OID 顯示。",
   ],
   [
     "This run does not retain the exact fixed Telnet profile for this asset. Current project metadata is not used to claim historical Telnet security coverage.",

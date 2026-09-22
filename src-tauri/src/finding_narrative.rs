@@ -1907,8 +1907,12 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "本輪沒有為此資產保留精確固定的 SMTP 設定檔。目前的專案資料不會用來宣稱當時已完成 SMTP 安全性涵蓋。",
     ),
     (
-        "Selected-run SMTP TLS evidence: incomplete. Fixed profile status: attempted. TLS availability and per-check execution: shown only by each finding's source OID.",
-        "所選輪次的 SMTP TLS 證據：未完成。固定設定檔狀態：已嘗試。TLS 可用性與各項檢查的執行情況：只由各問題的來源 OID 顯示。",
+        "The SMTP profile ran, but this scan did not record every one of its TLS checks. Which TLS checks ran is shown only by each finding's source OID.",
+        "SMTP 設定檔已執行，但這次掃描沒有記錄它的每一項 TLS 檢查。哪些 TLS 檢查已執行，只由各問題的來源 OID 顯示。",
+    ),
+    (
+        "This check did not complete, so its SMTP TLS checks cannot be shown as run. Which TLS checks ran is shown only by each finding's source OID.",
+        "這項檢查沒有完成，因此其 SMTP TLS 檢查不能顯示為已執行。哪些 TLS 檢查已執行，只由各問題的來源 OID 顯示。",
     ),
     (
         "The unauthenticated SMTP profile reads the banner, issues EHLO, negotiates STARTTLS when offered, and checks advertised AUTH for an unencrypted cleartext-login risk. Its TLS checks apply only when TLS can be negotiated. It does not send credentials or mail, test relay or delivery, authentication enforcement or bypass, anti-spam behavior, general mail-server implementation CVEs, operating-system patches, installed software, or local configuration.",

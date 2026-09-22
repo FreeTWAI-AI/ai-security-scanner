@@ -3344,6 +3344,11 @@ fn append_internal_endpoint_profile_gaps(
             ) && selected_run_evidenced_smtp_tls_oids(case, run, task, asset_id).len()
                 < INTERNAL_ENDPOINT_SMTP_TLS_VULNERABILITY_OIDS.len()
             {
+                let reason = if task.status == EngineRunStatus::Completed {
+                    "The SMTP profile ran, but this scan did not record every one of its TLS checks. Which TLS checks ran is shown only by each finding's source OID."
+                } else {
+                    "This check did not complete, so its SMTP TLS checks cannot be shown as run. Which TLS checks ran is shown only by each finding's source OID."
+                };
                 gaps.push(CoverageGap {
                     unattributed: None,
                     kind: CoverageGapKind::NotTested,
@@ -3351,11 +3356,11 @@ fn append_internal_endpoint_profile_gaps(
                     task_id: Some(task.id.clone()),
                     target_asset_ids: vec![asset_id.clone()],
                     dimension: "SMTP TLS negotiation-dependent coverage".into(),
-                    reason: "Selected-run SMTP TLS evidence: incomplete. Fixed profile status: attempted. TLS availability and per-check execution: shown only by each finding's source OID."
-                        .into(),
+                    reason: reason.into(),
                     next_action_code: NextActionCode::PreserveVisibleLimitation,
-                    next_action: "Run a separately approved TLS assessment for complete SMTP TLS coverage."
-                        .into(),
+                    next_action:
+                        "Run a separately approved TLS assessment for complete SMTP TLS coverage."
+                            .into(),
                 });
             }
             let (dimension, reason, next_action) = match frozen_profile {
@@ -8495,12 +8500,10 @@ mod tests {
         assert_eq!(tls_gap.kind, CoverageGapKind::NotTested);
         assert_eq!(tls_gap.task_id.as_deref(), Some("smtp-transport"));
         assert_eq!(tls_gap.target_asset_ids, ["smtp-asset"]);
-        assert!(
-            tls_gap
-                .reason
-                .contains("TLS availability and per-check execution")
+        assert_eq!(
+            tls_gap.reason,
+            "The SMTP profile ran, but this scan did not record every one of its TLS checks. Which TLS checks ran is shown only by each finding's source OID."
         );
-        assert!(tls_gap.reason.contains("each finding's source OID"));
 
         let gap = report
             .coverage_gaps
@@ -8600,6 +8603,59 @@ mod tests {
                 .coverage_gaps
                 .iter()
                 .all(|gap| gap.dimension != "SMTP TLS negotiation-dependent coverage")
+        );
+    }
+
+    #[test]
+    fn completed_smtp_profile_with_incomplete_tls_evidence_says_the_profile_ran() {
+        let case = internal_endpoint_smtp_case();
+        assert_eq!(
+            case.scan_runs[0].engine_runs[0].status,
+            EngineRunStatus::Completed
+        );
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "SMTP TLS negotiation-dependent coverage")
+            .expect("incomplete SMTP TLS evidence stays visible");
+        assert_eq!(gap.kind, CoverageGapKind::NotTested);
+        assert_eq!(
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
+        assert_eq!(
+            gap.next_action,
+            "Run a separately approved TLS assessment for complete SMTP TLS coverage."
+        );
+        assert_eq!(
+            gap.reason,
+            "The SMTP profile ran, but this scan did not record every one of its TLS checks. Which TLS checks ran is shown only by each finding's source OID."
+        );
+    }
+
+    #[test]
+    fn not_executed_smtp_profile_does_not_claim_its_tls_checks_ran() {
+        let mut case = internal_endpoint_smtp_case();
+        case.scan_runs[0].engine_runs[0].status = EngineRunStatus::NotExecuted;
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "SMTP TLS negotiation-dependent coverage")
+            .expect("incomplete SMTP TLS evidence stays visible");
+        assert_eq!(gap.kind, CoverageGapKind::NotTested);
+        assert_eq!(
+            gap.next_action_code,
+            NextActionCode::PreserveVisibleLimitation
+        );
+        assert_eq!(
+            gap.next_action,
+            "Run a separately approved TLS assessment for complete SMTP TLS coverage."
+        );
+        assert_eq!(
+            gap.reason,
+            "This check did not complete, so its SMTP TLS checks cannot be shown as run. Which TLS checks ran is shown only by each finding's source OID."
         );
     }
 
