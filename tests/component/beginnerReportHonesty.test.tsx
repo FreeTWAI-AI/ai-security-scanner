@@ -1330,7 +1330,7 @@ const assetNextActionControlCases = [
   ["start_expected_service_and_retry", "progress"],
   ["choose_compatible_check", "coverage"],
   ["review_coverage", "coverage"],
-  ["review_manual_control", "coverage"],
+  ["review_manual_control", undefined],
   ["add_asset_identifier", "coverage"],
   ["review_finding", undefined],
   ["confirm_finding_after_incomplete_check", undefined],
@@ -3315,6 +3315,36 @@ test("a completed Maester review item is visible without being labelled untested
   expect(assetRow?.textContent).toContain(
     "Review the upstream detail and record a human decision for this control.",
   );
+});
+
+test("a manual-review control with no completed check keeps its decision step and shows no scan-setup button", () => {
+  // The decision and the upstream detail are already on this page. Scan setup
+  // has no control for recording that decision, so the row must not send the
+  // reader there.
+  const manualReviewGap = {
+    kind: "manual_review" as const,
+    taskId: "task-maester",
+    targetAssetIds: ["asset-1"],
+    dimension: "maester: no verdict for MT.1003 — Legacy methods need review",
+    reason:
+      "Maester evaluated this control but did not return a pass or fail verdict. Upstream detail: Confirm the tenant exception.",
+    nextActionCode: "review_manual_control" as const,
+    nextAction: "Review the upstream detail and record a human decision for this control.",
+  };
+  const { container } = renderReport(report("no_checks_completed", {
+    actual: { checks: [], networkScopes: [], unavailableDimensions: [] },
+    findings: [],
+    coverageGaps: [manualReviewGap],
+    coverageCounts: counts({ manualReview: 1 }),
+  }));
+
+  const assetRow = container.querySelector<HTMLElement>(".asset-result-row");
+  expect(assetRow?.dataset.assetResult).toBe("not_tested");
+  expect(assetRow?.textContent).toContain(
+    "Review the upstream detail and record a human decision for this control.",
+  );
+  expect(assetRow?.querySelectorAll("button")).toHaveLength(0);
+  expect(assetRow?.textContent).not.toContain("Open scan setup");
 });
 
 test("an empty findings list caused by a missing identifier names that identifier", () => {

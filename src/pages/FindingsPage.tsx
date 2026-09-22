@@ -844,8 +844,8 @@ const assetNextActionDestination = {
   // Coverage is where applicable checks are chosen.
   choose_compatible_check: "coverage",
   review_coverage: "coverage",
-  // A manual control is untested coverage to review.
-  review_manual_control: "coverage",
+  // The control and its upstream detail are on the surface the user is already reading.
+  review_manual_control: undefined,
   // Coverage is where the gap and its reason are stated before the user changes setup.
   add_asset_identifier: "coverage",
   // The finding is on the surface the user is already reading.
