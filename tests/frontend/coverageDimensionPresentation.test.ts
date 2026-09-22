@@ -192,8 +192,13 @@ test("stored defensive coverage prose is normalized into direct bilingual outcom
   const legacy = [
     [
       "No completed upstream security-template execution record was retained for this website, so the scan cannot be shown as tested. The site may not have responded, or upstream technology detection may not have selected an applicable template.",
+      "Website security-template evidence unavailable. This website cannot be shown as tested.",
+      "網站安全模板證據無法取得；無法確認此網站已測試。",
+    ],
+    [
       "Website security-template evidence unavailable. Outcome: not tested.",
-      "網站安全模板證據無法取得；結果：未測試。",
+      "Website security-template evidence unavailable. This website cannot be shown as tested.",
+      "網站安全模板證據無法取得；無法確認此網站已測試。",
     ],
     [
       "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",

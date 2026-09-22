@@ -1773,9 +1773,8 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: format!("{}: website execution evidence", check_id(task)),
-                        reason:
-                            "Website security-template evidence unavailable. Outcome: not tested."
-                                .into(),
+                        reason: "Website security-template evidence unavailable. This website cannot be shown as tested."
+                            .into(),
                         next_action_code: NextActionCode::PreserveVisibleLimitation,
                         next_action: "Start a new scan for a fresh result.".into(),
                     });
@@ -8664,6 +8663,39 @@ mod tests {
     }
 
     #[test]
+    fn nuclei_unproven_website_coverage_does_not_erase_a_retained_finding() {
+        let mut case = nuclei_website_case();
+        let mut finding = frozen_finding(&case, "nuclei-alarm", 80, Severity::High);
+        finding.asset_ids = vec!["website-asset".into()];
+        // `nuclei_website_case` builds `catalog_task("host", ...)`; naming it here
+        // is what makes the finding belong to the task this gap is about.
+        finding.evidence[0].engine_run_id = Some("host".into());
+        finding.evidence[0].engine_id = NUCLEI_ENGINE_ID.into();
+        let mut retained = observation(&finding, "run-1", instant(18));
+        retained.asset_ids = vec!["website-asset".into()];
+        retained.engine_ids = vec![NUCLEI_ENGINE_ID.into()];
+        case.findings.push(finding);
+        case.finding_observations.push(retained);
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert_eq!(report.findings.len(), 1);
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension == "nuclei: website execution evidence")
+            .expect("missing Nuclei execution evidence must remain visible");
+        assert_eq!(
+            gap.reason,
+            "Website security-template evidence unavailable. This website cannot be shown as tested."
+        );
+        assert!(
+            !gap.reason.contains("Outcome: not tested"),
+            "{}",
+            gap.reason
+        );
+    }
+
+    #[test]
     fn completed_nuclei_without_a_record_is_visible_as_unproven_not_tested_coverage() {
         let case = nuclei_website_case();
         let report = build_beginner_master_report(&case, "run-1").unwrap();
@@ -8685,7 +8717,7 @@ mod tests {
         assert_eq!(gap.target_asset_ids, ["website-asset"]);
         assert_eq!(
             gap.reason,
-            "Website security-template evidence unavailable. Outcome: not tested."
+            "Website security-template evidence unavailable. This website cannot be shown as tested."
         );
         assert_eq!(
             report.state.summary,
