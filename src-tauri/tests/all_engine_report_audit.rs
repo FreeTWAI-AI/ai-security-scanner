@@ -2107,7 +2107,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
             let steps = &steps[..steps.find(">Problems found</h2>").expect("problems follow")];
             for restated in [
                 "This check stopped before it could establish completed coverage.",
-                "Host response unavailable. Vulnerability checks: not run.",
+                "Host response unavailable. Vulnerability checks did not complete.",
                 "The bounded check reached its time limit, so it cannot be treated as tested complete.",
                 "This check was cancelled before completed coverage was recorded.",
                 "This check produced some durable work but did not complete every planned dimension.",

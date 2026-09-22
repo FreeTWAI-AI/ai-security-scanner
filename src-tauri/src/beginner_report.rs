@@ -1821,7 +1821,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                         task_id: Some(task.id.clone()),
                         target_asset_ids: vec![asset_id.clone()],
                         dimension: format!("{}: target response", check_id(task)),
-                        reason: "Host response unavailable. Vulnerability checks: not run."
+                        reason: "Host response unavailable. Vulnerability checks did not complete."
                             .into(),
                         next_action_code: NextActionCode::ReviewScopeAndRetry,
                         next_action: "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again."
@@ -8561,7 +8561,7 @@ mod tests {
         assert_eq!(gap.target_asset_ids, ["host-asset"]);
         assert_eq!(
             gap.reason,
-            "Host response unavailable. Vulnerability checks: not run."
+            "Host response unavailable. Vulnerability checks did not complete."
         );
         assert_eq!(gap.next_action_code, NextActionCode::ReviewScopeAndRetry);
         assert_eq!(

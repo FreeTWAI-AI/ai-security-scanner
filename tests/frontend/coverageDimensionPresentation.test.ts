@@ -197,8 +197,8 @@ test("stored defensive coverage prose is normalized into direct bilingual outcom
     ],
     [
       "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-      "Host response unavailable. Vulnerability checks: not run.",
-      "主機回應無法取得；弱點檢查：未執行。",
+      "Host response unavailable. Vulnerability checks did not complete.",
+      "主機回應無法取得；弱點檢查未完成。",
     ],
     [
       "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",

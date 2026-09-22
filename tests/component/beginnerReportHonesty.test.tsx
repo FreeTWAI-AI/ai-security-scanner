@@ -850,7 +850,7 @@ test("a Greenbone dead-host gap gives a Traditional Chinese reader the exact cau
   if (!gapRow) throw new Error("the dead-host coverage-gap row did not render");
 
   expect(within(gapRow).getByText(
-    /主機回應無法取得；弱點檢查：未執行。/u,
+    /主機回應無法取得；弱點檢查未完成。/u,
   )).toBeTruthy();
 });
 

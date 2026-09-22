@@ -1016,8 +1016,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "網站安全模板證據無法取得；結果：未測試。",
   ],
   [
-    "Host response unavailable. Vulnerability checks: not run.",
-    "主機回應無法取得；弱點檢查：未執行。",
+    "Host response unavailable. Vulnerability checks did not complete.",
+    "主機回應無法取得；弱點檢查未完成。",
   ],
   [
     "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.",
@@ -1453,7 +1453,7 @@ const normalizeDirectCoverageGapProse = (english: string): string => {
     )
     .replace(
       "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-      "Host response unavailable. Vulnerability checks: not run.",
+      "Host response unavailable. Vulnerability checks did not complete.",
     )
     .replace(
       "Greenbone reported one or more scanner errors for this host, so some of its checks did not finish. Findings and checks that did complete remain valid.",

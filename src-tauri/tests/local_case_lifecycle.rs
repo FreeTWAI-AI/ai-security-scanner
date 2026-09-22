@@ -1097,7 +1097,7 @@ fn mixed_environment_fake_runtime_reopens_one_shared_report_and_export() {
     }
     assert!(report.coverage_gaps.iter().any(|gap| {
         gap.target_asset_ids == [host_asset_id.clone()]
-            && gap.reason == "Host response unavailable. Vulnerability checks: not run."
+            && gap.reason == "Host response unavailable. Vulnerability checks did not complete."
     }));
     assert!(report.coverage_gaps.iter().all(|gap| {
         !gap.target_asset_ids.contains(&repository_asset_id)

@@ -1713,8 +1713,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "網站安全模板證據無法取得；結果：未測試。",
     ),
     (
-        "Host response unavailable. Vulnerability checks: not run.",
-        "主機回應無法取得；弱點檢查：未執行。",
+        "Host response unavailable. Vulnerability checks did not complete.",
+        "主機回應無法取得；弱點檢查未完成。",
     ),
     (
         "Greenbone scanner errors. Host checks: partially completed.",
@@ -2130,7 +2130,7 @@ fn normalize_direct_coverage_gap_prose(english: &str) -> String {
         )
         .replace(
             "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-            "Host response unavailable. Vulnerability checks: not run.",
+            "Host response unavailable. Vulnerability checks did not complete.",
         )
         .replace(
             "Greenbone reported one or more scanner errors for this host, so some of its checks did not finish. Findings and checks that did complete remain valid.",
@@ -2731,8 +2731,8 @@ mod tests {
             ),
             (
                 "Greenbone reported that this host did not respond during the scan, so none of its vulnerability checks ran. This is not a clean result.",
-                "Host response unavailable. Vulnerability checks: not run.",
-                "主機回應無法取得；弱點檢查：未執行。",
+                "Host response unavailable. Vulnerability checks did not complete.",
+                "主機回應無法取得；弱點檢查未完成。",
             ),
             (
                 "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",

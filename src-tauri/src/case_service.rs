@@ -30984,7 +30984,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert!(english.contains("Host response unavailable. Vulnerability checks: not run."));
+        assert!(english.contains("Host response unavailable. Vulnerability checks did not complete."));
         assert!(english.contains(
             "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again."
         ));
@@ -31003,7 +31003,7 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        assert!(zh_hant.contains("主機回應無法取得；弱點檢查：未執行。"));
+        assert!(zh_hant.contains("主機回應無法取得；弱點檢查未完成。"));
         assert!(zh_hant.contains(
             "請確認這台主機已開機，且本機能連到已核准的連接埠，然後再執行一次這項檢查。"
         ));
