@@ -2347,9 +2347,9 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
         CoverageDimensionStatus::TestedPartial => (
             CoverageGapKind::NotTested,
             "remaining requested dimensions",
-            "This check produced some durable work but did not complete every planned dimension.",
+            "This check did not reach a confirmed complete result.",
             NextActionCode::RetryCheck,
-            "Retry this check to complete the unfinished dimensions.",
+            "Retry this check for a confirmed result.",
         ),
         CoverageDimensionStatus::TimedOut => (
             CoverageGapKind::TimedOut,
@@ -8477,6 +8477,27 @@ mod tests {
             build_beginner_master_report(&reopened, "run-1").unwrap(),
             report
         );
+    }
+
+    #[test]
+    fn partially_completed_check_with_no_saved_results_does_not_claim_durable_work() {
+        let mut case = internal_host_case();
+        case.scan_runs[0].engine_runs[0].status = EngineRunStatus::PartiallyCompleted;
+        case.scan_runs[0].engine_runs[0].phase = "cleanup_pending".into();
+
+        let report = build_beginner_master_report(&case, "run-1").unwrap();
+        assert!(report.findings.is_empty());
+        let gap = report
+            .coverage_gaps
+            .iter()
+            .find(|gap| gap.dimension.contains("remaining requested dimensions"))
+            .expect("partial check keeps a remaining-dimensions gap");
+        assert_eq!(
+            gap.reason,
+            "This check did not reach a confirmed complete result."
+        );
+        assert!(!gap.reason.contains("durable work"), "{}", gap.reason);
+        assert_eq!(gap.next_action, "Retry this check for a confirmed result.");
     }
 
     #[test]

@@ -2110,7 +2110,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "Host response unavailable. Vulnerability checks did not complete.",
                 "The bounded check reached its time limit, so it cannot be treated as tested complete.",
                 "This check was cancelled before completed coverage was recorded.",
-                "This check produced some durable work but did not complete every planned dimension.",
+                "This check did not reach a confirmed complete result.",
                 "This check ran on detection knowledge whose declared support had already ended",
                 "This run did not retain an exact reduction record.",
                 "Maester evaluated this control but did not return a pass or fail verdict.",
@@ -2124,7 +2124,7 @@ fn every_integrated_engine_lands_in_one_terminal_report() {
                 "Retry this check.</strong> — Checkov: failed check dimension",
                 "Confirm the host is powered on and reachable from this computer on the approved ports, then run this check again.</strong> — Greenbone Community Edition: target response",
                 "Retry the timed-out work.</strong> — KICS: timed-out check dimension",
-                "Retry this check to complete the unfinished dimensions.</strong> — Nuclei: remaining requested dimensions",
+                "Retry this check for a confirmed result.</strong> — Nuclei: remaining requested dimensions",
                 "Treat these results as evidence from expired knowledge, not as current coverage.</strong> — CloudQuery: expired detection knowledge",
                 // One step closes two rows, and says so rather than showing one
                 // of the two reasons and dropping the other.

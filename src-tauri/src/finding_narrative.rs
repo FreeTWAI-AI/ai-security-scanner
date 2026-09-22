@@ -1793,8 +1793,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "這項檢查在儲存任何檢測結果之前就被取消。",
     ),
     (
-        "This check produced some durable work but did not complete every planned dimension.",
-        "這項檢查產生了一部分已保存的成果，但沒有完成每一個計畫中的項目。",
+        "This check did not reach a confirmed complete result.",
+        "這項檢查沒有取得可確認的完整結果。",
     ),
     (
         "The bounded check reached its time limit, so it cannot be treated as tested complete.",
@@ -2060,8 +2060,8 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "只重新執行尚未完成的工作。",
     ),
     (
-        "Retry this check to complete the unfinished dimensions.",
-        "重新執行這項檢查以完成尚未完成的項目。",
+        "Retry this check for a confirmed result.",
+        "重新執行這項檢查以取得可確認的結果。",
     ),
     ("Retry the timed-out work.", "重新執行逾時的工作。"),
     ("Retry this check.", "重新執行這項檢查。"),
@@ -2159,6 +2159,10 @@ fn normalize_direct_coverage_gap_prose(english: &str) -> String {
         .replace(
             "No actionable finding was recorded, but a no-findings result is only as broad as the displayed coverage.",
             "Actionable findings in completed checks: 0.",
+        )
+        .replace(
+            "This check produced some durable work but did not complete every planned dimension.",
+            "This check did not reach a confirmed complete result.",
         );
     if normalized.contains("additional packaged checks were unavailable before planning") {
         "Packaged scanner information unavailable. Additional checks: not tested.".to_owned()
@@ -2747,6 +2751,11 @@ mod tests {
                 "3 additional packaged checks were unavailable before planning. Whether they applied to the selected target is unknown, so they are not tested.",
                 "Packaged scanner information unavailable. Additional checks: not tested.",
                 "內建掃描工具資訊無法取得；額外檢查：未測試。",
+            ),
+            (
+                "This check produced some durable work but did not complete every planned dimension.",
+                "This check did not reach a confirmed complete result.",
+                "這項檢查沒有取得可確認的完整結果。",
             ),
         ] {
             assert_eq!(coverage_gap_prose_english(stored), english);

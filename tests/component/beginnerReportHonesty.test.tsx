@@ -3230,7 +3230,7 @@ test("a coverage gap names the cause the backend actually recorded", () => {
         taskId: "task-1",
         targetAssetIds: ["asset-1"],
         dimension: "trivy: remaining requested dimensions",
-        reason: "This check produced some durable work but did not complete every planned dimension.",
+        reason: "This check did not reach a confirmed complete result.",
         nextActionCode: "retry_check",
         nextAction: "Review the saved results, then retry this check.",
       }],
@@ -3242,7 +3242,7 @@ test("a coverage gap names the cause the backend actually recorded", () => {
   );
   const disclosure = section!.querySelector<HTMLElement>(".report-scope-disclosure");
   const row = within(disclosure!).getByText(/remaining requested dimensions/u).textContent ?? "";
-  expect(row).toContain("did not complete every planned dimension");
+  expect(row).toContain("did not reach a confirmed complete result");
   // The causes this kind covers but this gap is not. Naming one of them here
   // would contradict the dimension in the same row.
   expect(row).not.toContain("did not start");

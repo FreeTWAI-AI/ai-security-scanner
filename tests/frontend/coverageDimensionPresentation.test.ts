@@ -210,6 +210,11 @@ test("stored defensive coverage prose is normalized into direct bilingual outcom
       "Packaged scanner information unavailable. Additional checks: not tested.",
       "內建掃描工具資訊無法取得；額外檢查：未測試。",
     ],
+    [
+      "This check produced some durable work but did not complete every planned dimension.",
+      "This check did not reach a confirmed complete result.",
+      "這項檢查沒有取得可確認的完整結果。",
+    ],
   ] as const;
 
   for (const [stored, english, traditionalChinese] of legacy) {

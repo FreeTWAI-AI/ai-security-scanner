@@ -1100,8 +1100,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "這項檢查在儲存任何檢測結果之前就被取消。",
   ],
   [
-    "This check produced some durable work but did not complete every planned dimension.",
-    "這項檢查產生了一部分已保存的成果，但沒有完成每一個計畫中的項目。",
+    "This check did not reach a confirmed complete result.",
+    "這項檢查沒有取得可確認的完整結果。",
   ],
   [
     "The bounded check reached its time limit, so it cannot be treated as tested complete.",
@@ -1368,8 +1368,8 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "只重新執行尚未完成的工作。",
   ],
   [
-    "Retry this check to complete the unfinished dimensions.",
-    "重新執行這項檢查以完成尚未完成的項目。",
+    "Retry this check for a confirmed result.",
+    "重新執行這項檢查以取得可確認的結果。",
   ],
   [
     "Retry the timed-out work.",
@@ -1482,6 +1482,10 @@ const normalizeDirectCoverageGapProse = (english: string): string => {
     .replace(
       "No actionable finding was recorded, but a no-findings result is only as broad as the displayed coverage.",
       "Actionable findings in completed checks: 0.",
+    )
+    .replace(
+      "This check produced some durable work but did not complete every planned dimension.",
+      "This check did not reach a confirmed complete result.",
     );
   if (normalized.includes("additional packaged checks were unavailable before planning")) {
     normalized = "Packaged scanner information unavailable. Additional checks: not tested.";
