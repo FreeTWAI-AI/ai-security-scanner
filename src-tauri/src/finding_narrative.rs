@@ -1831,10 +1831,6 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
         "應用程式在準備這項檢查時關閉。請從已儲存的計畫重新執行。",
     ),
     (
-        "This check has no terminal outcome.",
-        "這項檢查沒有終止結果。",
-    ),
-    (
         "Packaged check list unavailable. Additional checks: not tested.",
         "內建檢查清單無法取得；額外檢查：未測試。",
     ),
@@ -2058,10 +2054,6 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
     ("Retry only the timed-out work.", "只重新執行逾時的工作。"),
     ("Restart the cancelled work.", "重新啟動已取消的工作。"),
     (
-        "Open Review scanner status and finish or cancel this check.",
-        "請開啟「查看掃描器狀態」完成或取消這項檢查。",
-    ),
-    (
         "Retry the work without a tested outcome.",
         "重試未產生檢測結果的工作。",
     ),
@@ -2126,10 +2118,6 @@ const COVERAGE_GAP_PROSE: &[(&str, &str)] = &[
     (
         "Open the skipped check's technical records and match this check to the approved protocol or target form.",
         "請展開未執行檢查的技術紀錄，讓這項檢查符合已核准的通訊協定或目標形式。",
-    ),
-    (
-        "Open Review scanner status and finish or cancel this check.",
-        "請開啟「查看掃描器狀態」完成或取消這項檢查。",
     ),
     (
         "Update the app, then run these checks again.",

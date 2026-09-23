@@ -14136,7 +14136,6 @@ impl HtmlReportCatalog {
             CoverageDimensionStatus::TimedOut => self.text("Timed out", "逾時"),
             CoverageDimensionStatus::Cancelled => self.text("Cancelled", "已取消"),
             CoverageDimensionStatus::NotTested => self.text("Not tested", "未測試"),
-            CoverageDimensionStatus::InProgress => self.text("In progress", "進行中"),
         }
     }
 
@@ -15909,11 +15908,6 @@ fn matrix_cell_state(
         Some(CoverageDimensionStatus::Cancelled) => {
             ("cancelled", "\u{25c7}", catalog.text("Cancelled", "已取消"))
         }
-        Some(CoverageDimensionStatus::InProgress) => (
-            "in-progress",
-            "\u{25cc}",
-            catalog.text("Still running", "仍在執行"),
-        ),
         Some(CoverageDimensionStatus::Failed) => {
             ("failed", "\u{2715}", catalog.text("Failed", "失敗"))
         }
@@ -15937,7 +15931,6 @@ fn html_matrix_legend(catalog: HtmlReportCatalog) -> String {
         Some(CoverageDimensionStatus::TestedPartial),
         Some(CoverageDimensionStatus::TimedOut),
         Some(CoverageDimensionStatus::Cancelled),
-        Some(CoverageDimensionStatus::InProgress),
         Some(CoverageDimensionStatus::Failed),
         Some(CoverageDimensionStatus::NotTested),
         None,
@@ -15965,7 +15958,6 @@ fn worse_status(existing: CoverageDimensionStatus, candidate: CoverageDimensionS
         match status {
             CoverageDimensionStatus::TestedComplete => 0,
             CoverageDimensionStatus::TestedPartial => 1,
-            CoverageDimensionStatus::InProgress => 2,
             CoverageDimensionStatus::TimedOut => 3,
             CoverageDimensionStatus::Cancelled => 4,
             CoverageDimensionStatus::Failed => 5,
@@ -16023,7 +16015,6 @@ fn html_asset_result_section(
                     | CoverageDimensionStatus::Failed
                     | CoverageDimensionStatus::TimedOut
                     | CoverageDimensionStatus::Cancelled
-                    | CoverageDimensionStatus::InProgress
             )
         });
         let has_incomplete_gap = gaps.iter().any(|gap| {
@@ -19029,7 +19020,7 @@ fn html_report_bytes(
         ".matrix-cell{text-align:center;white-space:nowrap;font-size:.95rem;line-height:1}",
         ".matrix-cell--complete{background:#e7f4ec;color:#1a7f4b}.matrix-cell--partial{background:#fdf1dc;color:#b54708}",
         ".matrix-cell--failed{background:#fbe9e7;color:#b42318}.matrix-cell--timed-out{background:#fdf1dc;color:#b54708}",
-        ".matrix-cell--cancelled{background:#eceff1;color:#475467}.matrix-cell--in-progress{background:#eceff1;color:#475467}",
+        ".matrix-cell--cancelled{background:#eceff1;color:#475467}",
         ".matrix-cell--not-tested{background:#eceff1;color:#475467}.matrix-cell--not-planned{background:transparent}",
         ".matrix-legend{list-style:none;padding:0;margin:.6rem 0 0;display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.8rem;color:#475467}",
         ".matrix-legend li{display:flex;align-items:center;gap:.3rem}",
@@ -19452,40 +19443,6 @@ mod tests {
     use crate::external_scope::{ResolvedExternalPlan, freeze_external_plan};
     use crate::naabu_work_plan::{NaabuWorkPlanIdentity, build_naabu_work_plan};
     use chrono::Duration;
-
-    #[test]
-    fn wait_or_cancel_html_action_names_scanner_status_control_not_progress_page() {
-        let gap = CoverageGap {
-            kind: CoverageGapKind::NotTested,
-            class: CoverageGapClass::CoverageLoss,
-            task_id: Some("task-running".into()),
-            target_asset_ids: vec!["asset-1".into()],
-            dimension: "unfinished check dimension".into(),
-            reason: "This check has no terminal outcome.".into(),
-            next_action_code: NextActionCode::WaitOrCancel,
-            next_action: "Open Review scanner status and finish or cancel this check.".into(),
-            unattributed: None,
-        };
-
-        let english = html_gap_next_action(
-            &gap,
-            HtmlReportCatalog::new(crate::export::ReportLocale::En),
-        );
-        assert_eq!(
-            english,
-            "Open Review scanner status and finish or cancel this check."
-        );
-        assert!(!english.to_ascii_lowercase().contains("progress"));
-
-        let chinese = html_gap_next_action(
-            &gap,
-            HtmlReportCatalog::new(crate::export::ReportLocale::ZhHant),
-        );
-        assert_eq!(chinese, "請開啟「查看掃描器狀態」完成或取消這項檢查。");
-        assert!(!chinese.contains("進度頁"));
-        assert!(!chinese.contains("進度頁面"));
-        assert!(!chinese.contains("掃描進度"));
-    }
 
     #[test]
     fn html_asset_row_keeps_the_recorded_skip_next_action() {

@@ -393,7 +393,7 @@ test("an active run creates no report surface", () => {
         checkId: "semgrep",
         resultKind: "security_check",
         targetAssetIds: ["asset-1"],
-        status: "in_progress",
+        status: "tested_partial",
         testedDimensions: [],
       }],
       networkScopes: [],
@@ -852,36 +852,6 @@ test("a Greenbone dead-host gap gives a Traditional Chinese reader the exact cau
   expect(within(gapRow).getByText(
     /主機回應無法取得；弱點檢查未完成。/u,
   )).toBeTruthy();
-});
-
-test("an in-progress asset keeps its wait-or-cancel action on the per-asset board", () => {
-  const { container } = renderReport(report("partial", {
-    actual: {
-      checks: [{
-        taskId: "task-running",
-        checkId: "greenbone",
-        targetAssetIds: ["asset-1"],
-        status: "in_progress",
-        testedDimensions: [],
-      }],
-      networkScopes: [],
-      unavailableDimensions: [],
-    },
-    coverageGaps: [{
-      kind: "not_tested",
-      taskId: "task-running",
-      targetAssetIds: ["asset-1"],
-      dimension: "unfinished check dimension",
-      reason: "This check has no terminal outcome.",
-      nextActionCode: "wait_or_cancel",
-      nextAction: "Open Review scanner status and finish or cancel this check.",
-    }],
-    coverageCounts: counts({ notTested: 1 }),
-  }));
-
-  const row = container.querySelector<HTMLElement>(".asset-result-row");
-  expect(row?.dataset.assetResult).toBe("incomplete_failed");
-  expect(row?.textContent).toContain("Open Review scanner status and finish or cancel this check");
 });
 
 test("the asset result board gives a Traditional Chinese beginner the same bounded statuses and action", () => {
@@ -2004,9 +1974,9 @@ test("a mixed run does not apply localhost-only exclusions to the whole report",
 
 test("two gaps of the same kind give the reader two different reasons", () => {
   // The row's sentence used to come from `kind` alone. The backend writes a
-  // distinct reason for each situation and `not_tested` covers three of them --
-  // a check that saved partial work, one that never started, one still running
-  // -- so one sentence per kind was false for two of every three rows, and
+  // distinct reason for each situation and `not_tested` covers a check that
+  // saved partial work and one that never started, so one sentence per kind
+  // was false for one of the two rows and
   // contradicted the dimension printed beside it.
   window.localStorage.setItem(localeStorageKey, "en");
   const { container } = renderReport(
@@ -2023,10 +1993,10 @@ test("two gaps of the same kind give the reader two different reasons", () => {
         {
           kind: "not_tested",
           targetAssetIds: ["asset-1"],
-          dimension: "trivy: unfinished check dimension",
-          reason: "This check has no terminal outcome.",
-          nextActionCode: "wait_or_cancel",
-          nextAction: "Open Review scanner status and finish or cancel this check.",
+          dimension: "trivy: remaining requested dimensions",
+          reason: "This check did not reach a confirmed complete result.",
+          nextActionCode: "retry_check",
+          nextAction: "Retry this check for a confirmed result.",
         },
       ],
     }),
@@ -2038,9 +2008,10 @@ test("two gaps of the same kind give the reader two different reasons", () => {
   const disclosure = section!.querySelector<HTMLElement>(".report-scope-disclosure");
   expect(within(disclosure!).getByText(/This check did not start, so it is not a pass\./u)).toBeTruthy();
   expect(
-    within(disclosure!).getByText(/This check has no terminal outcome\./u),
+    within(disclosure!).getByText(/This check did not reach a confirmed complete result\./u),
   ).toBeTruthy();
   expect(within(disclosure!).getByText(/Review the target and try this check again\./u)).toBeTruthy();
+  expect(within(disclosure!).getByText(/Retry this check for a confirmed result\./u)).toBeTruthy();
 });
 
 test("a Traditional Chinese reader is told the same two reasons", () => {
@@ -3220,7 +3191,7 @@ test("a finding the case no longer holds reports no first-seen run rather than t
 
 test("a coverage gap names the cause the backend actually recorded", () => {
   // `not_tested` is assigned to a check that saved partial work, one that never
-  // started, and one still running. The row used to compose its sentence from
+  // started. The row used to compose its sentence from
   // the kind, which cannot tell those apart, so it named one cause and the
   // dimension printed beside it named another. It now shows the reason the
   // backend wrote for this gap, which is the one that matches.

@@ -367,7 +367,7 @@ test("Telnet coverage and its explicit authentication limits are readable in bot
 test("the row's sentence is the backend's, not one derived from the kind", () => {
   // The backend assigns `CoverageGapKind::NotTested` to several different
   // situations and writes a distinct `reason` for each -- a check that saved
-  // partial work, one that never started, one still running. So a sentence
+  // partial work and one that never started. So a sentence
   // composed from the kind is false for all but one of them and contradicts
   // the dimension rendered beside it on the same row.
   const notTestedProducers = [

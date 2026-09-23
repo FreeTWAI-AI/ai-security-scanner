@@ -929,8 +929,7 @@ export type BeginnerCoverageStatus =
   | "failed"
   | "timed_out"
   | "cancelled"
-  | "not_tested"
-  | "in_progress";
+  | "not_tested";
 export type BeginnerCoverageGapKind =
   | "not_tested"
   | "failed"

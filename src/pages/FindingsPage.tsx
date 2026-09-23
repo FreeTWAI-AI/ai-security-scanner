@@ -688,7 +688,6 @@ const copy = {
   testedStatusTimeout: { en: "Timed out", zhTW: "逾時" },
   testedStatusCancelled: { en: "Cancelled", zhTW: "已取消" },
   testedStatusNotTested: { en: "Not tested", zhTW: "未測試" },
-  testedStatusInProgress: { en: "In progress", zhTW: "進行中" },
   reportEndMatter: { en: "Report terms and technical record", zhTW: "報告條款與技術紀錄" },
   reportTerms: { en: "Report terms", zhTW: "報告條款" },
   reportTechnicalDetails: { en: "Technical record", zhTW: "技術紀錄" },
@@ -736,7 +735,6 @@ const testedStatusCopy = (status: BeginnerCoverageStatus) => {
     case "timed_out": return copy.testedStatusTimeout;
     case "cancelled": return copy.testedStatusCancelled;
     case "not_tested": return copy.testedStatusNotTested;
-    case "in_progress": return copy.testedStatusInProgress;
   }
 };
 
@@ -811,7 +809,6 @@ const incompleteCheckStatuses = new Set<BeginnerCoverageStatus>([
   "failed",
   "timed_out",
   "cancelled",
-  "in_progress",
 ]);
 
 const incompleteGapKinds = new Set<BeginnerMasterReport["coverageGaps"][number]["kind"]>([
@@ -1676,8 +1673,8 @@ function BeginnerReportOverview({ report, run }: { report: BeginnerMasterReport;
                     {/*
                       * The backend's own reason, not a sentence derived from
                       * the kind. It writes a distinct one for each situation --
-                      * `not_tested` covers a check that saved partial work, one
-                      * that never started, and one still running -- so a single
+                      * `not_tested` covers a check that saved partial work and
+                      * one that never started -- so a single
                       * sentence per kind was false for all but one of them, and
                       * contradicted the dimension printed beside it.
                       */}

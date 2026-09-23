@@ -401,7 +401,6 @@ pub enum CoverageDimensionStatus {
     TimedOut,
     Cancelled,
     NotTested,
-    InProgress,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1956,9 +1955,6 @@ fn naabu_coverage_status(
     if coverage.summary.has_usable_results {
         return CoverageDimensionStatus::TestedPartial;
     }
-    if task_is_active(task) {
-        return CoverageDimensionStatus::InProgress;
-    }
     if coverage.summary.failed > 0 || task.status == EngineRunStatus::Failed {
         return CoverageDimensionStatus::Failed;
     }
@@ -1972,9 +1968,6 @@ fn naabu_coverage_status(
 }
 
 fn untrusted_naabu_history_status(task: &EngineRun) -> CoverageDimensionStatus {
-    if task_is_active(task) {
-        return CoverageDimensionStatus::InProgress;
-    }
     if stable_timeout_marker(task) {
         return CoverageDimensionStatus::TimedOut;
     }
@@ -1987,7 +1980,7 @@ fn untrusted_naabu_history_status(task: &EngineRun) -> CoverageDimensionStatus {
         EngineRunStatus::Queued
         | EngineRunStatus::Preparing
         | EngineRunStatus::Running
-        | EngineRunStatus::Paused => CoverageDimensionStatus::InProgress,
+        | EngineRunStatus::Paused => unreachable!("active task passed the final-report gate"),
     }
 }
 
@@ -2257,16 +2250,8 @@ fn append_naabu_coverage_gaps(
                 summary.not_tested
             ),
             "These frozen work units have no validated tested outcome in any saved attempt.".into(),
-            if task_is_active(task) {
-                NextActionCode::WaitOrCancel
-            } else {
-                NextActionCode::RetryCheck
-            },
-            if task_is_active(task) {
-                "Open Review scanner status and finish or cancel this check."
-            } else {
-                "Retry the work without a tested outcome."
-            },
+            NextActionCode::RetryCheck,
+            "Retry the work without a tested outcome.",
         );
     }
     if !coverage.all_validated_final_artifacts_normalized {
@@ -2305,16 +2290,8 @@ fn append_naabu_coverage_gaps(
         } else {
             (
                 CoverageGapKind::Unavailable,
-                if task_is_active(task) {
-                    NextActionCode::WaitOrCancel
-                } else {
-                    NextActionCode::RetryCheck
-                },
-                if task_is_active(task) {
-                    "Open Review scanner status and finish or cancel this check."
-                } else {
-                    "Run this check again to confirm the result."
-                },
+                NextActionCode::RetryCheck,
+                "Run this check again to confirm the result.",
                 "All of this check's planned work produced evidence, but the check never recorded that it finished.",
             )
         };
@@ -2500,13 +2477,6 @@ fn append_task_gap(task: &EngineRun, status: CoverageDimensionStatus, gaps: &mut
             "This check did not start, so it is not a pass.",
             not_tested_code,
             not_tested_action,
-        ),
-        CoverageDimensionStatus::InProgress => (
-            CoverageGapKind::NotTested,
-            "unfinished check dimension",
-            "This check has no terminal outcome.",
-            NextActionCode::WaitOrCancel,
-            "Open Review scanner status and finish or cancel this check.",
         ),
     };
     // Only these four arms name the per-check Resume control. `NotTested`
@@ -4292,7 +4262,6 @@ fn coverage_counts(actual: &ActualCoverage, gaps: &[CoverageGap]) -> CoverageCou
             CoverageDimensionStatus::TimedOut => counts.timed_out += 1,
             CoverageDimensionStatus::Cancelled => counts.cancelled += 1,
             CoverageDimensionStatus::NotTested => counts.not_tested += 1,
-            CoverageDimensionStatus::InProgress => counts.not_tested += 1,
         }
     }
     for gap in gaps {
@@ -4314,7 +4283,6 @@ fn coverage_counts(actual: &ActualCoverage, gaps: &[CoverageGap]) -> CoverageCou
                             | (
                                 CoverageGapKind::NotTested,
                                 CoverageDimensionStatus::NotTested
-                                    | CoverageDimensionStatus::InProgress
                             )
                     )
             })
@@ -4366,7 +4334,7 @@ fn actual_status(task: &EngineRun) -> CoverageDimensionStatus {
         EngineRunStatus::Queued
         | EngineRunStatus::Preparing
         | EngineRunStatus::Running
-        | EngineRunStatus::Paused => CoverageDimensionStatus::InProgress,
+        | EngineRunStatus::Paused => unreachable!("active task passed the final-report gate"),
     }
 }
 
@@ -5029,22 +4997,6 @@ mod tests {
             engine_runs: tasks,
         });
         case
-    }
-
-    #[test]
-    fn wait_or_cancel_next_action_names_scanner_status_control_not_progress_page() {
-        let task = catalog_task("active", EngineRunStatus::Running);
-        let mut gaps = Vec::new();
-
-        append_task_gap(&task, CoverageDimensionStatus::InProgress, &mut gaps);
-
-        let gap = gaps.first().expect("in-progress task coverage gap");
-        assert_eq!(gap.next_action_code, NextActionCode::WaitOrCancel);
-        assert_eq!(
-            gap.next_action,
-            "Open Review scanner status and finish or cancel this check."
-        );
-        assert!(!gap.next_action.to_ascii_lowercase().contains("progress"));
     }
 
     /// Checkpoint JSON `parseCheckpoint` accepts: matching ids, a numeric attempt, a known stage.
