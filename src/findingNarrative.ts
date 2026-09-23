@@ -819,7 +819,7 @@ export const localizedCoverageDimension = (
   }
 
   // Fixed names, in the order the more specific one has to be tried first:
-  // "completed planned work units" is a substring of the partly-completed one.
+  // "completed planned scan batches" is a substring of the partly-completed one.
   for (const [needle, label] of [
     ["tcp reachability", "TCP 連線狀態"],
     ["bounded connection contract", "受限的連線檢查"],
@@ -900,24 +900,24 @@ export const localizedCoverageDimension = (
     ["request outcome", "掃描結果資料一致性"],
     ["recorded finding wording", "記錄的問題說明文字"],
     ["saved run summary", "保存的掃描摘要"],
-    ["partly completed planned work units", "部分完成的計畫工作單元"],
-    ["completed planned work units", "已完成的計畫工作單元"],
+    ["partly completed planned scan batches", "部分完成的計畫掃描批次"],
+    ["completed planned scan batches", "已完成的計畫掃描批次"],
     ["additional packaged checks", "額外的內建檢查項目"],
     ["requested checks", "要求的檢查項目"],
   ] as const) {
     if (lower.includes(needle)) return label;
   }
 
-  // "{check id} {kind} work units ({count})". The count is what makes the row
+  // "{check id} {kind} scan batches ({count})". The count is what makes the row
   // worth reading, so it survives beside the id.
   const counted = /^(.*) \((\d+)\)$/u.exec(dimension);
   if (counted) {
     for (const [suffix, label] of [
-      [" partly completed work units", "部分完成的工作單元"],
-      [" failed work units", "失敗的工作單元"],
-      [" timed-out work units", "逾時的工作單元"],
-      [" cancelled work units", "已取消的工作單元"],
-      [" not-tested work units", "未檢測的工作單元"],
+      [" partly completed scan batches", "部分完成的掃描批次"],
+      [" failed scan batches", "失敗的掃描批次"],
+      [" timed-out scan batches", "逾時的掃描批次"],
+      [" cancelled scan batches", "已取消的掃描批次"],
+      [" not-tested scan batches", "未檢測的掃描批次"],
     ] as const) {
       const head = counted[1] ?? "";
       if (head.endsWith(suffix)) {
@@ -932,7 +932,7 @@ export const localizedCoverageDimension = (
   // "{check id} {kind}".
   for (const [suffix, label] of [
     [" completed-check time", "檢查完成時間"],
-    [" saved work-unit coverage", "已儲存的工作單元涵蓋記錄"],
+    [" saved scan-batch coverage", "已儲存的掃描批次涵蓋記錄"],
     [" saved result processing", "已儲存結果的處理"],
     [" final-state reconciliation", "最終狀態核對"],
     [" ended after its time limit", "因逾時而結束"],
@@ -1050,24 +1050,24 @@ const COVERAGE_GAP_PROSE: ReadonlyArray<readonly [string, string]> = [
     "請將這些結果視為過期知識留下的證據，而不是目前的涵蓋範圍。",
   ],
   [
-    "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
-    "這些工作單元已儲存可用的結果，但其餘計畫中的操作並未完成檢測。",
+    "Usable results were saved for these batches, but the rest of their planned addresses and ports were not tested.",
+    "這些掃描批次已儲存可用的結果，但其餘計畫中的位址與連接埠並未受測。",
   ],
   [
-    "These planned work units stopped before establishing completed coverage.",
-    "這些計畫中的工作單元在建立完整涵蓋之前就停止了。",
+    "These planned scan batches stopped before establishing completed coverage.",
+    "這些計畫中的掃描批次在建立完整涵蓋之前就停止了。",
   ],
   [
-    "These planned work units reached their bounded time limit before completed coverage was recorded.",
-    "這些計畫中的工作單元在記錄完整涵蓋之前就達到時間上限。",
+    "These planned scan batches reached their bounded time limit before completed coverage was recorded.",
+    "這些計畫中的掃描批次在記錄完整涵蓋之前就達到時間上限。",
   ],
   [
-    "These planned work units were cancelled before completed coverage was recorded.",
-    "這些計畫中的工作單元在記錄完整涵蓋之前就被取消。",
+    "These planned scan batches were cancelled before completed coverage was recorded.",
+    "這些計畫中的掃描批次在記錄完整涵蓋之前就被取消。",
   ],
   [
-    "These frozen work units have no validated tested outcome in any saved attempt.",
-    "這些已凍結的工作單元，在任何一次已儲存的嘗試中都沒有通過驗證的檢測結果。",
+    "These frozen scan batches have no validated tested outcome in any saved attempt.",
+    "這些已凍結的掃描批次，在任何一次已儲存的嘗試中都沒有通過驗證的檢測結果。",
   ],
   [
     "Some of this check's results could not be read, so findings from it may be missing.",
@@ -1556,12 +1556,12 @@ const TESTED_OBSERVATION_PROSE: ReadonlyArray<readonly [string, string]> = [
     "已完成的 Greenbone 工作保留了精確且經過檢視的 Telnet 設定檔，用來觀察服務是否在沒有 TLS 的情況下提供登入或密碼提示。本輪未送出帳號或密碼，也沒有嘗試登入。",
   ],
   [
-    "These exact frozen work units have validated completed outcomes across all saved attempts. A completed network check reports reachability; it is not a security pass.",
-    "這些已凍結的特定工作單元，在所有已儲存的嘗試中都有通過驗證的完成結果。完成的網路檢查只回報連線是否可達；不代表安全性檢查通過。",
+    "These exact frozen scan batches have validated completed outcomes across all saved attempts. A completed network check reports reachability; it is not a security pass.",
+    "這些已凍結的特定掃描批次，在所有已儲存的嘗試中都有通過驗證的完成結果。完成的網路檢查只回報連線是否可達；不代表安全性檢查通過。",
   ],
   [
-    "Work-unit status: Partial. Planned operations remain unfinished.",
-    "工作單元狀態：部分完成；仍有計畫中的操作未完成。",
+    "Scan-batch status: Partial. Planned operations remain unfinished.",
+    "掃描批次狀態：部分完成；仍有計畫中的操作未完成。",
   ],
 ];
 
@@ -1573,7 +1573,7 @@ export const testedObservationProse = (
   const trimmed = english.trim();
   let normalized = trimmed;
   if (trimmed.includes("produced usable saved results")) {
-    normalized = "Work-unit status: Partial. Planned operations remain unfinished.";
+    normalized = "Scan-batch status: Partial. Planned operations remain unfinished.";
   } else if (trimmed.includes("completion does not prove that every eligible template executed")) {
     normalized = "Nuclei completed the pinned upstream automatic web profile on the displayed origin. Applied checks: templates selected by upstream technology detection. Eligible-template execution completeness: unavailable.";
   } else if (trimmed.includes("result API does not prove that every scheduled VT executed")) {
@@ -1657,8 +1657,8 @@ export const testedValueZhHant = (
       const parts = split(value, " on asset ");
       return parts && parts[0] && parts[1] ? `${parts[0]} 對資產 ${parts[1]}` : undefined;
     }
-    case "completed planned work units":
-    case "partly completed planned work units": {
+    case "completed planned scan batches":
+    case "partly completed planned scan batches": {
       const parts = split(value, " of ");
       if (!parts) return undefined;
       const done = counted(parts[0]);

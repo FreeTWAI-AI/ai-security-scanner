@@ -1668,7 +1668,7 @@ fn project_actual_coverage(case: &AssessmentCase, run: &ScanRun) -> ActualCovera
                             class: CoverageGapKind::Unavailable.default_class(),
                             task_id: Some(task.id.clone()),
                             target_asset_ids: task.asset_ids.clone(),
-                            dimension: format!("{} saved work-unit coverage", check_id(task)),
+                            dimension: format!("{} saved scan-batch coverage", check_id(task)),
                             reason: "This check's own record of what it scanned is unusable, so it cannot be shown as complete."
                                 .into(),
                             next_action_code: NextActionCode::RetryCheck,
@@ -2002,18 +2002,18 @@ fn append_naabu_tested_dimensions(
     let total = coverage.summary.requested;
     if coverage.summary.tested_complete > 0 {
         tested_dimensions.push(TestedDimension {
-            dimension: "completed planned work units".into(),
+            dimension: "completed planned scan batches".into(),
             value: format!("{} of {total}", coverage.summary.tested_complete),
-            observation: "These exact frozen work units have validated completed outcomes across all saved attempts. A completed network check reports reachability; it is not a security pass."
+            observation: "These exact frozen scan batches have validated completed outcomes across all saved attempts. A completed network check reports reachability; it is not a security pass."
                 .into(),
             observed_at: task.finished_at,
         });
     }
     if coverage.summary.tested_partial > 0 {
         tested_dimensions.push(TestedDimension {
-            dimension: "partly completed planned work units".into(),
+            dimension: "partly completed planned scan batches".into(),
             value: format!("{} of {total}", coverage.summary.tested_partial),
-            observation: "Work-unit status: Partial. Planned operations remain unfinished.".into(),
+            observation: "Scan-batch status: Partial. Planned operations remain unfinished.".into(),
             observed_at: task.finished_at,
         });
     }
@@ -2194,11 +2194,11 @@ fn append_naabu_coverage_gaps(
         push(
             CoverageGapKind::NotTested,
             format!(
-                "{} partly completed work units ({})",
+                "{} partly completed scan batches ({})",
                 check_id(task),
                 summary.tested_partial
             ),
-            "Usable results were saved for these work units, but their remaining planned operations were not tested complete."
+            "Usable results were saved for these batches, but the rest of their planned addresses and ports were not tested."
                 .into(),
             NextActionCode::RetryCheck,
             "Retry only the unfinished work.",
@@ -2207,8 +2207,12 @@ fn append_naabu_coverage_gaps(
     if summary.failed > 0 {
         push(
             CoverageGapKind::Failed,
-            format!("{} failed work units ({})", check_id(task), summary.failed),
-            "These planned work units stopped before establishing completed coverage.".into(),
+            format!(
+                "{} failed scan batches ({})",
+                check_id(task),
+                summary.failed
+            ),
+            "These planned scan batches stopped before establishing completed coverage.".into(),
             NextActionCode::RetryCheck,
             "Retry only the failed work.",
         );
@@ -2217,11 +2221,11 @@ fn append_naabu_coverage_gaps(
         push(
             CoverageGapKind::TimedOut,
             format!(
-                "{} timed-out work units ({})",
+                "{} timed-out scan batches ({})",
                 check_id(task),
                 summary.timed_out
             ),
-            "These planned work units reached their bounded time limit before completed coverage was recorded."
+            "These planned scan batches reached their bounded time limit before completed coverage was recorded."
                 .into(),
             NextActionCode::RetryCheck,
             "Retry only the timed-out work.",
@@ -2231,11 +2235,11 @@ fn append_naabu_coverage_gaps(
         push(
             CoverageGapKind::Cancelled,
             format!(
-                "{} cancelled work units ({})",
+                "{} cancelled scan batches ({})",
                 check_id(task),
                 summary.cancelled
             ),
-            "These planned work units were cancelled before completed coverage was recorded."
+            "These planned scan batches were cancelled before completed coverage was recorded."
                 .into(),
             NextActionCode::RetryCheck,
             "Restart the cancelled work.",
@@ -2245,11 +2249,12 @@ fn append_naabu_coverage_gaps(
         push(
             CoverageGapKind::NotTested,
             format!(
-                "{} not-tested work units ({})",
+                "{} not-tested scan batches ({})",
                 check_id(task),
                 summary.not_tested
             ),
-            "These frozen work units have no validated tested outcome in any saved attempt.".into(),
+            "These frozen scan batches have no validated tested outcome in any saved attempt."
+                .into(),
             NextActionCode::RetryCheck,
             "Retry the work without a tested outcome.",
         );
@@ -5813,7 +5818,7 @@ mod tests {
     fn a_naabu_check_with_an_unusable_scan_record_cannot_be_shown_as_complete() {
         let reason = "This check's own record of what it scanned is unusable, so it cannot be shown as complete.";
         let next_action = "Run this check again to get a usable record.";
-        let dimension = format!("{NAABU_ENGINE_ID} saved work-unit coverage");
+        let dimension = format!("{NAABU_ENGINE_ID} saved scan-batch coverage");
 
         // The saved work plan is missing, so this arm never calls the reducer.
         let mut missing_plan = catalog_task("missing-plan", EngineRunStatus::Completed);
@@ -6030,10 +6035,10 @@ mod tests {
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
             &report,
-            &format!("{NAABU_ENGINE_ID} partly completed work units (1)"),
+            &format!("{NAABU_ENGINE_ID} partly completed scan batches (1)"),
             CoverageGapKind::NotTested,
             NextActionCode::StartNewScan,
-            "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
+            "Usable results were saved for these batches, but the rest of their planned addresses and ports were not tested.",
             "Start a new scan for a fresh result.",
         );
     }
@@ -6057,10 +6062,10 @@ mod tests {
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
             &report,
-            &format!("{NAABU_ENGINE_ID} partly completed work units (1)"),
+            &format!("{NAABU_ENGINE_ID} partly completed scan batches (1)"),
             CoverageGapKind::NotTested,
             NextActionCode::StartNewScan,
-            "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
+            "Usable results were saved for these batches, but the rest of their planned addresses and ports were not tested.",
             "Start a new scan for a fresh result.",
         );
     }
@@ -6103,10 +6108,10 @@ mod tests {
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
             &report,
-            &format!("{NAABU_ENGINE_ID} cancelled work units (1)"),
+            &format!("{NAABU_ENGINE_ID} cancelled scan batches (1)"),
             CoverageGapKind::Cancelled,
             NextActionCode::StartNewScan,
-            "These planned work units were cancelled before completed coverage was recorded.",
+            "These planned scan batches were cancelled before completed coverage was recorded.",
             "Start a new scan for a fresh result.",
         );
     }
@@ -6150,10 +6155,10 @@ mod tests {
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
             &report,
-            &format!("{NAABU_ENGINE_ID} failed work units (1)"),
+            &format!("{NAABU_ENGINE_ID} failed scan batches (1)"),
             CoverageGapKind::Failed,
             NextActionCode::StartNewScan,
-            "These planned work units stopped before establishing completed coverage.",
+            "These planned scan batches stopped before establishing completed coverage.",
             "Start a new scan for a fresh result.",
         );
     }
@@ -6197,10 +6202,10 @@ mod tests {
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
             &report,
-            &format!("{NAABU_ENGINE_ID} timed-out work units (1)"),
+            &format!("{NAABU_ENGINE_ID} timed-out scan batches (1)"),
             CoverageGapKind::TimedOut,
             NextActionCode::StartNewScan,
-            "These planned work units reached their bounded time limit before completed coverage was recorded.",
+            "These planned scan batches reached their bounded time limit before completed coverage was recorded.",
             "Start a new scan for a fresh result.",
         );
     }
@@ -6224,10 +6229,10 @@ mod tests {
         let report = build_beginner_master_report(&case, "run-1").expect("beginner report");
         assert_reported_gap(
             &report,
-            &format!("{NAABU_ENGINE_ID} partly completed work units (1)"),
+            &format!("{NAABU_ENGINE_ID} partly completed scan batches (1)"),
             CoverageGapKind::NotTested,
             NextActionCode::RetryCheck,
-            "Usable results were saved for these work units, but their remaining planned operations were not tested complete.",
+            "Usable results were saved for these batches, but the rest of their planned addresses and ports were not tested.",
             "Retry only the unfinished work.",
         );
         assert_reported_gap(

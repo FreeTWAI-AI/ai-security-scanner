@@ -483,7 +483,7 @@ test("the first layer gives every requested asset one evidence-derived result st
         targetAssetIds: ["asset-endpoint"],
         status: "tested_complete",
         testedDimensions: [{
-          dimension: "completed planned work units",
+          dimension: "completed planned scan batches",
           value: "1 of 1",
           observation: "Service discovery completed.",
         }],
@@ -1431,7 +1431,7 @@ test("the first layer names the requested target, tested work, top gap, and next
         startedAt: "2026-09-04T12:00:00Z",
         finishedAt: "2026-09-04T12:01:00Z",
         testedDimensions: [{
-          dimension: "completed planned work units",
+          dimension: "completed planned scan batches",
           value: "1 of 1",
           observation: "The planned connection check completed.",
         }],
@@ -1480,7 +1480,7 @@ test("the first layer names the requested target, tested work, top gap, and next
   expect(firstLayerScope!.textContent).toContain("Requested: contoso.example");
   expect(firstLayerScope!.textContent).toContain("Scan depth: Full inventory");
   expect(firstLayerScope!.textContent).toContain("Limits: naabu execution timeout: 30 seconds");
-  expect(firstLayerScope!.textContent).toContain("completed planned work units: 1 of 1");
+  expect(firstLayerScope!.textContent).toContain("completed planned scan batches: 1 of 1");
   expect(firstLayerScope!.textContent).toMatch(/Time: Observed .+ to .+/u);
   expect(firstLayerScope!.textContent).toContain("Recorded exclusions: contoso.example · ports outside the requested port set");
 });
@@ -1510,7 +1510,7 @@ test("the tested time window excludes failed sibling task activity", () => {
         startedAt: testedFrom,
         finishedAt: testedUntil,
         testedDimensions: [{
-          dimension: "completed planned work units",
+          dimension: "completed planned scan batches",
           value: "1 of 1",
           observation: "The planned connection check completed.",
           observedAt: testedUntil,
@@ -1571,7 +1571,7 @@ test("the first layer does not drop a completed check whose exact dimensions wer
         targetAssetIds: ["asset-1"],
         status: "tested_complete",
         testedDimensions: [{
-          dimension: "completed planned work units",
+          dimension: "completed planned scan batches",
           value: "1 of 1",
           observation: "The planned connection check completed.",
         }],
@@ -1741,7 +1741,7 @@ const completedRunWithOnlyRecordNotes = (): BeginnerMasterReport => {
         targetAssetIds: ["asset-1"],
         status: "tested_complete",
         testedDimensions: [{
-          dimension: "completed planned work units",
+          dimension: "completed planned scan batches",
           value: "1 of 1",
           observation: "The planned security check completed.",
         }],
@@ -2066,7 +2066,7 @@ test("a Traditional Chinese reader sees requested-limit units in their language"
 test("a Traditional Chinese reader hears why completed network coverage is not a security pass", () => {
   window.localStorage.setItem(localeStorageKey, "zh-TW");
   const englishObservation =
-    "These exact frozen work units have validated completed outcomes across all saved attempts. A completed network check reports reachability; it is not a security pass.";
+    "These exact frozen scan batches have validated completed outcomes across all saved attempts. A completed network check reports reachability; it is not a security pass.";
   const { container } = renderReport(
     report("complete", {
       actual: {
@@ -2078,7 +2078,7 @@ test("a Traditional Chinese reader hears why completed network coverage is not a
           startedAt: "2026-09-04T12:00:00Z",
           finishedAt: "2026-09-04T12:01:00Z",
           testedDimensions: [{
-            dimension: "completed planned work units",
+            dimension: "completed planned scan batches",
             value: "1 of 1",
             observation: englishObservation,
             observedAt: "2026-09-04T12:01:00Z",

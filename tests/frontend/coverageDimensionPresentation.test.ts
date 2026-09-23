@@ -137,14 +137,14 @@ test("the backend's dimension vocabulary was found", () => {
     `found only ${staticDimensions.length} dimensions`,
   );
   assert.ok(staticDimensions.includes("requested scan stage"));
-  assert.ok(staticDimensions.includes("partly completed planned work units"));
+  assert.ok(staticDimensions.includes("partly completed planned scan batches"));
 
   assert.ok(
     composedDimensions.length >= 18,
     `found only ${composedDimensions.length} composed dimensions: ${composedDimensions.join(", ")}`,
   );
   for (const expected of [
-    "cloudquery failed work units (3)",
+    "cloudquery failed scan batches (3)",
     "cloudquery final-state reconciliation",
     "cloudquery: not-tested check dimension",
     "requested check cloudquery",
@@ -450,10 +450,10 @@ test("a composed name is translated without losing the identifier it carries", (
 });
 
 test("two checks reporting the same kind of gap stay apart", () => {
-  // A run with three engines produces three "failed work units" rows. Replacing
+  // A run with three engines produces three "failed scan batches" rows. Replacing
   // the composed name with a fixed label would make them one row repeated.
   const labels = ["trivy", "prowler", "gitleaks"].map((engine) =>
-    localizedCoverageDimension(`${engine} failed work units (2)`, "zh-TW"),
+    localizedCoverageDimension(`${engine} failed scan batches (2)`, "zh-TW"),
   );
   assert.equal(
     new Set(labels).size,
@@ -467,7 +467,7 @@ test("two checks reporting the same kind of gap stay apart", () => {
 });
 
 test("no two dimensions collapse into the same Traditional Chinese label", () => {
-  // "completed planned work units" and "partly completed planned work units"
+  // "completed planned scan batches" and "partly completed planned scan batches"
   // are reported as adjacent rows on the same check. Sharing a label leaves a
   // reader two identical rows and no way to tell finished work from work that
   // stopped early.
@@ -758,7 +758,7 @@ test("every tested-dimension value frame in the backend is translated", () => {
 
 test("a value composed by another build keeps its own words", () => {
   assert.equal(
-    localizedTestedValue("zh-TW", "completed planned work units", "all of them"),
+    localizedTestedValue("zh-TW", "completed planned scan batches", "all of them"),
     "all of them",
   );
   assert.equal(

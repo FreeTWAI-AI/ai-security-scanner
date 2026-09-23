@@ -117,9 +117,9 @@ test("the English keys the screen matches on are the ones the report writes", ()
  * Coverage names are matched on a fragment, not on the whole sentence, so the
  * Chinese comparison above cannot see a missing rule.
  *
- * Both sides can hold the label "失敗的工作單元" and still disagree about which
- * English names reach it: one side matching on " failed work units" and the
- * other on " failed work unit" produces identical literals and different
+ * Both sides can hold the label "失敗的掃描批次" and still disagree about which
+ * English names reach it: one side matching on " failed scan batches" and the
+ * other on " failed scan batch" produces identical literals and different
  * output. The needle is the part that has to be the same.
  */
 test("both sides recognise the same English before writing the same Chinese", () => {

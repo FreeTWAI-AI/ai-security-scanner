@@ -24845,12 +24845,12 @@ mod tests {
         );
         assert_eq!(report.state.summary, BeginnerReportSummary::Partial);
         assert!(report.actual.checks[0].tested_dimensions.iter().any(
-            |dimension| dimension.dimension == "partly completed planned work units"
+            |dimension| dimension.dimension == "partly completed planned scan batches"
                 && dimension.value.starts_with("1 of ")
         ));
         assert!(report.coverage_gaps.iter().any(|gap| {
             gap.kind == crate::beginner_report::CoverageGapKind::NotTested
-                && gap.dimension.contains("partly completed work units")
+                && gap.dimension.contains("partly completed scan batches")
         }));
         assert!(report.coverage_gaps.iter().any(|gap| {
             gap.kind == crate::beginner_report::CoverageGapKind::Unavailable
@@ -25117,13 +25117,13 @@ mod tests {
         assert!(report.actual.checks[0].tested_dimensions.is_empty());
         assert!(report.coverage_gaps.iter().any(|gap| {
             gap.kind == crate::beginner_report::CoverageGapKind::Unavailable
-                && gap.dimension.contains("saved work-unit coverage")
+                && gap.dimension.contains("saved scan-batch coverage")
         }));
         assert_eq!(
             report
                 .coverage_gaps
                 .iter()
-                .filter(|gap| gap.dimension.contains("saved work-unit coverage"))
+                .filter(|gap| gap.dimension.contains("saved scan-batch coverage"))
                 .count(),
             1,
             "one invalid durable history must produce one canonical coverage gap"
@@ -25168,12 +25168,12 @@ mod tests {
             crate::beginner_report::CoverageDimensionStatus::TestedPartial
         );
         assert!(report.actual.checks[0].tested_dimensions.iter().any(
-            |dimension| dimension.dimension == "completed planned work units"
+            |dimension| dimension.dimension == "completed planned scan batches"
                 && dimension.value.starts_with("1 of ")
         ));
         assert!(report.coverage_gaps.iter().any(|gap| {
             gap.kind == crate::beginner_report::CoverageGapKind::NotTested
-                && gap.dimension.contains("not-tested work units")
+                && gap.dimension.contains("not-tested scan batches")
         }));
     }
 
