@@ -308,7 +308,7 @@ test("VNC transport coverage and its explicit limits are readable in both langua
 
 test("SMTP coverage and its explicit mail-server limits are readable in both languages", () => {
   const observation =
-    "The completed Greenbone task retained the exact reviewed SMTP profile: one banner, EHLO, STARTTLS, and advertised-AUTH check for an unencrypted cleartext login risk, plus ten TLS checks that apply when TLS can be negotiated. No credentials or mail were sent.";
+    "The completed Greenbone task retained and attempted the exact SMTP profile: one check reads the banner, sends EHLO, tries STARTTLS when offered, and reviews advertised AUTH for cleartext-login risk; ten more checks depend on TLS. TLS-check execution: evidenced by selected-run source OIDs. Credentials and mail: not sent.";
   const limit =
     "The unauthenticated SMTP profile reads the banner, issues EHLO, negotiates STARTTLS when offered, and checks advertised AUTH for an unencrypted cleartext-login risk. Its TLS checks apply only when TLS can be negotiated. It does not send credentials or mail, test relay or delivery, authentication enforcement or bypass, anti-spam behavior, general mail-server implementation CVEs, operating-system patches, installed software, or local configuration.";
   const nextAction =
@@ -325,8 +325,7 @@ test("SMTP coverage and its explicit mail-server limits are readable in both lan
     ),
     "SMTP 伺服器行為、實作與端點主機涵蓋範圍",
   );
-  assert.match(testedObservationProse("zh-TW", observation), /未送出帳號或密碼/u);
-  assert.match(testedObservationProse("zh-TW", observation), /沒有寄信/u);
+  assert.match(testedObservationProse("zh-TW", observation), /帳密與郵件：未送出/u);
   assert.match(coverageGapProse("zh-TW", limit), /relay 或投遞/u);
   assert.match(coverageGapProse("zh-TW", limit), /一般郵件伺服器實作 CVE/u);
   assert.match(coverageGapProse("zh-TW", nextAction), /郵件伺服器評估/u);

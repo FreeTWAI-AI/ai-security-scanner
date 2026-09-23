@@ -1540,10 +1540,6 @@ const TESTED_OBSERVATION_PROSE: ReadonlyArray<readonly [string, string]> = [
     "已完成的 Greenbone 工作保留了精確且經過檢視的 VNC 傳輸設定檔，其中包含一項未加密 VNC 連線檢查。",
   ],
   [
-    "The completed Greenbone task retained the exact reviewed SMTP profile: one banner, EHLO, STARTTLS, and advertised-AUTH check for an unencrypted cleartext login risk, plus ten TLS checks that apply when TLS can be negotiated. No credentials or mail were sent.",
-    "已完成的 Greenbone 工作保留了精確且經過檢視的 SMTP 設定檔：一項透過 banner、EHLO、STARTTLS 與服務宣告 AUTH 檢查未加密明文登入風險的檢查，加上十項在可協商 TLS 時適用的 TLS 檢查。本輪未送出帳號或密碼，也沒有寄信。",
-  ],
-  [
     "The completed Greenbone task retained and attempted the exact SMTP profile: one check reads the banner, sends EHLO, tries STARTTLS when offered, and reviews advertised AUTH for cleartext-login risk; ten more checks depend on TLS. TLS-check execution: evidenced by selected-run source OIDs. Credentials and mail: not sent.",
     "已完成的 Greenbone 工作保留並嘗試執行精確的 SMTP 設定檔：其中一項檢查會讀取 banner、送出 EHLO、在服務提供時嘗試 STARTTLS，並檢視服務宣告的 AUTH 是否有明文登入風險；另有十項檢查依賴 TLS。TLS 檢查執行情況：由所選輪次的來源 OID 提供證據。帳密與郵件：未送出。",
   ],
@@ -1571,22 +1567,10 @@ export const testedObservationProse = (
   english: string,
 ): string => {
   const trimmed = english.trim();
-  let normalized = trimmed;
-  if (trimmed.includes("produced usable saved results")) {
-    normalized = "Scan-batch status: Partial. Planned operations remain unfinished.";
-  } else if (trimmed.includes("completion does not prove that every eligible template executed")) {
-    normalized = "Nuclei completed the pinned upstream automatic web profile on the displayed origin. Applied checks: templates selected by upstream technology detection. Eligible-template execution completeness: unavailable.";
-  } else if (trimmed.includes("result API does not prove that every scheduled VT executed")) {
-    normalized = "Greenbone completed the frozen remote-safe profile on the displayed host and ports. Applied checks: feed checks selected by upstream service and product prerequisites. Scheduled-VT execution completeness: unavailable.";
-  } else if (trimmed.includes("Task completion alone does not prove those TLS checks ran")) {
-    normalized = "The completed Greenbone task retained and attempted the exact SMTP profile: one check reads the banner, sends EHLO, tries STARTTLS when offered, and reviews advertised AUTH for cleartext-login risk; ten more checks depend on TLS. TLS-check execution: evidenced by selected-run source OIDs. Credentials and mail: not sent.";
-  } else if (trimmed.includes("A finding for one OID does not prove that another TLS check ran")) {
-    normalized = "Counted coverage: exact TLS source OIDs in selected-run finding evidence. Each OID evidences only its own check.";
-  }
-  if (locale === "en") return normalized;
+  if (locale === "en") return trimmed;
   return (
     TESTED_OBSERVATION_PROSE.find(
-      ([candidate]) => candidate === normalized,
+      ([candidate]) => candidate === trimmed,
     )?.[1] ?? english
   );
 };
