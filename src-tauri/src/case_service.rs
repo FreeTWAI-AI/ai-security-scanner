@@ -37149,7 +37149,7 @@ mod tests {
         assert!(zh_html.contains("所選掃描輪次的專案識別資料不一致；報告資料：專案內所選記錄。"));
         assert!(
             !zh_html.contains(
-                "The selected run's stored project identifier does not match this project."
+                "The selected run has an inconsistent project identity. Report data: selected in-project record."
             )
         );
         // Same sentence, in the language the rest of the record is in. A

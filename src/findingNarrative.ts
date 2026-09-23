@@ -2141,13 +2141,6 @@ const DATA_QUALITY_WARNING_PROSE: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const translateDataQualityWarning = (english: string): string | undefined => {
-  if (
-    english.includes("saved coverage history could not be reconciled")
-    || english.includes("Coverage history reconciliation failed for one check")
-    || english.includes("One check has an incomplete coverage history record")
-  ) {
-    return "有一項檢查的涵蓋歷程未完成。";
-  }
   const fixed = DATA_QUALITY_WARNING_PROSE.find(
     ([candidate]) => candidate === english,
   )?.[1];
@@ -2172,31 +2165,7 @@ const translateDataQualityWarning = (english: string): string | undefined => {
 export const localizedDataQualityWarning = (
   warning: string,
   locale: "en" | "zh-TW",
-): string => {
-  let normalized = warning
-    .replace(
-      "This run contains a request-level outcome beside non-terminal or planned check data. The report ignored that outcome and did not treat it as ‘no checks completed’.",
-      "This run has inconsistent request and check data.",
-    )
-    .replace(
-      "The selected run's stored project identifier does not match this project. The report remains limited to the selected in-project record.",
-      "The selected run has an inconsistent project identity. Report data: selected in-project record.",
-    )
-    .replace(
-      /Finding (.+) has no selected-run presentation snapshot; current canonical wording is labeled as a legacy fallback\./u,
-      "Finding $1 selected-run presentation snapshot: unavailable. Display wording: current canonical text.",
-    )
-    .replace(
-      /Finding (.+) has only its retained run observation; presentation detail is unavailable\./u,
-      "Finding $1 presentation detail: unavailable. Retained run observation: available.",
-    );
-  normalized = normalized.includes("saved coverage history could not be reconciled")
-    || warning.includes("Coverage history reconciliation failed for one check")
-    || warning.includes("One check has an incomplete coverage history record")
-    ? "One check has incomplete coverage history."
-    : normalized;
-  return locale === "en" ? normalized : (translateDataQualityWarning(normalized) ?? normalized);
-};
+): string => locale === "en" ? warning : (translateDataQualityWarning(warning) ?? warning);
 
 /** Next action when every attached check failed to produce observations. */
 export const INCOMPLETE_CHECK_CONFIRM_ACTION =

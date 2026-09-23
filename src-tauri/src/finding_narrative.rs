@@ -1582,46 +1582,33 @@ pub fn coverage_record_detail_zh_hant(english: &str) -> Option<String> {
     None
 }
 
+const DATA_QUALITY_WARNING_PROSE: &[(&str, &str)] = &[
+    (
+        "This run has inconsistent request and check data.",
+        "本輪的請求與檢查資料不一致。",
+    ),
+    (
+        "The selected run has an inconsistent project identity. Report data: selected in-project record.",
+        "所選掃描輪次的專案識別資料不一致；報告資料：專案內所選記錄。",
+    ),
+    (
+        "One check has incomplete coverage history.",
+        "有一項檢查的涵蓋歷程未完成。",
+    ),
+];
+
 /// A data-quality warning written into the beginner report, in Traditional
 /// Chinese. Unknown text is deliberately not translated: case bundles can
 /// outlive the build that authored them.
 pub fn data_quality_warning_zh_hant(english: &str) -> Option<String> {
-    let fixed = [
-        (
-            "This run has inconsistent request and check data.",
-            "本輪的請求與檢查資料不一致。",
-        ),
-        (
-            "The selected run has an inconsistent project identity. Report data: selected in-project record.",
-            "所選掃描輪次的專案識別資料不一致；報告資料：專案內所選記錄。",
-        ),
-        (
-            "One check has incomplete coverage history.",
-            "有一項檢查的涵蓋歷程未完成。",
-        ),
-    ];
-    let normalized = match english {
-        "This run contains a request-level outcome beside non-terminal or planned check data. The report ignored that outcome and did not treat it as ‘no checks completed’." => {
-            "This run has inconsistent request and check data."
-        }
-        "The selected run's stored project identifier does not match this project. The report remains limited to the selected in-project record." => {
-            "The selected run has an inconsistent project identity. Report data: selected in-project record."
-        }
-        _ => english,
-    };
-    let normalized = if normalized.contains("saved coverage history could not be reconciled")
-        || english.contains("Coverage history reconciliation failed for one check")
-        || english.contains("One check has an incomplete coverage history record")
+    if let Some((_, chinese)) = DATA_QUALITY_WARNING_PROSE
+        .iter()
+        .find(|(candidate, _)| *candidate == english)
     {
-        "One check has incomplete coverage history."
-    } else {
-        normalized
-    };
-    if let Some((_, chinese)) = fixed.iter().find(|(candidate, _)| *candidate == normalized) {
         return Some((*chinese).to_owned());
     }
     if let Some(finding_id) = strip_frame(
-        normalized,
+        english,
         "Finding ",
         " selected-run presentation snapshot: unavailable. Display wording: current canonical text.",
     ) && !finding_id.is_empty()
@@ -1631,29 +1618,9 @@ pub fn data_quality_warning_zh_hant(english: &str) -> Option<String> {
         ));
     }
     if let Some(finding_id) = strip_frame(
-        normalized,
+        english,
         "Finding ",
         " presentation detail: unavailable. Retained run observation: available.",
-    ) && !finding_id.is_empty()
-    {
-        return Some(format!(
-            "問題 {finding_id} 呈現細節：無法取得；保留的輪次觀察：可用。"
-        ));
-    }
-    if let Some(finding_id) = strip_frame(
-        english,
-        "Finding ",
-        " has no selected-run presentation snapshot; current canonical wording is labeled as a legacy fallback.",
-    ) && !finding_id.is_empty()
-    {
-        return Some(format!(
-            "問題 {finding_id} 所選輪次呈現快照：無法取得；顯示文字：目前正式版本。"
-        ));
-    }
-    if let Some(finding_id) = strip_frame(
-        english,
-        "Finding ",
-        " has only its retained run observation; presentation detail is unavailable.",
     ) && !finding_id.is_empty()
     {
         return Some(format!(
@@ -2601,13 +2568,13 @@ mod tests {
     fn data_quality_warning_lookup_translates_fixed_and_framed_prose_only() {
         assert_eq!(
             data_quality_warning_zh_hant(
-                "The selected run's stored project identifier does not match this project. The report remains limited to the selected in-project record."
+                "The selected run has an inconsistent project identity. Report data: selected in-project record."
             ),
             Some("所選掃描輪次的專案識別資料不一致；報告資料：專案內所選記錄。".into())
         );
         assert_eq!(
             data_quality_warning_zh_hant(
-                "Finding finding-user-value has only its retained run observation; presentation detail is unavailable."
+                "Finding finding-user-value presentation detail: unavailable. Retained run observation: available."
             ),
             Some("問題 finding-user-value 呈現細節：無法取得；保留的輪次觀察：可用。".into())
         );
@@ -2941,10 +2908,46 @@ mod tests {
         );
     }
 
-    /// The other direction from the producer census in `beginner_report.rs`:
-    /// that one fails when a sentence has no entry, this one fails when an
-    /// entry has no sentence. A key with a typo in it is invisible to the
-    /// census unless the suite happens to exercise the path that writes it.
+    fn without_test_code(source: &str) -> String {
+        let mut production = String::with_capacity(source.len());
+        let mut lines = source.lines();
+        while let Some(line) = lines.next() {
+            if line.trim() == "#[cfg(test)]" {
+                let indentation = line.len() - line.trim_start().len();
+                let next = lines.next().expect("cfg(test) has an item");
+                if next.trim_start().starts_with("use ") {
+                    if !next.trim_end().ends_with(';') {
+                        for test_line in lines.by_ref() {
+                            if test_line.trim_end().ends_with(';') {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    let mut body_started = next.contains('{');
+                    for test_line in lines.by_ref() {
+                        body_started |= test_line.contains('{');
+                        let test_indentation = test_line.len() - test_line.trim_start().len();
+                        if body_started
+                            && test_indentation == indentation
+                            && test_line.trim() == "}"
+                        {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            production.push_str(line);
+            production.push('\n');
+        }
+        production
+    }
+
+    /// The other direction from the producer censuses in `beginner_report.rs`:
+    /// those fail when a sentence has no entry, this one fails when an entry
+    /// has no production sentence. A key with a typo in it is otherwise
+    /// invisible unless the suite happens to exercise the path that writes it.
     #[test]
     fn every_key_is_a_sentence_some_producer_actually_writes() {
         let producers = [
@@ -2956,7 +2959,7 @@ mod tests {
         let joined = producers
             .iter()
             .map(|source| {
-                source
+                without_test_code(source)
                     .split('\\')
                     .map(|part| part.trim_start_matches(['\n', ' ']))
                     .collect::<String>()
@@ -2967,7 +2970,21 @@ mod tests {
             .map(|(english, _)| *english)
             .filter(|english| !joined.iter().any(|source| source.contains(english)))
             .collect::<Vec<_>>();
-        assert_eq!(orphans, Vec::<&str>::new(), "no producer writes these");
+        assert_eq!(
+            orphans,
+            Vec::<&str>::new(),
+            "no production coverage-gap producer writes these"
+        );
+        let orphans = DATA_QUALITY_WARNING_PROSE
+            .iter()
+            .map(|(english, _)| *english)
+            .filter(|english| !joined.iter().any(|source| source.contains(english)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            orphans,
+            Vec::<&str>::new(),
+            "no production data-quality-warning producer writes these"
+        );
     }
 
     #[test]
